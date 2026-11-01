@@ -1,0 +1,109 @@
+// Ghi đè giao diện thư viện bên thứ ba theo token SmartRent. CSS gốc của thư viện được nạp tại module dùng nó.
+
+// ------------------------------------------------------------ DataTables
+.sr-table-wrap {
+  .dt-container { padding: 0 1.1rem .9rem; }
+  table.dataTable {
+    margin-top: 0 !important;
+    font-size: .875rem;
+    thead th {
+      color: var(--sr-muted);
+      font-size: .75rem;
+      font-weight: 600;
+      border-bottom: 1px solid var(--sr-line) !important;
+      white-space: nowrap;
+      background: var(--sr-surface);
+    }
+    tbody td { border-color: var(--sr-line); vertical-align: middle; }
+    tbody tr { cursor: default; }
+    tbody tr.is-clickable { cursor: pointer; }
+    tbody tr:hover > * { background: var(--sr-surface-2); }
+    > tbody > tr.child ul.dtr-details { width: 100%; }
+    td.dt-empty { padding: 0 !important; }
+  }
+  .dt-info { font-size: .8125rem; color: var(--sr-muted); }
+  .dt-length { font-size: .8125rem; color: var(--sr-muted); select { margin-right: .35rem; } }
+  .dt-paging .pagination { margin: 0; --bs-pagination-font-size: .8125rem; }
+  div.dt-processing {
+    background: var(--sr-surface);
+    border: 1px solid var(--sr-line);
+    box-shadow: var(--sr-shadow-pop);
+    color: var(--sr-ink);
+    font-size: .8125rem;
+    > div:last-child > div { background: var(--sr-door); }
+  }
+}
+.sr-table-wrap table.dataTable.dtr-inline.collapsed > tbody > tr > td.dtr-control::before {
+  border-color: var(--sr-door) !important;
+}
+
+// ------------------------------------------------------------ Tom Select
+.ts-wrapper.form-select, .ts-wrapper.form-control { padding: 0; }
+.ts-control {
+  border-color: var(--bs-border-color);
+  border-radius: var(--bs-border-radius);
+  padding: .42rem .75rem;
+  min-height: calc(1.55em + .9rem + 2px);
+  background: var(--bs-body-bg);
+  color: var(--bs-body-color);
+  font-size: inherit;
+}
+.ts-wrapper.focus .ts-control { border-color: var(--sr-door); box-shadow: 0 0 0 .2rem rgba(31, 86, 98, .25); }
+.ts-dropdown {
+  border-color: var(--sr-line);
+  border-radius: .5rem;
+  box-shadow: var(--sr-shadow-pop);
+  background: var(--sr-surface);
+  color: var(--sr-ink);
+  .active { background: var(--sr-door-tint); color: var(--sr-ink); }
+  .option .sr-opt-sub { display: block; font-size: .75rem; color: var(--sr-muted); }
+}
+.ts-wrapper.multi .ts-control > .item { background: var(--sr-door-tint); color: var(--sr-door); border-radius: .3rem; border: 0; }
+.is-invalid + .ts-wrapper .ts-control, .ts-wrapper.is-invalid .ts-control { border-color: var(--bs-form-invalid-border-color); }
+
+// ------------------------------------------------------------ Flatpickr
+.flatpickr-calendar {
+  font-family: var(--sr-font-sans);
+  border-radius: .6rem;
+  box-shadow: var(--sr-shadow-pop);
+  background: var(--sr-surface);
+}
+.flatpickr-day.selected, .flatpickr-day.selected:hover { background: var(--sr-door); border-color: var(--sr-door); }
+.flatpickr-day.today { border-color: var(--sr-wash); }
+.flatpickr-input[readonly] { background-color: var(--bs-body-bg); }
+
+// ------------------------------------------------------------ FilePond
+.filepond--root { font-family: var(--sr-font-sans); font-size: .875rem; margin-bottom: 0; }
+.filepond--panel-root { background: var(--sr-surface-2); border: 1px dashed var(--sr-line-strong); }
+.filepond--drop-label { color: var(--sr-ink-2); }
+.filepond--label-action { text-decoration-color: var(--sr-door); color: var(--sr-door); }
+.filepond--item-panel { background: var(--sr-door-deep); }
+[data-filepond-item-state='processing-complete'] .filepond--item-panel { background: var(--sr-ok); }
+[data-filepond-item-state*='error'] .filepond--item-panel, [data-filepond-item-state*='invalid'] .filepond--item-panel { background: var(--sr-danger); }
+
+// ------------------------------------------------------------ SweetAlert2
+.swal2-popup.sr-swal {
+  font-family: var(--sr-font-sans);
+  border-radius: .9rem;
+  background: var(--sr-surface);
+  color: var(--sr-ink);
+  padding: 1.5rem 1.5rem 1.25rem;
+  .swal2-title { font-family: var(--sr-font-display); font-size: 1.25rem; color: var(--sr-ink); padding: 0; text-align: left; }
+  .swal2-html-container { text-align: left; font-size: .9rem; color: var(--sr-ink-2); margin: .75rem 0 0; }
+  .swal2-actions { justify-content: flex-end; width: 100%; margin-top: 1.25rem; gap: .5rem; }
+  .swal2-textarea, .swal2-input { margin: .75rem 0 0; width: 100%; font-size: .9rem; border-color: var(--bs-border-color); background: var(--bs-body-bg); color: var(--bs-body-color); }
+  .swal2-validation-message { background: var(--sr-danger-tint); color: var(--sr-danger); font-size: .8125rem; margin: .5rem 0 0; }
+  .swal2-icon { margin: 0 0 .75rem; transform: scale(.75); transform-origin: left; }
+}
+.swal2-toast.sr-swal-toast {
+  font-family: var(--sr-font-sans);
+  background: var(--sr-surface) !important;
+  color: var(--sr-ink);
+  border: 1px solid var(--sr-line);
+  box-shadow: var(--sr-shadow-pop) !important;
+  .swal2-title { font-size: .875rem; font-weight: 550; }
+}
+
+// ------------------------------------------------------------ Chart.js
+.sr-chart { position: relative; height: 260px; }
+.sr-chart-sm { height: 180px; }

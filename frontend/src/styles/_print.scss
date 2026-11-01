@@ -1,0 +1,19 @@
+// Bản in hóa đơn / phiếu thu: ẩn khung điều hướng, giữ nội dung chứng từ.
+@media print {
+  :root, [data-bs-theme='dark'] {
+    --sr-paper: #fff;
+    --sr-surface: #fff;
+    --sr-ink: #000;
+    --sr-line: #bbb;
+  }
+  body { background: #fff !important; color: #000; font-size: 11pt; }
+  .sr-sidebar, .sr-topbar, .sr-site-head, .sr-site-foot, .sr-site-tabbar,
+  .sr-page-actions, .sr-no-print, .btn, .dropdown, .breadcrumb, .swal2-container { display: none !important; }
+  .sr-app { display: block; }
+  .sr-main, .sr-site-main { padding: 0 !important; max-width: none; }
+  .sr-panel { border: 0; }
+  .sr-print-only { display: block !important; }
+  a { color: #000; text-decoration: none; }
+  .sr-plate { box-shadow: none; border: 1px solid #000; background: #fff; color: #000; }
+}
+.sr-print-only { display: none; }

@@ -1,0 +1,90 @@
+// Biến Bootstrap 5.3 theo bảng màu SmartRent.
+// Màu lấy từ mặt tiền dãy trọ: sơn cửa sắt xanh ngọc đậm và tường vôi vàng.
+
+$door: #1f5662;
+$door-deep: #143a42;
+$wash: #f2c14e;
+$ink: #16262b;
+$paper: #f3f5f2;
+$line: #d7e0dc;
+
+$primary: $door;
+$secondary: #5e7075;
+$success: #2e7d5b;
+$info: #2f6fa3;
+$warning: $wash;
+$danger: #b23a3a;
+$light: $paper;
+$dark: $ink;
+
+$body-bg: $paper;
+$body-color: $ink;
+$body-secondary-color: #5e7075;
+$border-color: $line;
+$link-color: $door;
+$link-hover-color: $door-deep;
+$link-decoration: underline;
+$link-underline-offset: .18em;
+
+$body-bg-dark: #0f1b1e;
+$body-color-dark: #e4ecea;
+$body-secondary-color-dark: #9fb2af;
+$border-color-dark: #2a4246;
+$link-color-dark: #8fcad5;
+$link-hover-color-dark: #b5dde4;
+$primary-text-emphasis-dark: #9ed2dc;
+$primary-bg-subtle-dark: #163a41;
+$primary-border-subtle-dark: #275a64;
+
+$font-family-sans-serif: 'Be Vietnam Pro', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+$headings-font-family: 'Bricolage Grotesque Variable', 'Be Vietnam Pro', system-ui, sans-serif;
+$font-size-base: .9375rem;
+$font-size-sm: .8125rem;
+$line-height-base: 1.55;
+$headings-font-weight: 650;
+$headings-line-height: 1.2;
+$h1-font-size: 1.5rem;
+$h2-font-size: 1.125rem;
+$h3-font-size: 1rem;
+$h4-font-size: .9375rem;
+$small-font-size: .8125rem;
+
+$border-radius: .5rem;
+$border-radius-sm: .375rem;
+$border-radius-lg: .75rem;
+$border-radius-xl: 1rem;
+$enable-shadows: false;
+$enable-negative-margins: true;
+
+$focus-ring-width: .2rem;
+$focus-ring-opacity: .35;
+$focus-ring-color: rgba($door, .35);
+$input-focus-border-color: $door;
+$input-btn-focus-color: rgba($door, .35);
+$input-placeholder-color: #8a9a9e;
+$form-label-font-weight: 500;
+$form-label-margin-bottom: .3rem;
+$input-padding-y: .45rem;
+$btn-padding-y: .45rem;
+$btn-padding-x: .9rem;
+$btn-font-weight: 500;
+
+$table-cell-padding-y: .6rem;
+$table-cell-padding-x: .75rem;
+$table-cell-padding-y-sm: .4rem;
+$table-th-font-weight: 600;
+
+$card-border-color: $line;
+$card-cap-bg: transparent;
+$dropdown-link-active-bg: $door;
+$nav-pills-link-active-bg: $door;
+$pagination-active-bg: $door;
+$pagination-active-border-color: $door;
+$progress-bar-bg: $door;
+$offcanvas-horizontal-width: 280px;
+$modal-content-border-radius: .75rem;
+$badge-font-weight: 600;
+$badge-padding-y: .3em;
+$badge-padding-x: .55em;
+$breadcrumb-margin-bottom: .35rem;
+$breadcrumb-font-size: .8125rem;

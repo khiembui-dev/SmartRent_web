@@ -1,0 +1,73 @@
+// Phòng: tìm, lọc theo cơ sở/trạng thái, xem, sửa, xóa. Trạng thái ở suy ra từ đợt thuê, không phải nhãn sửa tay.
+import { roomThumb, rowActions } from '../../components/admin-kit.js';
+import { badge } from '../../components/badges.js';
+import { confirmDialog, errorDialog, reasonDialog, runAction, toast } from '../../components/dialogs.js';
+import { mountList } from '../../components/list-page.js';
+import { icon, link, pageHeader, plate } from '../../components/ui.js';
+import { ApiError } from '../../services/errors.js';
+import { roomsApi } from '../../services/api.js';
+import { session } from '../../services/session.js';
+import { formatVnd } from '../../utils/money.js';
+import { html, setHtml } from '../../utils/html.js';
+import { bindActions, dataChanged } from './common.js';
+
+const STATUS_OPTIONS = [{ value: 'available', label: 'Còn trống' }, { value: 'occupied', label: 'Đã thuê' }, { value: 'maintenance', label: 'Bảo trì' }, { value: 'inactive', label: 'Ngừng khai thác' }];
+
+export default function RoomsPage(ctx) {
+  ctx.setTitle('Phòng');
+  const canWrite = session.can('rooms.write');
+  setHtml(ctx.outlet, html`${pageHeader({
+    title: 'Phòng',
+    subtitle: 'Trạng thái đã thuê theo khách đang ở. Muốn trả phòng, mở hợp đồng của phòng.',
+    actions: canWrite ? html`<a class="btn btn-primary btn-sm" href="${link('/admin/rooms/new')}">${icon('plus-lg')} Thêm phòng</a>` : '',
+  })}<div data-list></div>`);
+
+  const list = mountList(ctx, ctx.outlet.querySelector('[data-list]'), {
+    filters: [
+      { name: 'q', type: 'search', label: 'Tìm phòng', placeholder: 'Mã phòng, tên phòng, tên khách' },
+      { name: 'propertyId', type: 'property' },
+      { name: 'status', type: 'select', label: 'Trạng thái', options: STATUS_OPTIONS },
+    ],
+    quick: [{ label: 'Đã thuê, chưa có hợp đồng', params: { contract: 'missing' } }],
+    columns: [
+      { title: 'Phòng', sortKey: 'code', render: (r) => html`<span class="ad-room-cell">${roomThumb(r.coverImageUrl)}<span class="min-w-0">${plate(r)}<span class="ad-room-name">${r.name}</span></span></span>` },
+      { title: 'Cơ sở', sortKey: 'property.code', render: (r) => r.property.name },
+      { title: 'Diện tích', sortKey: 'areaM2', className: 'text-end', render: (r) => html`<span class="num">${r.areaM2} m²</span>` },
+      { title: 'Giá thuê', sortKey: 'currentRent', className: 'text-end', render: (r) => html`<span class="num">${formatVnd(r.currentRent)}</span>` },
+      { title: 'Khách đang ở', render: (r) => (r.currentTenancy ? html`<a class="link-quiet" href="${link(`/admin/tenants/${r.currentTenancy.representative.id}`)}">${r.currentTenancy.representative.fullName}</a>` : html`<span class="text-muted-sr">—</span>`) },
+      { title: 'Trạng thái', sortKey: 'occupancyStatus', render: (r) => html`${badge('occupancy', r.occupancyStatus)}${r.upcoming ? html` <span class="sr-badge tone-wash no-dot">${r.upcoming.state === 'held' ? 'Đang giữ chỗ' : 'Sắp có khách'}</span>` : ''}${r.currentTenancy && !r.currentTenancy.hasContract ? html` <span class="sr-badge tone-wash no-dot">Chưa có hợp đồng</span>` : ''}` },
+      {
+        title: '', className: 'text-end ad-actions-col', priority: 2,
+        render: (r) => rowActions([
+          { href: `/admin/rooms/${r.id}`, label: `Xem phòng ${r.code}`, icon: 'eye' },
+          canWrite && { href: `/admin/rooms/${r.id}/edit`, label: `Sửa phòng ${r.code}`, icon: 'pencil' },
+          canWrite && { action: 'delete', id: r.id, label: `Xóa phòng ${r.code}`, icon: 'trash3', danger: true },
+        ]),
+      },
+    ],
+    fetch: (q, o) => roomsApi.list(q, o),
+    order: [[0, 'asc']],
+    rowHref: (r) => `/admin/rooms/${r.id}`,
+    empty: { title: 'Chưa có phòng', text: 'Thêm phòng và gắn vào một cơ sở.' },
+  });
+
+  ctx.onCleanup(bindActions(ctx.outlet, {
+    delete: async (btn) => {
+      if (!(await confirmDialog({ title: 'Xóa phòng này?', text: 'Chỉ xóa được phòng chưa có lịch sử thuê. Thao tác này không thể hoàn tác.', confirmText: 'Xóa phòng', tone: 'danger' }))) return;
+      try {
+        await roomsApi.remove(btn.dataset.id);
+        toast('Đã xóa phòng');
+        dataChanged();
+        list.reload();
+      } catch (error) {
+        if (!(error instanceof ApiError) || error.code !== 'room_has_history') {
+          await errorDialog(error);
+          return;
+        }
+        // Phòng có lịch sử không xóa được: gợi ý ngừng khai thác để vừa ẩn phòng vừa giữ dữ liệu.
+        const reason = await reasonDialog({ title: 'Phòng có lịch sử nên không xóa được', text: 'Có thể ngừng khai thác phòng để ẩn khỏi danh sách cho thuê và vẫn giữ lịch sử.', label: 'Lý do ngừng khai thác', confirmText: 'Ngừng khai thác', tone: 'danger' });
+        if (reason && await runAction(() => roomsApi.setStatus(btn.dataset.id, 'inactive', reason), { success: 'Đã ngừng khai thác phòng' })) list.reload();
+      }
+    },
+  }));
+}

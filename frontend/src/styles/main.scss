@@ -1,0 +1,11 @@
+// Điểm vào style. Bootstrap được biên dịch từ SCSS với biến của SmartRent.
+@import './variables';
+@import 'bootstrap/scss/bootstrap';
+@import './tokens';
+@import './base';
+@import './layout';
+@import './components';
+@import './vendors';
+@import './customer';
+@import './admin';
+@import './print';

@@ -1,0 +1,96 @@
+// Nền tảng: chữ, tiêu điểm bàn phím, liên kết bỏ qua, màn hình khởi động, tiện ích nhỏ.
+
+body {
+  background: var(--sr-paper);
+  color: var(--sr-ink);
+  font-feature-settings: 'cv11' 1;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1, h2, h3, .h1, .h2, .h3, .sr-display {
+  font-family: var(--sr-font-display);
+  font-variation-settings: 'wdth' 92, 'opsz' 32;
+  letter-spacing: -.01em;
+}
+
+// Số tiền, chỉ số, mã: chữ số đều cột để so sánh dọc.
+.num, .sr-money, td.num, th.num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sr-money-lg {
+  font-family: var(--sr-font-sans);
+  font-weight: 700;
+  font-size: 1.75rem;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--sr-focus);
+  outline-offset: 2px;
+}
+.btn:focus-visible, .form-control:focus-visible, .form-select:focus-visible, .form-check-input:focus-visible {
+  outline: 2px solid var(--sr-focus);
+  outline-offset: 1px;
+  box-shadow: none;
+}
+
+// Tiêu điểm do router đặt vào tiêu đề trang (để trình đọc màn hình đọc trang mới) không cần viền.
+[tabindex='-1']:focus:not(:focus-visible), h1[tabindex='-1']:focus { outline: none; }
+
+.sr-h-section { font-size: clamp(1.35rem, 2.2vw, 1.75rem); font-weight: 700; letter-spacing: -.02em; }
+
+.skip-link {
+  position: absolute;
+  left: 1rem;
+  top: -100px;
+  z-index: 2000;
+  padding: .6rem 1rem;
+  background: var(--sr-door);
+  color: var(--sr-door-ink);
+  border-radius: var(--sr-radius-plate);
+  text-decoration: none;
+  &:focus { top: 1rem; }
+}
+
+.boot-screen {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: .75rem;
+  color: var(--sr-muted);
+}
+.boot-plate {
+  @extend .sr-plate;
+  font-size: 1.5rem;
+  padding: .35rem .9rem;
+}
+
+[x-cloak] { display: none !important; }
+.text-muted-sr { color: var(--sr-muted) !important; }
+.text-ink-2 { color: var(--sr-ink-2) !important; }
+.fw-550 { font-weight: 550; }
+.min-w-0 { min-width: 0; }
+.lh-tight { line-height: 1.25; }
+.text-balance { text-wrap: balance; }
+.cursor-pointer { cursor: pointer; }
+.measure { max-width: 68ch; }
+
+.link-quiet {
+  color: inherit;
+  text-decoration: none;
+  &:hover { color: var(--sr-door); text-decoration: underline; }
+}
+
+// Người dùng giảm chuyển động: tắt hiệu ứng, giữ thay đổi trạng thái tức thì.
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

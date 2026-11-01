@@ -1,0 +1,5 @@
+﻿Acceptance checks: 44
+PASS concurrent: hai kết nối không thể giữ/nhận cùng phòng trong thời gian chồng nhau
+PASS concurrent: hai kết nối không thể phân bổ cọc vượt cùng khoản thu
+{"postgres" : "PostgreSQL 16.13, compiled by Visual C++ build 1944, 64-bit", "tables" : 103, "views" : 9, "foreign_keys" : 226, "checks" : 144, "exclusions" : 5}
+PASS: installation, acceptance, and concurrency checks

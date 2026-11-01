@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <!-- Khóa phiên bản package bằng packages.lock.json, cả nhóm dùng đúng một bộ. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+</Project>

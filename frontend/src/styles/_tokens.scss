@@ -1,0 +1,103 @@
+// Design tokens dùng chung (CSS variables). Mọi màu riêng của SmartRent lấy từ đây; Bootstrap dùng biến --bs-*.
+:root {
+  --sr-font-sans: #{$font-family-sans-serif};
+  --sr-font-display: #{$headings-font-family};
+
+  --sr-paper: #f3f5f2;
+  --sr-surface: #ffffff;
+  --sr-surface-2: #f7f9f7;
+  --sr-surface-sunk: #eaefec;
+  --sr-ink: #16262b;
+  --sr-ink-2: #3d5157;
+  --sr-muted: #5e7075;
+  --sr-line: #d7e0dc;
+  --sr-line-strong: #b5c4bf;
+
+  // Sơn cửa sắt: màu chủ đạo.
+  --sr-door: #1f5662;
+  --sr-door-deep: #143a42;
+  --sr-door-ink: #ffffff;
+  --sr-door-tint: #e3eef0;
+  // Vôi vàng: điểm nhấn (phòng còn trống, mục đang chọn, viền biển số phòng).
+  --sr-wash: #f2c14e;
+  --sr-wash-ink: #3a2a04;
+  --sr-wash-text: #85600c;
+  --sr-wash-tint: #fcf1d2;
+
+  --sr-ok: #2e7d5b;
+  --sr-ok-tint: #e1f1e8;
+  --sr-warn: #9a5d07;
+  --sr-warn-tint: #fdefd6;
+  --sr-danger: #b23a3a;
+  --sr-danger-tint: #f8e2e0;
+  --sr-info: #2f6fa3;
+  --sr-info-tint: #e1ecf6;
+  --sr-neutral-tint: #edf1ef;
+
+  --sr-sidebar-bg: #143a42;
+  --sr-sidebar-ink: #d6e5e5;
+  --sr-sidebar-muted: #8fb0b3;
+  --sr-sidebar-hover: rgba(255, 255, 255, .07);
+
+  --sr-focus: #1f5662;
+  --sr-shadow-pop: 0 10px 30px -12px rgba(20, 58, 66, .35);
+  --sr-radius-plate: .375rem;
+  --sr-radius-panel: .75rem;
+  --sr-topbar-h: 60px;
+}
+
+@mixin sr-dark-tokens {
+  --sr-paper: #0f1b1e;
+  --sr-surface: #152528;
+  --sr-surface-2: #192d31;
+  --sr-surface-sunk: #10201f;
+  --sr-ink: #e4ecea;
+  --sr-ink-2: #c3d1ce;
+  --sr-muted: #9fb2af;
+  --sr-line: #2a4246;
+  --sr-line-strong: #3b5a5f;
+  --sr-door: #6fb5c3;
+  --sr-door-deep: #0b2227;
+  --sr-door-ink: #0b1d21;
+  --sr-door-tint: #1a3a40;
+  --sr-wash: #f2c14e;
+  --sr-wash-ink: #2a1e02;
+  --sr-wash-text: #f2c14e;
+  --sr-wash-tint: #3a3015;
+  --sr-ok: #6cc59b;
+  --sr-ok-tint: #173528;
+  --sr-warn: #f0b75a;
+  --sr-warn-tint: #3b2e14;
+  --sr-danger: #f08c86;
+  --sr-danger-tint: #3d1d1c;
+  --sr-info: #8dbbe6;
+  --sr-info-tint: #182f44;
+  --sr-neutral-tint: #1d3135;
+  --sr-sidebar-bg: #0b2227;
+  --sr-focus: #f2c14e;
+  --sr-shadow-pop: 0 10px 30px -12px rgba(0, 0, 0, .6);
+}
+
+[data-bs-theme='dark'] {
+  @include sr-dark-tokens;
+  // Nút chính trên nền tối: chữ đậm trên màu cửa sáng để đủ tương phản.
+  .btn-primary {
+    --bs-btn-bg: #6fb5c3;
+    --bs-btn-border-color: #6fb5c3;
+    --bs-btn-color: #0b1d21;
+    --bs-btn-hover-bg: #8fcad5;
+    --bs-btn-hover-border-color: #8fcad5;
+    --bs-btn-hover-color: #0b1d21;
+    --bs-btn-active-bg: #a6d6df;
+    --bs-btn-active-color: #0b1d21;
+    --bs-btn-disabled-bg: #3b5a5f;
+    --bs-btn-disabled-border-color: #3b5a5f;
+  }
+  .btn-outline-primary {
+    --bs-btn-color: #8fcad5;
+    --bs-btn-border-color: #4f8f9b;
+    --bs-btn-hover-bg: #6fb5c3;
+    --bs-btn-hover-color: #0b1d21;
+    --bs-btn-active-bg: #6fb5c3;
+  }
+}

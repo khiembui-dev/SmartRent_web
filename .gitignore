@@ -1,0 +1,19 @@
+# Bí mật và cấu hình riêng của từng máy
+.env
+.env.local
+.env.*.local
+appsettings.Development.json
+.claude/settings.local.json
+
+# Sinh ra khi build
+node_modules/
+dist/
+bin/
+obj/
+
+# Công cụ
+.vs/
+.vscode/
+.idea/
+.playwright-mcp/
+*.log

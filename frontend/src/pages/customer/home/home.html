@@ -1,0 +1,244 @@
+<!-- Khung tĩnh trang chủ. Các phần có id (phòng, bảng giá, chân trang...) do home/index.js vẽ từ API. -->
+<!-- BACKGROUND CANVAS 3D CỐ ĐỊNH (Three.js WebGL) -->
+  <canvas id="webgl"></canvas>
+
+  <!-- LỚP OVERLAY VIGNETTE / GRADIENT MASK ĐẢM BẢO TƯƠNG PHẢN & ĐỌC CHỮ CỰC RÕ -->
+  <div class="vignette-overlay"></div>
+
+  <!-- LỚP GIAO DIỆN HTML UI NỔI LÊN TRÊN -->
+  <div class="ui-container" id="homePageView">
+
+    <div class="home-sections">
+
+      <!-- @SECTION 1: HERO & THANH TÌM KIẾM NHANH -->
+      <section id="hero">
+        <div class="hero-content">
+          <div class="hero-badge">
+            <i class="bi bi-stars" aria-hidden="true"></i> Hệ Thống Quản Lý Trọ Số Hóa Thế Hệ Mới
+          </div>
+
+          <h1 class="hero-title">
+            Hệ thống phòng trọ & Studio tiện nghi<br />
+            <span class="text-gradient">Giá gốc chính chủ, minh bạch chi phí</span>
+          </h1>
+
+          <p class="hero-desc">
+            Không gian sống hiện đại, an ninh khóa vân tay 24/7, đồng hồ điện tử độc lập từng phòng và quản lý hóa đơn trực tuyến trên điện thoại.
+          </p>
+
+          <!-- Thanh Tìm Kiếm Nhanh Nổi Giữa Màn Hình (Glassmorphism Search Box) -->
+          <form class="glass-panel search-box-card" id="heroSearch">
+            <!-- 1. Chọn Cơ sở / Khu vực -->
+            <div class="search-field">
+              <label for="searchArea">Khu vực</label>
+              <select class="search-select" id="searchArea"><option value="">Mọi khu vực</option></select>
+            </div>
+
+            <!-- 2. Khoảng giá -->
+            <div class="search-field">
+              <label for="searchPrice">Khoảng giá thuê</label>
+              <select class="search-select" id="searchPrice"><option value="">Mọi mức giá</option><option value="0-3000000">Dưới 3 triệu / tháng</option><option value="3000000-4500000">3 đến 4,5 triệu / tháng</option><option value="4500000-">Trên 4,5 triệu / tháng</option></select>
+            </div>
+
+            <!-- 3. Loại phòng -->
+            <div class="search-field">
+              <label for="searchType">Loại hình phòng</label>
+              <select class="search-select" id="searchType"><option value="">Mọi loại phòng</option></select>
+            </div>
+
+            <!-- Nút bấm Tìm kiếm -->
+            <button type="submit" class="btn-glow btn-primary" id="searchBtn">
+              <i class="bi bi-search" aria-hidden="true"></i> Tìm phòng trống ngay
+            </button>
+          </form>
+        </div>
+      </section>
+
+
+      <!-- @SECTION 2: DANH SÁCH PHÒNG TRỐNG & ĐƯỜNG ẢNH MẶT TIỀN SLIDER CHẠY TỪ TỪ -->
+      <section id="rooms-section">
+        <div class="section-header">
+          <span class="section-tag">Sẵn sàng xem phòng</span>
+          <h2 class="section-title">Phòng Đang Trống</h2>
+        </div>
+
+        <p class="room-result-note" id="roomResultNote" aria-live="polite"></p>
+
+        <!-- Thẻ phòng chạy ngang, dữ liệu từ tin đăng do quản trị công khai -->
+        <div class="marquee-container" id="roomMarquee">
+          <div class="marquee-track" id="roomTrack"></div>
+        </div>
+        <div class="home-more"><a class="btn-glow btn-primary" href="/rooms">Xem tất cả phòng trống <i class="bi bi-arrow-right" aria-hidden="true"></i></a></div>
+      </section>
+
+
+      <!-- @SECTION 3: MINH BẠCH BẢNG GIÁ ĐIỆN, NƯỚC & DỊCH VỤ -->
+      <section id="pricing-section">
+        <div class="section-header">
+          <span class="section-tag">Cam Kết Minh Bạch</span>
+          <h2 class="section-title">Bảng Giá Điện, Nước & Chi Phí Dịch Vụ</h2>
+          <p class="section-subtitle">
+            Giá dưới đây lấy từ bảng giá đang áp dụng của các khu nhà. Số điện và số nước đo bằng công tơ riêng, ghi rõ trên từng hóa đơn trong Cổng Cư Dân.
+          </p>
+        </div>
+
+        <div class="pricing-grid" id="pricingGrid"></div>
+      </section>
+
+
+      <!-- @SECTION 4: TIỆN ÍCH TÒA NHÀ & TRẢI NGHIỆM CỔNG CƯ DÂN SỐ -->
+      <section id="features-section">
+        <div class="section-header">
+          <span class="section-tag">Trải Nghiệm Đẳng Cấp</span>
+          <h2 class="section-title">Tiện Ích Tòa Nhà & Cổng Cư Dân Số</h2>
+          <p class="section-subtitle">
+            Sự kết hợp hoàn hảo giữa không gian vật lý an toàn và hệ sinh thái quản lý trực tuyến thông minh – Giúp bạn an tâm tận hưởng cuộc sống.
+          </p>
+        </div>
+
+        <div class="features-grid">
+          <!-- Cột Trái: An ninh & Tiện ích vật lý -->
+          <div class="glass-panel feature-col">
+            <div class="feature-col-header">
+              <div class="feature-col-icon"><i class="bi bi-buildings" aria-hidden="true"></i></div>
+              <div>
+                <h3 class="feature-col-title">An Ninh & Tiện Ích Vật Lý</h3>
+              </div>
+            </div>
+
+            <ul class="feature-list">
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-key" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Cửa Khóa Vân Tay GoPlus Từng Phòng</h4>
+                  <p>Mỗi phòng được trang bị khóa thẻ từ & vân tay độc lập. Cổng chính tòa nhà mở bằng vân tay / FaceID, tự do ra vào không giới hạn giờ giấc.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-camera-video" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Camera An Ninh Giám Sát 24/24</h4>
+                  <p>Hệ thống camera hồng ngoại bao phủ toàn bộ khu vực để xe, hành lang các tầng và lối ra vào, đảm bảo an ninh tuyệt đối cho tài sản cá nhân.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-basket" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Khu Giặt Sấy Chung Hiện Đại</h4>
+                  <p>Trang bị máy giặt lồng ngang và máy sấy nhiệt chuyên dụng trên sân thượng, giúp quần áo luôn thơm tho khô ráo kể cả mùa mưa bão.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-ev-front" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Hầm Để Xe Rộng Rãi & Trạm Sạc Điện</h4>
+                  <p>Bãi để xe tầng trệt có bảo vệ, tích hợp sẵn các trụ sạc xe máy điện có aptomat tự ngắt chống chập cháy an toàn 100%.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-fire" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Hệ Thống PCCC Đạt Chuẩn Nghiệm Thu</h4>
+                  <p>Bình chữa cháy bố trí từng tầng, cảm biến báo khói tự động và lối thoát hiểm cầu thang ngoài trời thông thoáng theo đúng tiêu chuẩn PCCC.</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Cột Phải: Tiện ích Cổng Cư Dân Số Trên Web (Điểm ăn tiền của dự án) -->
+          <div class="glass-panel feature-col gold-glow">
+            <div class="feature-col-header">
+              <div class="feature-col-icon"><i class="bi bi-phone" aria-hidden="true"></i></div>
+              <div>
+                <h3 class="feature-col-title text-gradient">Cổng Cư Dân Số Trên Web</h3>
+              </div>
+            </div>
+
+            <p class="feature-lead">
+              Khi trở thành cư dân tại SmartRent, bạn sẽ được cấp một tài khoản cá nhân riêng biệt để thực hiện mọi thao tác trong lòng bàn tay:
+            </p>
+
+            <ul class="feature-list">
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-receipt" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Xem Hóa Đơn & Chỉ Số Điện Nước</h4>
+                  <p>Hóa đơn phòng hiển thị chi tiết số điện cũ, số điện mới và số nước trên điện thoại. Không còn cảnh ghi giấy tay sai lệch.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-bank" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Báo Chuyển Khoản Ngay Trên Web</h4>
+                  <p>Xem số tiền và nội dung chuyển khoản, sau đó gửi biên lai ngay trên web. Quản lý đối chiếu và xác nhận, hóa đơn được cập nhật sau khi xác nhận.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-tools" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Gửi Yêu Cầu Sửa Chữa (Báo Hỏng) Trực Tuyến</h4>
+                  <p>Bóng đèn chập, vòi nước rò rỉ hay điều hòa không mát? Chỉ cần chụp ảnh gửi yêu cầu trên Web, ban quản lý tiếp nhận và cập nhật tiến độ ngay trên Cổng Cư Dân.</p>
+                </div>
+              </li>
+
+              <li class="feature-item">
+                <div class="feature-item-icon"><i class="bi bi-megaphone" aria-hidden="true"></i></div>
+                <div class="feature-item-content">
+                  <h4>Nhận Thông Báo Quan Trọng Ngay Lập Tức</h4>
+                  <p>Nhắc hóa đơn, phản hồi về sự cố và thông tin từ chủ nhà đều được gửi vào mục thông báo cá nhân.</p>
+                </div>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- @SECTION 5: QUY TRÌNH 4 BƯỚC THUÊ PHÒNG & FORM ĐẶT LỊCH XEM NHANH -->
+      <section id="process-section">
+        <div class="section-header">
+          <span class="section-tag">Nhanh Chóng & Đơn Giản</span>
+          <h2 class="section-title">Quy Trình 4 Bước Thuê Phòng</h2>
+          <p class="section-subtitle">
+            Tiết kiệm tối đa thời gian của bạn từ khâu tìm phòng trực tuyến đến ngày dọn vào ở thực tế.
+          </p>
+        </div>
+
+        <!-- 4 Bước ngang -->
+        <div class="steps-container">
+          <div class="glass-panel step-card card-interactive">
+            <div class="step-num">1</div>
+            <h3 class="step-title">Tạo Tài Khoản</h3>
+            <p class="step-desc">Đăng ký bằng số điện thoại và email để đặt lịch, nhận lịch hẹn và theo dõi phòng của bạn.</p>
+          </div>
+
+          <div class="glass-panel step-card card-interactive">
+            <div class="step-num">2</div>
+            <h3 class="step-title">Đặt Lịch Xem Phòng</h3>
+            <p class="step-desc">Chọn phòng đang trống, hẹn ngày giờ. Quản lý xác nhận lịch và dẫn bạn xem phòng trực tiếp.</p>
+          </div>
+
+          <div class="glass-panel step-card card-interactive">
+            <div class="step-num">3</div>
+            <h3 class="step-title">Ký Hợp Đồng & Nhận Phòng</h3>
+            <p class="step-desc">Ưng phòng thì quản lý thêm phòng và hợp đồng vào tài khoản của bạn, bàn giao hiện trạng rõ ràng.</p>
+          </div>
+
+          <div class="glass-panel step-card card-interactive">
+            <div class="step-num">4</div>
+            <h3 class="step-title">Ở Và Theo Dõi Trên Web</h3>
+            <p class="step-desc">Xem hóa đơn hằng tháng, thanh toán, gửi yêu cầu hỗ trợ và xem lại hợp đồng ngay trên tài khoản.</p>
+          </div>
+        </div>
+
+        <div class="glass-panel home-cta" id="homeCta"></div>
+      </section>
+
+    </div>
+  </div>

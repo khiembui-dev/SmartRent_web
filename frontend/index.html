@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SmartRent: tìm phòng trọ còn trống, quản lý cơ sở, hợp đồng, điện nước, hóa đơn và công nợ." />
+    <meta name="theme-color" content="#1f5662" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>SmartRent</title>
+    <script>
+      // Áp chủ đề sáng/tối trước khi vẽ trang để tránh nháy màu.
+      (function () {
+        try {
+          var saved = localStorage.getItem('smartrent.theme');
+          var dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+          document.documentElement.setAttribute('data-bs-theme', dark ? 'dark' : 'light');
+        } catch (e) {
+          document.documentElement.setAttribute('data-bs-theme', 'light');
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Bỏ qua điều hướng, tới nội dung chính</a>
+    <div id="app" aria-live="polite">
+      <div class="boot-screen" role="status">
+        <span class="boot-plate">SR</span>
+        <span>Đang mở SmartRent…</span>
+      </div>
+    </div>
+    <div id="route-announcer" class="visually-hidden" aria-live="assertive" aria-atomic="true"></div>
+    <noscript>SmartRent cần bật JavaScript để hoạt động.</noscript>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

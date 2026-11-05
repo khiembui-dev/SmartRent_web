@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
-
+using Npgsql;
+using SmartRent.Api.Common;
 namespace SmartRent.Api.Features.Contracts;
 
-// Hợp đồng, nhận phòng, trả phòng, phần khách thuê. Người 3 phụ trách.
-// Danh sách API cần viết: backend/HUONG_DAN_THEO_TRANG.md.
-[ApiController]
-[Route("api/v1/portal/tenancies")]
-public sealed class PortalTenanciesController : ControllerBase
+[ApiController, Route("api/v1/portal/tenancies")]
+public sealed class PortalTenanciesController(NpgsqlDataSource db) : LeasingController(db)
 {
+    [HttpGet] public async Task<IActionResult> List(CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var rows = await JsonRowsAsync(c, t, "select jsonb_build_object('id',c.id,'status',c.status,'financeVisible',(c.user_id=@user),'room',jsonb_build_object('id',r.id,'code',r.code),'property',jsonb_build_object('id',p.id,'name',p.name),'contract',jsonb_build_object('id',c.id,'code',c.code,'status',c.status,'displayEndOn',c.ends_on)) from contracts c join rooms r on r.id=c.room_id join properties p on p.id=r.property_id where c.user_id=@user or exists(select 1 from jsonb_array_elements(c.occupants)x where x->>'userId'=@user::text and x->>'leftOn' is null)", ct, P("user", actor)); await t.RollbackAsync(ct); return Ok(rows); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpGet("{id:guid}")] public async Task<IActionResult> Get(Guid id, CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var json = await ScalarStringAsync(c, t, "select jsonb_build_object('contracts',jsonb_build_array(jsonb_build_object('id',c.id,'code',c.code,'status',c.status,'startsOn',c.starts_on,'endsOn',c.ends_on,'versions',case when c.user_id=@user then c.versions else '[]'::jsonb end)),'residents',case when c.user_id=@user then coalesce((select jsonb_agg(jsonb_build_object('id',u.id,'fullName',u.display_name,'joinedOn',x->>'joinedOn','leftOn',x->>'leftOn','relationship',x->>'relationship')) from jsonb_array_elements(c.occupants)x join users u on u.id=(x->>'userId')::uuid),'[]') else '[]'::jsonb end,'handovers','[]'::jsonb) from contracts c where c.id=@id and (c.user_id=@user or exists(select 1 from jsonb_array_elements(c.occupants)x where x->>'userId'=@user::text and x->>'leftOn' is null))", ct, P("id", id), P("user", actor)); await t.RollbackAsync(ct); return json is null ? NotFound() : Content(json, "application/json"); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
 }

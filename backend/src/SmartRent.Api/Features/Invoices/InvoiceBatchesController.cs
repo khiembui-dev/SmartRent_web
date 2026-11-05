@@ -8,4 +8,18 @@ namespace SmartRent.Api.Features.Invoices;
 [Route("api/v1/invoice-batches")]
 public sealed class InvoiceBatchesController : ControllerBase
 {
+    private readonly InvoiceBatchService _batchService;
+    public InvoiceBatchesController(InvoiceBatchService batchService)
+    {
+        _batchService = batchService;
+    }
+    [HttpPost]
+    public async Task<IActionResult> CreateBatch(
+        [FromBody] CreateInvoiceBatchRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await _batchService.CreateBatchAsync(request, idempotencyKey, null, cancellationToken);
+        return Ok(result);
+    }
 }

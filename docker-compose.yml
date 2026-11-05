@@ -16,7 +16,7 @@ services:
       SMARTRENT_APP_PASSWORD: ${DB_APP_PASSWORD:?Chưa có file .env, hãy sao chép từ .env.example}
     ports:
       # Mặc định 5433 để không đụng PostgreSQL đã cài trên máy ở cổng 5432.
-      - "${DB_PORT:-5433}:5432"
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     volumes:
       - smartrent-compact-db-data:/var/lib/postgresql/data
       - ./database:/smartrent-database:ro

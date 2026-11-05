@@ -56,7 +56,7 @@ ALTER ROLE smartrent_app IN DATABASE smartrent SET search_path=smartrent,public;
 
 Runtime không được ghi `users.role`; đăng ký luôn là user. Hồ sơ khách do admin tạo có thể để `login_enabled=false` và chưa có email/password. Kích hoạt tài khoản sau trên chính dòng đó.
 
-Docker: cấu hình `.env` theo `.env.example`, chạy `docker compose up -d db`. Volume của baseline này là `smartrent-compact-db-data`; không tự nhập demo hoặc chuyển dữ liệu từ volume cũ. Docker chưa được chạy kiểm thử trong lần sửa này.
+Docker: làm theo [hướng dẫn cài từ đầu cho backend](../docs/CAI_DAT_DOCKER_BACKEND.md). Volume của baseline này là `smartrent-compact-db-data`; không tự nhập demo hoặc chuyển dữ liệu từ volume cũ.
 
 ## Chạy kiểm tra
 

@@ -23,7 +23,6 @@ import registerSupport from './handlers/support.js';
 import registerAdmin from './handlers/admin.js';
 import registerReports from './handlers/reports.js';
 import registerPortal from './handlers/portal.js';
-import registerSystem from './handlers/system.js';
 
 const routes = [];
 
@@ -38,15 +37,14 @@ function compile(path) {
 
 function makeRegistrar() {
   const add = (method) => (path, handler, options = {}) => {
-    routes.push({ method, path, handler, ...compile(path), auth: options.auth || 'staff', perm: options.perm, scope: options.scope });
+    routes.push({ method, path, handler, ...compile(path), auth: options.auth || 'admin', perm: options.perm, scope: options.scope });
   };
   return { get: add('GET'), post: add('POST'), put: add('PUT'), patch: add('PATCH'), delete: add('DELETE') };
 }
 
 const registrar = makeRegistrar();
 [registerAuth, registerPublic, registerProperties, registerLeasing, registerTenants, registerTenancies, registerContracts,
-  registerMetering, registerInvoices, registerPayments, registerSupport, registerAdmin, registerReports, registerPortal,
-  registerSystem].forEach((register) => register(registrar));
+  registerMetering, registerInvoices, registerPayments, registerSupport, registerAdmin, registerReports, registerPortal].forEach((register) => register(registrar));
 
 /** Danh sách route để đối chiếu với OpenAPI (scripts/check-contract.mjs đọc trực tiếp mã nguồn). */
 export function listRoutes() {
@@ -123,7 +121,8 @@ function buildContext(route, request, db, auth, match) {
   return ctx;
 }
 
-function resolveStaffScope(ctx, db, headers) {
+function resolveAdminScope(ctx, db, headers) {
+  if (ctx.user.role !== 'admin') throw new ApiError({ status: 403, code: 'admin_only', detail: 'Chỉ admin được thực hiện thao tác quản trị.' });
   const orgId = headers?.['X-Organization-Id'];
   const memberships = db.memberships.filter((m) => m.userId === ctx.user.id && m.status === 'active');
   const membership = memberships.find((m) => m.organizationId === orgId) || (orgId ? null : memberships[0]);
@@ -212,13 +211,11 @@ export async function mockTransport(request) {
   }
   const ctx = buildContext(route, request, db, auth, match);
 
-  if (route.auth === 'staff') resolveStaffScope(ctx, db, request.headers);
-  if (route.auth === 'tenant') {
+  if (route.auth === 'admin') resolveAdminScope(ctx, db, request.headers);
+  if (route.auth === 'customer') {
+    if (ctx.user.role !== 'user') throw new ApiError({ status: 403, code: 'customer_only', detail: 'Chỉ tài khoản khách hàng được truy cập.' });
     ctx.tenantRecords = db.tenants.filter((t) => t.userId === ctx.user.id);
     if (!ctx.tenantRecords.length) throw new ApiError({ status: 403, code: 'not_a_tenant', detail: 'Tài khoản chưa liên kết hồ sơ khách thuê.' });
-  }
-  if (route.auth === 'system' && !ctx.user.systemRoles?.includes('SystemAdmin')) {
-    throw new ApiError({ status: 403, code: 'forbidden', detail: 'Chỉ quản trị hệ thống được truy cập.' });
   }
   if (route.perm) ctx.require(route.perm);
 

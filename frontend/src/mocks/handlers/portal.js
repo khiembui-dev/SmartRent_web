@@ -95,12 +95,12 @@ export default function register(r) {
       pendingRequests: db.tenancyRequests.filter((x) => tenancyIds.has(x.tenancyId) && x.status === 'pending').length,
       unreadNotifications: db.notifications.filter((n) => n.recipientId === ctx.user.id && !n.readAt).length,
     };
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/inquiries', (ctx) => {
     const tenantIds = new Set(ctx.tenantRecords.map((t) => t.id));
     return ctx.db.inquiries.filter((q) => tenantIds.has(q.tenantId)).sort((a, b) => compareIso(b.createdAt, a.createdAt)).map((q) => inquiryView(ctx, q));
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   // Đặt lịch xem phòng: bắt buộc đăng nhập. Gửi yêu cầu chưa giữ phòng và không đổi trạng thái phòng.
   r.post('/api/v1/portal/inquiries', (ctx) => {
@@ -140,7 +140,7 @@ export default function register(r) {
       url: `/admin/viewings?inquiry=${inquiry.id}`, at: ctx.now,
     });
     return { ...inquiryView(ctx, inquiry), referenceCode: code, propertyName: property.name, overCapacity: b.occupants > room.capacity, capacity: room.capacity };
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/profile', (ctx) => ({
     profiles: ctx.tenantRecords.map((t) => ({
@@ -149,7 +149,7 @@ export default function register(r) {
       identityDocuments: ctx.db.identityDocuments.filter((d) => d.tenantId === t.id).map((d) => ({ id: d.id, documentType: d.documentType, numberMasked: d.numberMasked, verified: Boolean(d.verifiedAt), expiresOn: d.expiresOn })),
       changeRequests: ctx.db.profileChangeRequests.filter((p) => p.tenantId === t.id).sort((a, b) => compareIso(b.createdAt, a.createdAt)).map((p) => ({ ...p, reviewedBy: userRef(ctx.db, p.reviewedBy) })),
     })),
-  }), { auth: 'tenant' });
+  }), { auth: 'customer' });
 
   r.post('/api/v1/portal/profile-change-requests', (ctx) => {
     const b = ctx.body;
@@ -171,7 +171,7 @@ export default function register(r) {
     ctx.db.profileChangeRequests.push(req);
     notify(ctx.db, { organizationId: tenant.organizationId, recipientIds: staffWith(ctx.db, tenant.organizationId, 'tenants.write'), eventKey: `pcr:${req.id}`, title: 'Khách đề nghị sửa hồ sơ', body: `${tenant.fullName}: ${Object.keys(changes).join(', ')}.`, url: `/admin/tenants/${tenant.id}`, at: ctx.now });
     return req;
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/profile-change-requests/:id/cancel', (ctx) => {
     const req = must(ctx.db.profileChangeRequests, ctx.params.id, 'đề nghị');
@@ -179,9 +179,9 @@ export default function register(r) {
     if (req.status !== 'pending') conflict('request_closed', 'Đề nghị đã được xử lý.');
     req.status = 'cancelled';
     return req;
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
-  r.get('/api/v1/portal/tenancies', (ctx) => memberships(ctx).map((m) => tenancyView(ctx, m)).sort((a, b) => compareIso(b.plannedMoveIn, a.plannedMoveIn)), { auth: 'tenant' });
+  r.get('/api/v1/portal/tenancies', (ctx) => memberships(ctx).map((m) => tenancyView(ctx, m)).sort((a, b) => compareIso(b.plannedMoveIn, a.plannedMoveIn)), { auth: 'customer' });
 
   r.get('/api/v1/portal/tenancies/:id', (ctx) => {
     const m = memberships(ctx).find((x) => x.tenancy.id === ctx.params.id);
@@ -208,7 +208,7 @@ export default function register(r) {
         }),
       })) : [],
     };
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/invoices', (ctx) => {
     const repIds = repTenancyIds(ctx);
@@ -221,20 +221,20 @@ export default function register(r) {
       sortable: ['serviceFrom', 'dueOn', 'totalAmount'],
       defaultSort: '-serviceFrom',
     });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/invoices/:id', (ctx) => {
     const detail = invoiceDetail(ctx.db, myInvoice(ctx, ctx.params.id), ctx.today);
     delete detail.deliveries;
     delete detail.createdBy;
     return detail;
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/payments', (ctx) => {
     const tenantIds = new Set(ctx.tenantRecords.map((t) => t.id));
     const all = ctx.db.payments.filter((p) => tenantIds.has(p.tenantId)).map((p) => paymentSummary(ctx.db, p));
     return listResponse(all, ctx.query, { defaultSort: '-receivedAt', sortable: ['receivedAt', 'amount'], filter: (p) => !ctx.query.status || p.status === ctx.query.status });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   // Báo chuyển khoản: tạo khoản "chờ xác minh"; KHÔNG cộng vào đã thu cho tới khi quản lý xác nhận.
   r.post('/api/v1/portal/payments', (ctx) => {
@@ -255,15 +255,15 @@ export default function register(r) {
     payment.intendedInvoiceIds = invoices.map((i) => i.id);
     notify(ctx.db, { organizationId: c.organizationId, recipientIds: staffWith(ctx.db, c.organizationId, 'payments.confirm', c.property.id), eventKey: `payment.reported:${payment.id}`, title: `Khách báo chuyển khoản ${new Intl.NumberFormat('vi-VN').format(b.amount)} đ`, body: `${c.tenant.fullName} (${c.room.code}) – chờ xác minh.`, url: '/admin/invoices?hasPending=true', at: ctx.now });
     return paymentSummary(ctx.db, payment);
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/tickets', (ctx) => {
     const tenancyIds = new Set(memberships(ctx).map((m) => m.tenancy.id));
     const all = ctx.db.tickets.filter((t) => tenancyIds.has(t.tenancyId) || t.reportedBy === ctx.user.id).map((t) => ticketSummary(ctx.db, t, ctx.now));
     return listResponse(all, ctx.query, { defaultSort: '-createdAt', sortable: ['createdAt', 'status'], filter: (t) => !ctx.query.status || (ctx.query.status === 'open' ? !['resolved', 'closed'].includes(t.status) : t.status === ctx.query.status) });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
-  r.get('/api/v1/portal/tickets/:id', (ctx) => ticketDetail(ctx.db, myTicket(ctx, ctx.params.id), ctx.now, { includeInternal: false }), { auth: 'tenant' });
+  r.get('/api/v1/portal/tickets/:id', (ctx) => ticketDetail(ctx.db, myTicket(ctx, ctx.params.id), ctx.now, { includeInternal: false }), { auth: 'customer' });
 
   r.post('/api/v1/portal/tickets', (ctx) => {
     const b = ctx.body;
@@ -275,13 +275,13 @@ export default function register(r) {
     v.check();
     const ticket = createTicket({ ...ctx, organizationId: c.organizationId }, { roomId: c.room.id, tenancyId: m.tenancy.id, categoryId: b.categoryId, title: b.title, description: b.description, priority: b.priority || 'normal', fileIds: b.fileIds, reporterId: ctx.user.id });
     return ticketDetail(ctx.db, ticket, ctx.now, { includeInternal: false });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/tickets/:id/messages', (ctx) => {
     const ticket = myTicket(ctx, ctx.params.id);
     addTicketMessage(ctx, ticket, { body: ctx.body.body, isInternal: false, fileIds: ctx.body.fileIds });
     return ticketDetail(ctx.db, ticket, ctx.now, { includeInternal: false });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/tickets/:id/confirm', (ctx) => {
     const ticket = myTicket(ctx, ctx.params.id);
@@ -290,7 +290,7 @@ export default function register(r) {
     ticket.closedAt = ctx.now;
     ctx.db.ticketEvents.push({ id: uuid(), ticketId: ticket.id, kind: 'status', fromStatus: 'resolved', toStatus: 'closed', assignedTo: null, reason: 'Khách xác nhận đã xử lý xong.', actorId: ctx.user.id, occurredAt: ctx.now });
     return ticketDetail(ctx.db, ticket, ctx.now, { includeInternal: false });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/tickets/:id/reopen', (ctx) => {
     const ticket = myTicket(ctx, ctx.params.id);
@@ -304,14 +304,14 @@ export default function register(r) {
     const property = find(ctx.db.properties, find(ctx.db.rooms, ticket.roomId).propertyId);
     notify(ctx.db, { organizationId: property.organizationId, recipientIds: [ticket.assignedTo, ...staffWith(ctx.db, property.organizationId, 'tickets.assign', property.id)], eventKey: `ticket.reopen:${ticket.id}:${ctx.now}`, title: `Khách mở lại ${ticket.code}`, body: ctx.body.reason, url: `/admin/tickets/${ticket.id}`, at: ctx.now });
     return ticketDetail(ctx.db, ticket, ctx.now, { includeInternal: false });
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/requests', (ctx) => {
     const tenancyIds = new Set(memberships(ctx).filter((m) => m.role === 'representative').map((m) => m.tenancy.id));
     return ctx.db.tenancyRequests.filter((x) => tenancyIds.has(x.tenancyId)).sort((a, b) => compareIso(b.createdAt, a.createdAt)).map((x) => ({
       ...x, targetRoom: x.targetRoomId ? roomRef(ctx.db, find(ctx.db.rooms, x.targetRoomId)) : null, room: roomRef(ctx.db, tenancyContext(ctx.db, x.tenancyId).room), reviewedBy: userRef(ctx.db, x.reviewedBy),
     }));
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/requests', (ctx) => {
     const b = ctx.body;
@@ -333,7 +333,7 @@ export default function register(r) {
     ctx.db.tenancyRequests.push(req);
     notify(ctx.db, { organizationId: c.organizationId, recipientIds: staffWith(ctx.db, c.organizationId, 'contracts.write', c.property.id), eventKey: `treq:${req.id}`, title: `Đề nghị ${{ renewal: 'gia hạn', transfer: 'chuyển phòng', checkout: 'trả phòng' }[b.requestType]} từ ${c.room.code}`, body: `${c.tenant.fullName}: ${b.message || ''}`.trim(), url: '/admin/contracts?requests=pending', at: ctx.now });
     return { ...req, note: 'Đề nghị chưa thay đổi hợp đồng hay đợt thuê cho tới khi quản lý hoàn tất thủ tục.' };
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.post('/api/v1/portal/requests/:id/cancel', (ctx) => {
     const req = must(ctx.db.tenancyRequests, ctx.params.id, 'đề nghị');
@@ -341,7 +341,7 @@ export default function register(r) {
     if (req.status !== 'pending') conflict('request_closed', 'Đề nghị đã được xử lý.');
     req.status = 'cancelled';
     return req;
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   r.get('/api/v1/portal/catalog', (ctx) => {
     const orgIds = new Set(ctx.tenantRecords.map((t) => t.organizationId));
@@ -351,7 +351,7 @@ export default function register(r) {
       transferTargets: listings.map((room) => roomRef(ctx.db, room)),
       bankAccounts: ctx.db.bankAccounts.filter((x) => orgIds.has(x.organizationId)),
     };
-  }, { auth: 'tenant' });
+  }, { auth: 'customer' });
 
   void isIsoDate;
   void rule;

@@ -1,6 +1,6 @@
 # SmartRent – Frontend
 
-Giao diện web cho SmartRent: khu khách hàng (thuê phòng, hóa đơn, hỗ trợ, hợp đồng, liên hệ), khu quản trị cho chủ trọ/nhân viên và khu quản trị hệ thống. Viết bằng HTML/SCSS/JavaScript (ES modules) với Vite và Bootstrap 5, **không** dùng React/Vue/Angular/Tailwind.
+Giao diện web cho SmartRent: khu khách hàng (thuê phòng, hóa đơn, hỗ trợ, hợp đồng, liên hệ), khu admin dành riêng cho một tài khoản chủ trọ. Chỉ có hai loại tài khoản: `admin` và `user`. Viết bằng HTML/SCSS/JavaScript (ES modules) với Vite và Bootstrap 5, **không** dùng React/Vue/Angular/Tailwind.
 
 Mặc định frontend chạy hoàn toàn bằng **dữ liệu mô phỏng (mock) trong trình duyệt**, không cần backend hay database. Khi backend ASP.NET Core triển khai đúng hợp đồng `../docs/api/openapi.yaml`, đổi một biến môi trường để gọi API thật.
 
@@ -16,7 +16,7 @@ Mặc định frontend chạy hoàn toàn bằng **dữ liệu mô phỏng (mock
 ```bash
 cd frontend
 npm ci              # cài đúng phiên bản trong package-lock.json
-npm run dev         # máy chủ phát triển: http://localhost:5173
+npm run dev         # máy chủ phát triển: http://localhost:5174
 npm run build       # bản build vào dist/
 npm run preview     # chạy thử bản build: http://localhost:4173
 ```
@@ -24,7 +24,8 @@ npm run preview     # chạy thử bản build: http://localhost:4173
 Kiểm tra không cần trình duyệt:
 
 ```bash
-npm run test:mock       # chạy kịch bản nghiệp vụ trên mock API (158 kiểm tra) và bảo đảm đủ 240 route mock đều chạy thành công; đồng hồ được dời về ngày tham chiếu của seed nên kết quả không đổi theo ngày chạy
+npm run test:mock       # chạy kịch bản nghiệp vụ trên mock API (152 kiểm tra) và bảo đảm đủ 216 route mock đều chạy thành công; đồng hồ được dời về ngày tham chiếu của seed nên kết quả không đổi theo ngày chạy
+npm run test:access     # kiểm tra đăng nhập riêng, chặn khách truy cập admin và chuyển dữ liệu cũ
 npm run check:contract  # đối chiếu route mock ⇄ docs/api/openapi.yaml ⇄ lời gọi trong src/
 ```
 
@@ -43,29 +44,28 @@ Sao chép `.env.example` thành `.env.local` rồi sửa. Mọi biến `VITE_*` 
 
 Chuyển sang API thật: đặt `VITE_DATA_SOURCE=api` và `VITE_API_BASE_URL` (hoặc `VITE_DEV_API_PROXY` khi dev), rồi build lại. Yêu cầu backend đã triển khai; xem `../docs/BACKEND_HANDOFF.md`.
 
-## Tài khoản demo (chế độ mock)
+## Tài khoản demo (mock)
 
-Mật khẩu chung: **`demo1234`**. Giao diện không hiện tài khoản mẫu hay nút đổi vai trò; đăng nhập bằng các email dưới đây, hoặc tự tạo tài khoản khách ở `/register`.
+Mật khẩu chung: **`demo1234`**.
 
-| Email | Vai trò | Ghi chú |
+| Tài khoản | Loại | Đăng nhập |
 |---|---|---|
-| `ha.chutro@example.com` | Chủ trọ (Nhà trọ An Cư) | Toàn quyền, 3 cơ sở |
-| `quan.quanly@example.com` | Quản lý | 2 cơ sở; không hoàn cọc, không mở khóa kỳ; thuộc thêm đơn vị Hòa Bình (đổi đơn vị ở menu) |
-| `lan.nhanvien@example.com` | Nhân viên | 1 cơ sở; ghi chỉ số, báo thu nhưng không xác nhận tiền |
-| `minh.kythuat@example.com` | Kỹ thuật (vai trò tự tạo) | Ticket, công tơ |
-| `an.khachthue@example.com` | Khách thuê đại diện | Phòng A101, hóa đơn ví dụ 3.655.000 đ (đã thu 2.000.000, còn 1.655.000) |
-| `bich.oghep@example.com` | Người ở cùng | Không xem công nợ/hóa đơn của người đại diện |
-| `admin@smartrent.example.com` | Quản trị hệ thống | Đơn vị, tài khoản, vận hành |
+| `ha.chutro@example.com` | Admin / chủ trọ duy nhất, toàn quyền | `/admin` → `/admin/login` |
+| `an.khachthue@example.com` | Khách hàng | `/login` |
+| `bich.oghep@example.com` | Khách hàng | `/login` |
 
-Quên mật khẩu (mock): gửi yêu cầu ở `/forgot-password`, sau đó mở `/reset-password?token=demo-reset-token`. Không có email nào được gửi thật.
+Khách tự đăng ký ở `/register`; không có đăng ký admin. Xem [mô hình tài khoản](../docs/ACCOUNT_MODEL.md).
+Đăng nhập sai khu bị từ chối. Các tài khoản quản lý, nhân viên, kỹ thuật và quản trị hệ thống đã bỏ.
 
 ## Dữ liệu mô phỏng
 
-- Dữ liệu mẫu cố định quanh ngày tham chiếu **21/10/2026** (đơn vị An Cư: 3 cơ sở, 30 phòng; đơn vị Hòa Bình: 1 cơ sở), không dùng thông tin cá nhân hay giấy tờ thật. Mock dùng đồng hồ thật nên số ngày quá hạn tăng theo thời gian. Đổi seed thì tăng `SEED_VERSION` để trình duyệt tạo lại dữ liệu.
+- Dữ liệu mẫu cố định quanh ngày tham chiếu **21/10/2026** (một hệ thống chung: 4 cơ sở, 34 phòng), không dùng thông tin cá nhân hay giấy tờ thật. Mock dùng đồng hồ thật nên số ngày quá hạn tăng theo thời gian. Seed v7/v8 được chuyển sang v9, gộp cơ sở/danh mục và đổi role khách thành user; phiên cũ bị thu hồi.
 - Mọi thao tác ghi được lưu ở `localStorage` (khóa `smartrent.mock.db`) và cập nhật các màn hình liên quan.
 - **Đặt lại dữ liệu**: chạy `localStorage.removeItem('smartrent.mock.db')` trong Console của trình duyệt rồi tải lại trang.
 - Tệp tải lên (FilePond) được “quét an toàn” giả lập và lưu tạm trong trình duyệt. Ảnh được thu nhỏ trước khi lưu để còn sau khi tải lại trang; tệp khác lớn hơn 180 KB chỉ giữ trong phiên. Ảnh giấy tờ/hợp đồng mẫu là ảnh minh họa có ghi “không phải giấy tờ thật”.
-- Email, ngân hàng, ký số, hóa đơn điện tử, sao lưu và trợ lý AI đều là **mô phỏng**, giao diện ghi rõ nhãn “Mô phỏng”.
+- Email lời mời/reset và báo chuyển khoản là **mô phỏng**; chưa kết nối gửi mail hoặc đối soát ngân hàng thật. Một số handler cũ còn trong mock không có trang sử dụng.
+
+Database hiện hành: [13 bảng thu gọn theo các trang đang có](../database/README.md), [đối chiếu từng trang](../database/DOI_CHIEU_TUNG_TRANG.md). Database và mock/localStorage là hai nguồn độc lập; cần triển khai backend trước khi nối chúng. Hồ sơ khách nằm trong users; lịch xem/đề nghị trong bookings; hợp đồng trong contracts; điện nước/dòng tiền trong invoices; cọc/phân bổ trong payments; hội thoại trong tickets. Xem [adapter DTO](../docs/BACKEND_HANDOFF.md) và [JSONB](../database/JSON_DATA.md).
 
 ## Luồng làm việc của chủ trọ
 
@@ -74,7 +74,7 @@ Quên mật khẩu (mock): gửi yêu cầu ở `/forgot-password`, sau đó m�
 3. **Lịch xem phòng**: yêu cầu khách gửi từ trang tìm phòng hiện ở đây. Xếp lịch, ghi kết quả, bấm "Tạo hợp đồng".
 4. **Hợp đồng**: gắn khách với phòng trống, chốt giá, ghi cọc đã thu và số điện nước đầu kỳ, tải bản đã ký. Phòng chuyển sang đã thuê.
 5. **Tính tiền phòng**: chọn cơ sở và tháng, xem số tháng trước, nhập số tháng này, bấm tạo hóa đơn. Hóa đơn được phát hành ngay nên có ở trang Hóa đơn và trong tài khoản khách.
-6. **Hóa đơn**: ghi nhận thanh toán thủ công hoặc xác nhận khoản khách báo chuyển khoản. Sau này chỗ này sẽ nối API ngân hàng.
+6. **Hóa đơn**: ghi nhận thanh toán thủ công hoặc xác nhận khoản khách báo chuyển khoản. Hiện chưa tích hợp đối soát ngân hàng.
 
 Trả phòng và gia hạn nằm ở trang chi tiết hợp đồng. Lịch nhắc ngày nhập số và ngày tạo hóa đơn nằm ở Cài đặt.
 
@@ -88,7 +88,6 @@ Router dùng History API. Máy chủ tĩnh phải trả `index.html` cho mọi �
 | Xác thực | `/login`, `/register`, `/forgot-password`, `/reset-password?token=` |
 | Quản trị (`/admin`) | tổng quan; `properties` (thêm, chi tiết, sửa); `rooms` (thêm, chi tiết, sửa); `viewings`; `billing`; `tenants` (chi tiết); `contracts` (tạo, chi tiết); `invoices` (chi tiết); `tickets` (hộp thư hai cột); `settings` |
 | Khách, cần đăng nhập | `/invoices`, `/invoices/:id`, `/tickets`, `/tickets/new`, `/tickets/:id`, `/contract`, `/account`, `/notifications`. Chưa có phòng thì các trang này báo cần thuê phòng |
-| Hệ thống (`/system`) | đơn vị, `users`, `operations`, `notifications`, `account` |
 
 Danh sách đầy đủ ở `src/router/routes.js`; đối chiếu với đặc tả ở `../docs/FRONTEND_COVERAGE.md`.
 
@@ -122,8 +121,7 @@ src/
 │   │   ├── tickets/       # list.js, new.js, detail.js (trao đổi với quản lý)
 │   │   ├── contract.js, contact.js, account.js, not-found.js
 │   │   └── common.js      # chặn khi chưa có phòng, thẻ phòng, định dạng giá
-│   ├── shared/            # thông báo, tài khoản, hội thoại ticket
-│   └── system/            # quản trị hệ thống
+│   └── shared/            # thông báo và hội thoại ticket
 ├── styles/                # SCSS: token màu (CSS variables, sáng/tối), layout, component, vendor, in ấn; _admin.scss chỉ áp dụng trong .sr-admin, _customer.scss cho khu khách (.sr-site, .cu-*). SCSS trang ngoài nằm cạnh trang, bọc dưới body.sr-page-home
 └── utils/                 # ngày (Asia/Ho_Chi_Minh), tiền VND, HTML an toàn, CSV
 scripts/

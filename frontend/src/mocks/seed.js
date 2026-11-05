@@ -2,6 +2,7 @@
 // (email @example.com, điện thoại dạng 0900 000 xxx). Không chứa thông tin cá nhân thật.
 // Chứng từ được tạo qua engine.js nên tổng tiền, công nợ, cọc khớp nhau ở mọi màn hình.
 
+import { singleBusiness } from './single-business.js';
 import { stableUuid } from '../utils/ids.js';
 import { addDays, addMonths, vnDateTimeToInstant } from '../utils/date.js';
 import {
@@ -9,7 +10,7 @@ import {
   depositTransfer, ensureRatePlan, invoiceBalance, invoiceTotal, issueInvoice, notify, recordReading, tenancyContext,
 } from './engine.js';
 
-export const SEED_VERSION = 'v7-2026-11-01';
+export const SEED_VERSION = 'v9-admin-user-single-business';
 export const REFERENCE_TODAY = '2026-10-21';
 export const DEMO_PASSWORD = 'demo1234';
 
@@ -31,18 +32,13 @@ export const PERMISSIONS = [
   ['deposits.refund', 'Hoàn cọc'], ['deposits.offset', 'Bù trừ cọc'], ['deposits.transfer', 'Chuyển cọc giữa đợt thuê'],
   ['tickets.read', 'Xem ticket'], ['tickets.write', 'Tạo/trao đổi ticket'], ['tickets.assign', 'Phân công ticket'],
   ['tickets.close', 'Giải quyết/đóng/mở lại ticket'], ['expenses.read', 'Xem chi phí'], ['expenses.write', 'Ghi/đảo chi phí'],
-  ['reports.read', 'Xem báo cáo'], ['reports.export', 'Xuất dữ liệu đúng phạm vi'], ['members.read', 'Xem nhân sự'],
-  ['members.manage', 'Quản lý nhân sự/vai trò/phạm vi'], ['settings.manage', 'Quản lý cấu hình'], ['audit.read', 'Xem nhật ký'],
+  ['reports.read', 'Xem báo cáo'], ['reports.export', 'Xuất dữ liệu đúng phạm vi'],
+  ['settings.manage', 'Quản lý cấu hình'], ['audit.read', 'Xem nhật ký'],
   ['ai.read', 'Hỏi AI trong phạm vi được phép'], ['integrations.manage', 'Cấu hình tích hợp'],
 ].map(([code, description]) => ({ code, description }));
 
-const MANAGER_EXCLUDED = ['members.manage', 'settings.manage', 'integrations.manage', 'payments.reverse', 'deposits.refund', 'billing.unlock'];
-const STAFF_PERMS = ['properties.read', 'rooms.read', 'inquiries.read', 'inquiries.write', 'tenants.read', 'meters.read', 'meters.write',
-  'billing.read', 'invoices.read', 'payments.read', 'payments.report', 'tickets.read', 'tickets.write'];
-const TECH_PERMS = ['properties.read', 'rooms.read', 'tickets.read', 'tickets.write', 'tickets.close', 'meters.read', 'meters.write', 'meters.replace', 'expenses.read'];
-
 function emptyDb() {
-  const tables = ['organizations', 'users', 'memberships', 'businessRoles', 'permissions', 'properties', 'billingSettings', 'roomTypes',
+  const tables = ['organizations', 'users', 'memberships', 'permissions', 'properties', 'billingSettings', 'roomTypes',
     'amenities', 'rooms', 'roomAssets', 'roomListings', 'roomStatusEvents', 'tenants', 'identityDocuments', 'profileChangeRequests',
     'inquiries', 'inquiryEvents', 'viewings', 'roomAllocations', 'reservations', 'tenancies', 'residents', 'onboardingGaps', 'contracts',
     'contractVersions', 'contractTerminations', 'tenancyRequests', 'roomTransfers', 'handovers', 'settlements', 'chargeTypes', 'ratePlans',
@@ -50,7 +46,7 @@ function emptyDb() {
     'issueBatches', 'paymentMethods', 'bankAccounts', 'payments', 'paymentReversals', 'depositEntries', 'paymentAllocations',
     'ticketCategories', 'slaPolicies', 'tickets', 'ticketMessages', 'ticketEvents', 'expenseCategories', 'expenses', 'orgSettings',
     'emailConfigs', 'messageTemplates', 'reminderRules', 'notifications', 'deliveries', 'jobRuns', 'exportJobs', 'backupRuns',
-    'auditLogs', 'aiConversations', 'aiMessages', 'integrations', 'supportGrants', 'files', 'sessions'];
+    'auditLogs', 'aiConversations', 'aiMessages', 'integrations', 'files', 'sessions'];
   const db = Object.fromEntries(tables.map((t) => [t, []]));
   db.counters = {};
   db.idempotency = {};
@@ -69,49 +65,21 @@ export function buildSeed() {
   const user = (key, displayName, email, extra = {}) => {
     const u = {
       id: id(`user:${key}`), key, email, displayName, phone: extra.phone || null, isActive: extra.isActive ?? true,
-      systemRoles: extra.systemRoles || [], mockPassword: DEMO_PASSWORD, emailConfirmed: true, twoFactorEnabled: false,
+      role: extra.role || 'user', mockPassword: DEMO_PASSWORD, emailConfirmed: true, twoFactorEnabled: false,
       createdAt: extra.createdAt || at('2025-06-01'), lastLoginAt: null,
     };
     db.users.push(u);
     return u;
   };
-  const owner = user('owner', 'Trần Thu Hà', 'ha.chutro@example.com', { phone: '0900000001' });
-  const manager = user('manager', 'Lê Minh Quân', 'quan.quanly@example.com', { phone: '0900000002' });
-  const staff = user('staff', 'Phạm Ngọc Lan', 'lan.nhanvien@example.com', { phone: '0900000003' });
-  const tech = user('tech', 'Hoàng Đức Minh', 'minh.kythuat@example.com', { phone: '0900000004' });
-  const invited = user('invited', 'Ngô Thảo', 'thao.moi@example.com', { createdAt: at('2026-10-18') });
-  const suspended = user('suspended', 'Bùi Văn Tài', 'tai.tamkhoa@example.com');
-  const sysadmin = user('sysadmin', 'Quản trị hệ thống', 'admin@smartrent.example.com', { systemRoles: ['SystemAdmin'] });
-  const owner2 = user('owner2', 'Võ Thanh Tùng', 'tung.hoabinh@example.com');
+  const owner = user('owner', 'Trần Thu Hà', 'ha.chutro@example.com', { phone: '0900000001', role: 'admin' });
   const tenantUser = user('tenant', 'Nguyễn Văn An', 'an.khachthue@example.com', { phone: '0900000101' });
   const residentUser = user('resident', 'Đỗ Thị Bích', 'bich.oghep@example.com', { phone: '0900000102' });
 
-  // ------------------------------------------------------------ đơn vị và vai trò
+  // Các cơ sở đều do một tài khoản admin quản lý.
   const org = { id: id('org:ancu'), code: 'ANCU', name: 'Nhà trọ An Cư', legalName: 'Hộ kinh doanh Nhà trọ An Cư (demo)', taxCode: '0000000000-demo', phone: '0900000001', email: 'lienhe@ancu.example.com', isActive: true, createdAt: at('2025-06-01') };
   const org2 = { id: id('org:hoabinh'), code: 'HOABINH', name: 'Phòng trọ Hòa Bình', legalName: 'Phòng trọ Hòa Bình (demo)', taxCode: null, phone: '0900000201', email: 'lienhe@hoabinh.example.com', isActive: true, createdAt: at('2026-02-10') };
   db.organizations.push(org, org2);
 
-  const allCodes = PERMISSIONS.map((p) => p.code);
-  const roles = {};
-  for (const o of [org, org2]) {
-    const mk = (code, name, permissions, isSystem = true) => {
-      const role = { id: id(`role:${o.code}:${code}`), organizationId: o.id, code, name, permissions, isSystem };
-      db.businessRoles.push(role);
-      return role;
-    };
-    roles[o.code] = {
-      owner: mk('owner', 'Chủ trọ', [...allCodes]),
-      manager: mk('manager', 'Quản lý', allCodes.filter((c) => !MANAGER_EXCLUDED.includes(c))),
-      staff: mk('staff', 'Nhân viên', [...STAFF_PERMS]),
-    };
-  }
-  roles.ANCU.tech = (() => {
-    const role = { id: id('role:ANCU:tech'), organizationId: org.id, code: 'technician', name: 'Kỹ thuật', permissions: TECH_PERMS, isSystem: false };
-    db.businessRoles.push(role);
-    return role;
-  })();
-
-  // ------------------------------------------------------------ cơ sở
   const property = (key, o, code, name, line, locality, province, extra = {}) => {
     const p = {
       id: id(`property:${key}`), organizationId: o.id, code, name, address: { line, locality, province, latitude: extra.lat || null, longitude: extra.lng || null },
@@ -137,19 +105,11 @@ export function buildSeed() {
   });
 
   // ------------------------------------------------------------ nhân sự
-  const membership = (u, o, status, scope, roleList, propertyList = [], joinedAt = at('2025-06-01')) => {
-    db.memberships.push({ id: id(`membership:${o.code}:${u.key}`), organizationId: o.id, userId: u.id, status, propertyScope: scope, roleIds: roleList.map((r) => r.id), propertyIds: propertyList.map((p) => p.id), joinedAt, invitedAt: status === 'invited' ? at('2026-10-18', 14) : null });
-  };
-  membership(owner, org, 'active', 'all', [roles.ANCU.owner]);
-  membership(manager, org, 'active', 'assigned', [roles.ANCU.manager], [BT, TD], at('2025-07-01'));
-  membership(staff, org, 'active', 'assigned', [roles.ANCU.staff], [BT], at('2026-01-05'));
-  membership(tech, org, 'active', 'all', [roles.ANCU.tech], [], at('2026-03-01'));
-  membership(invited, org, 'invited', 'assigned', [roles.ANCU.staff], [CG], at('2026-10-18', 14));
-  membership(suspended, org, 'suspended', 'assigned', [roles.ANCU.staff], [TD], at('2025-09-01'));
-  membership(owner2, org2, 'active', 'all', [roles.HOABINH.owner], [], at('2026-02-10'));
-  membership(manager, org2, 'active', 'all', [roles.HOABINH.staff], [], at('2026-05-01'));
+  for (const o of db.organizations) {
+    db.memberships.push({ id: id(`membership:${o.code}:owner`), organizationId: o.id, userId: owner.id,
+      status: 'active', propertyScope: 'all', propertyIds: [], joinedAt: at('2025-06-01') });
+  }
 
-  // ------------------------------------------------------------ danh mục đơn vị (initialize_organization)
   for (const o of [org, org2]) {
     const ct = (code, name, category, unitLabel) => db.chargeTypes.push({ id: id(`charge:${o.code}:${code}`), organizationId: o.id, code, name, category, unitLabel, isActive: true });
     ct('RENT', 'Tiền thuê', 'rent', 'tháng');
@@ -312,7 +272,7 @@ export function buildSeed() {
   // Giá riêng phòng A101: rác 0 đ — giá 0 vẫn là giá hợp lệ và được ưu tiên hơn giá cơ sở.
   db.chargeRates.push({ id: id('rate:A101:GARBAGE'), ratePlanId: ensureRatePlan(db, { roomId: rooms.A101.id }).id, chargeTypeId: charge('GARBAGE').id, effectiveFrom: '2025-06-01', effectiveTo: null, unitPrice: 0, calculationMethod: 'fixed', billingCycle: 'monthly', prorationMode: 'actual_days' });
   db.roomStatusEvents.push(
-    { id: id('rse:A104'), roomId: rooms.A104.id, fromStatus: 'available', toStatus: 'maintenance', reason: 'Trần thấm nước sau mưa lớn, cần chống thấm (ticket SC-0001).', actorId: manager.id, occurredAt: at('2026-10-12', 10) },
+    { id: id('rse:A104'), roomId: rooms.A104.id, fromStatus: 'available', toStatus: 'maintenance', reason: 'Trần thấm nước sau mưa lớn, cần chống thấm (ticket SC-0001).', actorId: owner.id, occurredAt: at('2026-10-12', 10) },
     { id: id('rse:A304'), roomId: rooms.A304.id, fromStatus: 'available', toStatus: 'inactive', reason: 'Tạm ngừng khai thác để cải tạo thành phòng có gác.', actorId: owner.id, occurredAt: at('2026-08-15', 10) },
     { id: id('rse:C203'), roomId: rooms.C203.id, fromStatus: 'available', toStatus: 'maintenance', reason: 'Sơn lại tường và thay rèm sau khi khách trả phòng.', actorId: owner.id, occurredAt: at('2026-10-05', 15) },
   );
@@ -479,7 +439,7 @@ export function buildSeed() {
   // Chỉ số chốt khi chuyển sang SmartRent (cuối tháng 7) cho các đợt thuê bắt đầu trước tháng 8.
   const usage = { A102: [110, 4], A103: [150, 6], A201: [180, 5], A202: [220, 8], A203: [95, 3], A301: [160, 5], A302: [240, 9], B101: [120, 4], B102: [130, 5], B201: [140, 5], B202: [210, 7], B204: [125, 5], C101: [100, 4], C102: [115, 4], C201: [105, 4], C202: [230, 9], A101: [100, 3] };
   const meterValue = {};
-  const reading = (tenancyKey, roomCode, kind, value, date, periodKey, readingKind = 'periodic', actor = staff) => recordReading(db, ctxAt(at(date, 18), actor), {
+  const reading = (tenancyKey, roomCode, kind, value, date, periodKey, readingKind = 'periodic', actor = owner) => recordReading(db, ctxAt(at(date, 18), actor), {
     meterId: id(`meter:${roomCode}:${kind}`), observedAt: at(date, 18), readingValue: value, billingPeriodId: periodKey ? periods[periodKey].id : null,
     tenancyId: tenancies[tenancyKey].id, readingKind, recordedBy: actor.id,
   });
@@ -505,47 +465,47 @@ export function buildSeed() {
     reading(key, code, 'water', meterValue[code].w, date, `${db.properties.find((p) => p.id === rooms[code].propertyId).code}:${month}`, 'periodic', actor);
   };
   const augRooms = [['khoa', 'A102'], ['nhung', 'A103'], ['bao', 'A201'], ['huong', 'A202'], ['nam', 'A203'], ['trang', 'A301'], ['dung', 'A302'], ['huy_old', 'B101'], ['mai', 'B102'], ['loc', 'B201'], ['yen', 'B202'], ['vinh', 'B204'], ['hung', 'C101'], ['linh', 'C102'], ['son', 'C201']];
-  augRooms.forEach(([key, code]) => periodic(key, code, '2026-08', '2026-08-27', code.startsWith('A') ? staff : manager));
+  augRooms.forEach(([key, code]) => periodic(key, code, '2026-08', '2026-08-27', code.startsWith('A') ? owner : owner));
   // C202 nhận phòng 01/08: kỳ 8 dùng chỉ số nhận phòng làm đầu kỳ.
   meterValue.C202 = { e: 820, w: 95 };
   periodic('han', 'C202', '2026-08', '2026-08-27', owner);
 
   // Kỳ 9: A101 theo đúng ví dụ đặc tả (điện 100 → 200, nước 10 → 13).
-  reading('an', 'A101', 'electricity', 200, '2026-09-27', 'BT:2026-09', 'periodic', staff);
-  reading('an', 'A101', 'water', 13, '2026-09-27', 'BT:2026-09', 'periodic', staff);
+  reading('an', 'A101', 'electricity', 200, '2026-09-27', 'BT:2026-09', 'periodic', owner);
+  reading('an', 'A101', 'water', 13, '2026-09-27', 'BT:2026-09', 'periodic', owner);
   meterValue.A101 = { e: 200, w: 13 };
-  augRooms.filter(([key]) => key !== 'huy_old').forEach(([key, code]) => periodic(key, code, '2026-09', '2026-09-27', code.startsWith('A') ? staff : manager));
+  augRooms.filter(([key]) => key !== 'huy_old').forEach(([key, code]) => periodic(key, code, '2026-09', '2026-09-27', code.startsWith('A') ? owner : owner));
   periodic('han', 'C202', '2026-09', '2026-09-27', owner);
 
   // ------------------------------------------------------------ chuyển phòng B101 → B103 ngày 15/09
   {
     const old = tenancies.huy_old;
     const transferOn = '2026-09-15';
-    const outHandover = { id: id('handover:huy_old:out'), tenancyId: old.id, kind: 'transfer_out', occurredAt: at(transferOn, 8), notes: 'Bàn giao phòng cũ khi chuyển sang B103.', landlordConfirmedBy: manager.id, tenantConfirmedBy: null, confirmedAt: at(transferOn, 8, 30), representativeConfirmationText: 'Khách xác nhận trên biên bản giấy.', assets: [], fileIds: [] };
+    const outHandover = { id: id('handover:huy_old:out'), tenancyId: old.id, kind: 'transfer_out', occurredAt: at(transferOn, 8), notes: 'Bàn giao phòng cũ khi chuyển sang B103.', landlordConfirmedBy: owner.id, tenantConfirmedBy: null, confirmedAt: at(transferOn, 8, 30), representativeConfirmationText: 'Khách xác nhận trên biên bản giấy.', assets: [], fileIds: [] };
     db.handovers.push(outHandover);
     meterValue.B101.e += 55;
     meterValue.B101.w += 2;
-    const outE = recordReading(db, ctxAt(at(transferOn, 8), manager), { meterId: id('meter:B101:electricity'), observedAt: at(transferOn, 8), readingValue: meterValue.B101.e, tenancyId: old.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: manager.id });
-    const outW = recordReading(db, ctxAt(at(transferOn, 8), manager), { meterId: id('meter:B101:water'), observedAt: at(transferOn, 8), readingValue: meterValue.B101.w, tenancyId: old.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: manager.id });
+    const outE = recordReading(db, ctxAt(at(transferOn, 8), owner), { meterId: id('meter:B101:electricity'), observedAt: at(transferOn, 8), readingValue: meterValue.B101.e, tenancyId: old.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: owner.id });
+    const outW = recordReading(db, ctxAt(at(transferOn, 8), owner), { meterId: id('meter:B101:water'), observedAt: at(transferOn, 8), readingValue: meterValue.B101.w, tenancyId: old.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: owner.id });
     old.status = 'ended';
     old.actualMoveOut = transferOn;
     old.endReason = 'Chuyển sang phòng B103 rộng hơn';
-    old.endedBy = manager.id;
+    old.endedBy = owner.id;
     db.roomAllocations.find((a) => a.id === old.allocationId).state = 'completed';
     db.roomAllocations.find((a) => a.id === old.allocationId).endsOn = transferOn;
     seedTenancy('huy', { room: 'B103', tenant: 'huy', moveIn: transferOn, signedOn: '2026-09-13', predecessor: 'huy_old', readingsIn: [1400, 150], transferIn: true, handoverNotes: 'Nhận phòng B103 khi chuyển từ B101.' });
-    db.contractTerminations.push({ id: id('termination:huy_old'), contractId: id('contract:huy_old'), terminatedOn: transferOn, reason: 'Chấm dứt do chuyển sang phòng B103 (hợp đồng kế tiếp HDT mới).', confirmedBy: manager.id, createdAt: at(transferOn, 8) });
-    db.roomTransfers.push({ id: id('transfer:huy'), oldTenancyId: old.id, newTenancyId: tenancies.huy.id, transferOn, reason: 'Khách cần phòng rộng hơn cho gia đình.', confirmedBy: manager.id, createdAt: at(transferOn, 8) });
-    depositTransfer(db, ctxAt(at(transferOn, 8, 40), manager), { fromTenancyId: old.id, toTenancyId: tenancies.huy.id, amount: 2600000, reason: 'Chuyển cọc từ B101 sang B103' });
+    db.contractTerminations.push({ id: id('termination:huy_old'), contractId: id('contract:huy_old'), terminatedOn: transferOn, reason: 'Chấm dứt do chuyển sang phòng B103 (hợp đồng kế tiếp HDT mới).', confirmedBy: owner.id, createdAt: at(transferOn, 8) });
+    db.roomTransfers.push({ id: id('transfer:huy'), oldTenancyId: old.id, newTenancyId: tenancies.huy.id, transferOn, reason: 'Khách cần phòng rộng hơn cho gia đình.', confirmedBy: owner.id, createdAt: at(transferOn, 8) });
+    depositTransfer(db, ctxAt(at(transferOn, 8, 40), owner), { fromTenancyId: old.id, toTenancyId: tenancies.huy.id, amount: 2600000, reason: 'Chuyển cọc từ B101 sang B103' });
     usage.B103 = [160, 6];
     meterValue.B103 = { e: 1400, w: 150 };
     db._transferEndReadings = { electricity: outE.id, water: outW.id };
-    periodic('huy', 'B103', '2026-09', '2026-09-27', manager);
+    periodic('huy', 'B103', '2026-09', '2026-09-27', owner);
   }
 
   // Kỳ 10: đã ghi một phần (Thủ Đức ghi sớm, Bình Thạnh còn thiếu nhiều phòng, Cầu Giấy chưa ghi).
-  [['khoa', 'A102'], ['nhung', 'A103'], ['huong', 'A202']].forEach(([key, code]) => periodic(key, code, '2026-10', '2026-10-20', staff));
-  [['mai', 'B102'], ['loc', 'B201'], ['yen', 'B202'], ['huy', 'B103']].forEach(([key, code]) => periodic(key, code, '2026-10', '2026-10-20', manager));
+  [['khoa', 'A102'], ['nhung', 'A103'], ['huong', 'A202']].forEach(([key, code]) => periodic(key, code, '2026-10', '2026-10-20', owner));
+  [['mai', 'B102'], ['loc', 'B201'], ['yen', 'B202'], ['huy', 'B103']].forEach(([key, code]) => periodic(key, code, '2026-10', '2026-10-20', owner));
 
   // ------------------------------------------------------------ gia hạn A202: phụ lục v2 từ 01/10/2026 giá mới
   {
@@ -559,17 +519,17 @@ export function buildSeed() {
   }
 
   // ------------------------------------------------------------ hóa đơn + thu tiền
-  const pay = (tenantKey, amount, date, method = 'bank_transfer', ref = null, actor = manager, notes = null) => createPayment(db, ctxAt(at(date, 10), actor), {
+  const pay = (tenantKey, amount, date, method = 'bank_transfer', ref = null, actor = owner, notes = null) => createPayment(db, ctxAt(at(date, 10), actor), {
     tenantId: tenants[tenantKey].id, amount, receivedAt: at(date, 10), methodCode: method, status: 'confirmed', externalReference: ref, notes,
   });
   const settle = (inv, tenantKey, amount, date, method = 'bank_transfer', ref = null) => {
-    const ctx = ctxAt(at(date, 10), manager);
+    const ctx = ctxAt(at(date, 10), owner);
     const value = amount === 'full' ? invoiceTotal(inv) : amount;
     const payment = pay(tenantKey, value, date, method, ref);
     applyAllocation(db, ctx, { paymentId: payment.id, invoiceId: inv.id, amount: value });
     return payment;
   };
-  const issueFor = (tenancyKey, periodKey, issueDate, actor = manager) => {
+  const issueFor = (tenancyKey, periodKey, issueDate, actor = owner) => {
     const ctx = ctxAt(at(issueDate, 19), actor);
     const draft = createDraftInvoice(db, ctx, { tenancyId: tenancies[tenancyKey].id, periodId: periods[periodKey].id });
     issueInvoice(db, ctx, draft.id, {});
@@ -600,7 +560,7 @@ export function buildSeed() {
 
   // Hóa đơn cuối B101 (đến ngày chuyển 15/09) — ngày chuyển thuộc đợt thuê mới.
   {
-    const ctx = ctxAt(at('2026-09-15', 10), manager);
+    const ctx = ctxAt(at('2026-09-15', 10), owner);
     const final = createDraftInvoice(db, ctx, { tenancyId: tenancies.huy_old.id, kind: 'final', from: '2026-09-01', to: '2026-09-15', endReadings: db._transferEndReadings });
     issueInvoice(db, ctx, final.id, { issuedOn: '2026-09-15', dueOn: '2026-09-22' });
     settle(final, 'huy', 'full', '2026-09-16', 'bank_transfer', 'FT-DEMO-260916-02');
@@ -618,7 +578,7 @@ export function buildSeed() {
   settle(sep.nam, 'nam', 1000000, '2026-10-04', 'cash');
   settle(sep.han, 'han', 3000000, '2026-10-06', 'bank_transfer', 'FT-DEMO-261006-11');
   // Thu dư/ứng trước: khách C101 chuyển dư 500.000 → số dư chưa phân bổ, không tự thành doanh thu.
-  pay('hung', 500000, '2026-10-01', 'bank_transfer', 'FT-DEMO-261001-03', manager, 'Khách chuyển dư, chờ phân bổ cho kỳ sau.');
+  pay('hung', 500000, '2026-10-01', 'bank_transfer', 'FT-DEMO-261001-03', owner, 'Khách chuyển dư, chờ phân bổ cho kỳ sau.');
 
   // Báo chuyển khoản từ cổng khách: chờ xác minh, CHƯA cộng vào đã thu.
   db.payments.push({
@@ -630,7 +590,7 @@ export function buildSeed() {
   db.payments.push({
     id: id('payment:bao:rejected'), code: 'PT-2610-9002', tenantId: tenants.bao.id, reservationId: null, collectedAtPropertyId: BT.id, amount: 3000000,
     receivedAt: at('2026-10-07', 21), methodCode: 'bank_transfer', bankAccountId: id('bank:ancu'), externalReference: 'FT-DEMO-261007-19', status: 'rejected',
-    confirmedBy: null, confirmedAt: null, rejectionReason: 'Không tìm thấy giao dịch trong sao kê ngày 07–09/10; nhờ khách gửi lại ảnh có mã giao dịch.', reportedBy: staff.id,
+    confirmedBy: null, confirmedAt: null, rejectionReason: 'Không tìm thấy giao dịch trong sao kê ngày 07–09/10; nhờ khách gửi lại ảnh có mã giao dịch.', reportedBy: owner.id,
     notes: 'Khách báo qua điện thoại.', idempotencyKey: id('idem:bao:rejected'), createdAt: at('2026-10-08', 9), fileIds: [],
   });
 
@@ -638,13 +598,13 @@ export function buildSeed() {
   {
     const t = tenancies.vinh;
     const moveOut = '2026-10-10';
-    const outHandover = { id: id('handover:vinh:out'), tenancyId: t.id, kind: 'checkout', occurredAt: at(moveOut, 9), notes: 'Khóa cửa bị hư, đã thay ổ khóa mới. Phòng cần vệ sinh.', landlordConfirmedBy: manager.id, tenantConfirmedBy: null, confirmedAt: at(moveOut, 9, 30), representativeConfirmationText: 'Khách ký biên bản giấy.', assets: db.roomAssets.filter((a) => a.roomId === rooms.B204.id).map((a) => ({ roomAssetId: a.id, nameSnapshot: a.name, quantity: a.quantity, condition: a.code === 'GIUONG' ? 'Tốt' : 'Trầy xước nhẹ' })), fileIds: [] };
+    const outHandover = { id: id('handover:vinh:out'), tenancyId: t.id, kind: 'checkout', occurredAt: at(moveOut, 9), notes: 'Khóa cửa bị hư, đã thay ổ khóa mới. Phòng cần vệ sinh.', landlordConfirmedBy: owner.id, tenantConfirmedBy: null, confirmedAt: at(moveOut, 9, 30), representativeConfirmationText: 'Khách ký biên bản giấy.', assets: db.roomAssets.filter((a) => a.roomId === rooms.B204.id).map((a) => ({ roomAssetId: a.id, nameSnapshot: a.name, quantity: a.quantity, condition: a.code === 'GIUONG' ? 'Tốt' : 'Trầy xước nhẹ' })), fileIds: [] };
     db.handovers.push(outHandover);
     meterValue.B204.e += 48;
     meterValue.B204.w += 2;
-    const ctx = ctxAt(at(moveOut, 9), manager);
-    const outE = recordReading(db, ctx, { meterId: id('meter:B204:electricity'), observedAt: at(moveOut, 9), readingValue: meterValue.B204.e, tenancyId: t.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: manager.id });
-    const outW = recordReading(db, ctx, { meterId: id('meter:B204:water'), observedAt: at(moveOut, 9), readingValue: meterValue.B204.w, tenancyId: t.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: manager.id });
+    const ctx = ctxAt(at(moveOut, 9), owner);
+    const outE = recordReading(db, ctx, { meterId: id('meter:B204:electricity'), observedAt: at(moveOut, 9), readingValue: meterValue.B204.e, tenancyId: t.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: owner.id });
+    const outW = recordReading(db, ctx, { meterId: id('meter:B204:water'), observedAt: at(moveOut, 9), readingValue: meterValue.B204.w, tenancyId: t.id, handoverId: outHandover.id, readingKind: 'checkout', recordedBy: owner.id });
     t.actualMoveOut = moveOut;
     const final = createDraftInvoice(db, ctx, { tenancyId: t.id, kind: 'final', from: '2026-10-01', to: moveOut, endReadings: { electricity: outE.id, water: outW.id } });
     final.lines.push({ id: id('line:vinh:comp'), lineNo: final.lines.length + 1, chargeTypeId: charge('COMPENSATION').id, chargeInstanceId: null, sourceRateId: null, sourceScope: 'manual', descriptionSnapshot: 'Bồi thường thay ổ khóa cửa (có biên bản)', unitSnapshot: 'lần', quantity: 1, unitPrice: 150000, sign: 1, prorationNumerator: 1, prorationDenominator: 1 });
@@ -669,7 +629,7 @@ export function buildSeed() {
   }
 
   // Hóa đơn nháp kỳ 10 cho các phòng đã có chỉ số (A202 dùng giá phụ lục mới 4.400.000).
-  [['khoa', 'BT'], ['nhung', 'BT'], ['huong', 'BT'], ['mai', 'TD'], ['loc', 'TD']].forEach(([k, code]) => createDraftInvoice(db, ctxAt(at('2026-10-20', 20), manager), { tenancyId: tenancies[k].id, periodId: periods[`${code}:2026-10`].id }));
+  [['khoa', 'BT'], ['nhung', 'BT'], ['huong', 'BT'], ['mai', 'TD'], ['loc', 'TD']].forEach(([k, code]) => createDraftInvoice(db, ctxAt(at('2026-10-20', 20), owner), { tenancyId: tenancies[k].id, periodId: periods[`${code}:2026-10`].id }));
 
   // ------------------------------------------------------------ giữ chỗ, yêu cầu thuê, lịch xem
   const inquiry = (n, roomCode, contactName, status, createdAt, extra = {}) => {
@@ -686,23 +646,23 @@ export function buildSeed() {
   };
   inquiry(1, 'A204', 'Chị Hạnh', 'new', '2026-10-21T02:40:00.000Z', { email: 'hanh.timphong@example.com', occupants: 2, message: 'Phòng còn không ạ? Em muốn xem phòng cuối tuần này, ở 2 người.' });
   inquiry(2, 'B104', 'Anh Phúc', 'new', at('2026-10-20', 21, 10), { message: 'Cho em hỏi có chỗ để xe máy không?', desiredMoveIn: '2026-11-05' });
-  inquiry(3, 'A204', 'Bạn Thịnh', 'accepted', at('2026-10-18', 10), { assignedTo: staff, events: [['status', 'Tiếp nhận, hẹn gọi lại chiều nay.', 'accepted', staff, at('2026-10-18', 11)]] });
+  inquiry(3, 'A204', 'Bạn Thịnh', 'accepted', at('2026-10-18', 10), { assignedTo: owner, events: [['status', 'Tiếp nhận, hẹn gọi lại chiều nay.', 'accepted', owner, at('2026-10-18', 11)]] });
   inquiry(4, 'C104', 'Chị Ngân', 'consulting', at('2026-10-16', 14), { assignedTo: owner, occupants: 2, events: [['status', 'Tư vấn giá và phí dịch vụ qua điện thoại.', 'consulting', owner, at('2026-10-16', 15)], ['call', 'Khách cân nhắc thêm, hẹn trả lời trong tuần.', null, owner, at('2026-10-17', 9)]] });
-  const q5 = inquiry(5, 'B203', 'Anh Toàn', 'viewing', at('2026-10-19', 9), { assignedTo: manager, events: [['status', 'Hẹn xem phòng ngày mai lúc 18:00.', 'viewing', manager, at('2026-10-19', 10)]] });
-  const q6 = inquiry(6, 'A303', 'Ngô Thị Mai Anh', 'approved', at('2026-10-12', 9), { assignedTo: staff, tenant: 'maianh', occupants: 1, events: [['status', 'Khách đồng ý thuê, chờ giữ chỗ.', 'approved', manager, at('2026-10-14', 16)]] });
-  inquiry(7, 'B205', 'Mai Thị Lan Chi', 'converted', at('2026-10-05', 9), { assignedTo: manager, tenant: 'lanchi', occupants: 3, events: [['status', 'Đã ký hợp đồng, nhận phòng dự kiến 01/11.', 'converted', manager, at('2026-10-15', 17)]] });
+  const q5 = inquiry(5, 'B203', 'Anh Toàn', 'viewing', at('2026-10-19', 9), { assignedTo: owner, events: [['status', 'Hẹn xem phòng ngày mai lúc 18:00.', 'viewing', owner, at('2026-10-19', 10)]] });
+  const q6 = inquiry(6, 'A303', 'Ngô Thị Mai Anh', 'approved', at('2026-10-12', 9), { assignedTo: owner, tenant: 'maianh', occupants: 1, events: [['status', 'Khách đồng ý thuê, chờ giữ chỗ.', 'approved', owner, at('2026-10-14', 16)]] });
+  inquiry(7, 'B205', 'Mai Thị Lan Chi', 'converted', at('2026-10-05', 9), { assignedTo: owner, tenant: 'lanchi', occupants: 3, events: [['status', 'Đã ký hợp đồng, nhận phòng dự kiến 01/11.', 'converted', owner, at('2026-10-15', 17)]] });
   const q8 = inquiry(8, 'C103', 'Kiều Minh Tuấn', 'approved', at('2026-10-07', 9), { assignedTo: owner, tenant: 'tuan', events: [['status', 'Đồng ý thuê, giữ chỗ đến 15/10.', 'approved', owner, at('2026-10-08', 9)]] });
-  inquiry(9, 'B104', 'Chị Thơ', 'rejected', at('2026-10-10', 9), { occupants: 4, closedReason: 'Khách cần phòng cho 4 người, vượt sức chứa 2 người của phòng.', assignedTo: manager, events: [['status', 'Từ chối: vượt sức chứa.', 'rejected', manager, at('2026-10-10', 10)]] });
-  inquiry(10, 'A204', 'Anh Kiên', 'cancelled', at('2026-10-09', 9), { closedReason: 'Khách đã tìm được phòng khác.', assignedTo: staff, events: [['status', 'Khách báo hủy.', 'cancelled', staff, at('2026-10-11', 9)]] });
+  inquiry(9, 'B104', 'Chị Thơ', 'rejected', at('2026-10-10', 9), { occupants: 4, closedReason: 'Khách cần phòng cho 4 người, vượt sức chứa 2 người của phòng.', assignedTo: owner, events: [['status', 'Từ chối: vượt sức chứa.', 'rejected', owner, at('2026-10-10', 10)]] });
+  inquiry(10, 'A204', 'Anh Kiên', 'cancelled', at('2026-10-09', 9), { closedReason: 'Khách đã tìm được phòng khác.', assignedTo: owner, events: [['status', 'Khách báo hủy.', 'cancelled', owner, at('2026-10-11', 9)]] });
   db.viewings.push(
-    { id: id('viewing:5'), inquiryId: q5.id, startsAt: at('2026-10-22', 18), endsAt: at('2026-10-22', 18, 30), hostUserId: manager.id, status: 'scheduled', resultNotes: null },
-    { id: id('viewing:6'), inquiryId: q6.id, startsAt: at('2026-10-13', 17), endsAt: at('2026-10-13', 17, 30), hostUserId: staff.id, status: 'completed', resultNotes: 'Khách thích ban công, hỏi về giờ giấc.' },
+    { id: id('viewing:5'), inquiryId: q5.id, startsAt: at('2026-10-22', 18), endsAt: at('2026-10-22', 18, 30), hostUserId: owner.id, status: 'scheduled', resultNotes: null },
+    { id: id('viewing:6'), inquiryId: q6.id, startsAt: at('2026-10-13', 17), endsAt: at('2026-10-13', 17, 30), hostUserId: owner.id, status: 'completed', resultNotes: 'Khách thích ban công, hỏi về giờ giấc.' },
     { id: id('viewing:4'), inquiryId: id('inquiry:4'), startsAt: at('2026-10-17', 10), endsAt: at('2026-10-17', 10, 30), hostUserId: owner.id, status: 'completed', resultNotes: 'Khách xem cùng bạn, cân nhắc giá.' },
-    { id: id('viewing:3'), inquiryId: id('inquiry:3'), startsAt: at('2026-10-19', 17), endsAt: at('2026-10-19', 17, 30), hostUserId: staff.id, status: 'no_show', resultNotes: 'Khách không đến, không nghe máy.' },
+    { id: id('viewing:3'), inquiryId: id('inquiry:3'), startsAt: at('2026-10-19', 17), endsAt: at('2026-10-19', 17, 30), hostUserId: owner.id, status: 'no_show', resultNotes: 'Khách không đến, không nghe máy.' },
   );
   {
     const held = createAllocation(db, { roomId: rooms.A303.id, startsOn: '2026-11-01', endsOn: '2027-11-01', state: 'held', holdExpiresAt: at('2026-10-25', 20) });
-    db.reservations.push({ id: id('reservation:1'), code: 'GC-0001', inquiryId: q6.id, allocationId: held.id, tenantId: tenants.maianh.id, status: 'holding', cancellationTerms: 'Giữ chỗ miễn phí đến 20:00 ngày 25/10/2026. Quá hạn chưa ký hợp đồng thì phòng được mở lại cho khách khác. (Chính sách thu tiền giữ chỗ chưa chốt — xem tài liệu bàn giao.)', cancelledReason: null, handledBy: staff.id, createdAt: at('2026-10-14', 17) });
+    db.reservations.push({ id: id('reservation:1'), code: 'GC-0001', inquiryId: q6.id, allocationId: held.id, tenantId: tenants.maianh.id, status: 'holding', cancellationTerms: 'Giữ chỗ miễn phí đến 20:00 ngày 25/10/2026. Quá hạn chưa ký hợp đồng thì phòng được mở lại cho khách khác. (Chính sách thu tiền giữ chỗ chưa chốt — xem tài liệu bàn giao.)', cancelledReason: null, handledBy: owner.id, createdAt: at('2026-10-14', 17) });
     const expired = createAllocation(db, { roomId: rooms.C103.id, startsOn: '2026-10-20', endsOn: '2027-10-20', state: 'held', holdExpiresAt: at('2026-10-15', 20) });
     expired.state = 'released';
     db.reservations.push({ id: id('reservation:2'), code: 'GC-0002', inquiryId: q8.id, allocationId: expired.id, tenantId: tenants.tuan.id, status: 'expired', cancellationTerms: 'Giữ chỗ miễn phí đến 20:00 ngày 15/10/2026.', cancelledReason: null, handledBy: owner.id, createdAt: at('2026-10-08', 9) });
@@ -729,7 +689,7 @@ export function buildSeed() {
     const policy = db.slaPolicies.find((s) => s.organizationId === p.organizationId && s.priority === priority);
     const t = {
       id: id(`ticket:${ticketSeq}`), code: `SC-${String(ticketSeq).padStart(4, '0')}`, roomId: r.id, tenancyId: tenancyKey ? tenancies[tenancyKey].id : null,
-      categoryId: id(`tcat:${p.organizationId === org.id ? 'ANCU' : 'HOABINH'}:${category}`), title, description, priority, status, reportedBy: (extra.reporter || staff).id,
+      categoryId: id(`tcat:${p.organizationId === org.id ? 'ANCU' : 'HOABINH'}:${category}`), title, description, priority, status, reportedBy: (extra.reporter || owner).id,
       assignedTo: extra.assignee?.id || null, slaPolicyId: policy.id, dueAt: extra.dueAt || new Date(new Date(createdAt).getTime() + policy.targetHours * 3600000).toISOString(),
       resolvedAt: extra.resolvedAt || null, closedAt: extra.closedAt || null, resolutionNotes: extra.resolution || null, createdAt, fileIds: [],
     };
@@ -740,30 +700,30 @@ export function buildSeed() {
     return t;
   };
   ticket('A104', null, 'REPAIR', 'Trần phòng A104 thấm nước khi mưa', 'Vệt ố lớn ở góc trần gần cửa sổ, nước nhỏ giọt khi mưa to.', 'high', 'in_progress', at('2026-10-12', 8), {
-    assignee: tech, events: [['assign', 'new', 'accepted', manager, at('2026-10-12', 9), null, tech], ['status', 'accepted', 'in_progress', tech, at('2026-10-13', 8)]],
-    messages: [[tech, 'Đã kiểm tra, cần chống thấm mái tôn phía trên. Dự kiến xong trong 3 ngày.', false, at('2026-10-13', 9)], [manager, 'Báo giá thợ 1.200.000 đ, đã duyệt.', true, at('2026-10-13', 11)]],
+    assignee: owner, events: [['assign', 'new', 'accepted', owner, at('2026-10-12', 9), null, owner], ['status', 'accepted', 'in_progress', owner, at('2026-10-13', 8)]],
+    messages: [[owner, 'Đã kiểm tra, cần chống thấm mái tôn phía trên. Dự kiến xong trong 3 ngày.', false, at('2026-10-13', 9)], [owner, 'Báo giá thợ 1.200.000 đ, đã duyệt.', true, at('2026-10-13', 11)]],
     dueAt: at('2026-10-12', 20),
   });
   ticket('A101', 'an', 'PLUMBING', 'Vòi sen bị rỉ nước', 'Vòi sen trong nhà tắm rỉ nước liên tục kể cả khi khóa chặt.', 'normal', 'new', at('2026-10-20', 21, 30), { reporter: tenantUser, messages: [[tenantUser, 'Em gửi ảnh vòi sen ạ, nước rỉ cả đêm.', false, at('2026-10-20', 21, 31)]] });
-  ticket('A203', 'nam', 'ELECTRICAL', 'Ổ cắm gần bàn học mất điện', 'Ổ cắm đôi gần bàn học không có điện, các ổ khác bình thường.', 'urgent', 'accepted', at('2026-10-20', 7), { assignee: tech, events: [['assign', 'new', 'accepted', staff, at('2026-10-20', 8), null, tech]] });
-  ticket('B102', 'mai', 'OTHER', 'Wi-Fi chập chờn buổi tối', 'Từ 20:00 đến 23:00 mạng rất chậm, hay mất kết nối.', 'normal', 'waiting', at('2026-10-15', 20), { assignee: manager, events: [['assign', 'new', 'accepted', manager, at('2026-10-16', 8), null, manager], ['status', 'accepted', 'in_progress', manager, at('2026-10-16', 9)], ['status', 'in_progress', 'waiting', manager, at('2026-10-17', 9), 'Chờ nhà mạng đến kiểm tra đường truyền.']], messages: [[manager, 'Đã gọi nhà mạng, hẹn thứ Năm đến kiểm tra.', false, at('2026-10-17', 9)]] });
-  ticket('B201', 'loc', 'REPAIR', 'Cửa sổ bị kẹt không mở được', 'Bản lề cửa sổ bị gỉ, rất khó mở.', 'low', 'resolved', at('2026-10-08', 10), { assignee: tech, resolvedAt: at('2026-10-10', 15), resolution: 'Đã thay bản lề mới và tra dầu.', events: [['assign', 'new', 'accepted', manager, at('2026-10-08', 11), null, tech], ['status', 'accepted', 'resolved', tech, at('2026-10-10', 15)]] });
-  ticket('C101', 'hung', 'ELECTRICAL', 'Bóng đèn hành lang tầng 1 hỏng', 'Hành lang tối vào buổi tối.', 'normal', 'closed', at('2026-10-02', 19), { assignee: tech, resolvedAt: at('2026-10-03', 10), closedAt: at('2026-10-03', 18), resolution: 'Đã thay bóng LED 18W.', events: [['assign', 'new', 'accepted', owner, at('2026-10-02', 20), null, tech], ['status', 'accepted', 'resolved', tech, at('2026-10-03', 10)], ['status', 'resolved', 'closed', owner, at('2026-10-03', 18)]] });
+  ticket('A203', 'nam', 'ELECTRICAL', 'Ổ cắm gần bàn học mất điện', 'Ổ cắm đôi gần bàn học không có điện, các ổ khác bình thường.', 'urgent', 'accepted', at('2026-10-20', 7), { assignee: owner, events: [['assign', 'new', 'accepted', owner, at('2026-10-20', 8), null, owner]] });
+  ticket('B102', 'mai', 'OTHER', 'Wi-Fi chập chờn buổi tối', 'Từ 20:00 đến 23:00 mạng rất chậm, hay mất kết nối.', 'normal', 'waiting', at('2026-10-15', 20), { assignee: owner, events: [['assign', 'new', 'accepted', owner, at('2026-10-16', 8), null, owner], ['status', 'accepted', 'in_progress', owner, at('2026-10-16', 9)], ['status', 'in_progress', 'waiting', owner, at('2026-10-17', 9), 'Chờ nhà mạng đến kiểm tra đường truyền.']], messages: [[owner, 'Đã gọi nhà mạng, hẹn thứ Năm đến kiểm tra.', false, at('2026-10-17', 9)]] });
+  ticket('B201', 'loc', 'REPAIR', 'Cửa sổ bị kẹt không mở được', 'Bản lề cửa sổ bị gỉ, rất khó mở.', 'low', 'resolved', at('2026-10-08', 10), { assignee: owner, resolvedAt: at('2026-10-10', 15), resolution: 'Đã thay bản lề mới và tra dầu.', events: [['assign', 'new', 'accepted', owner, at('2026-10-08', 11), null, owner], ['status', 'accepted', 'resolved', owner, at('2026-10-10', 15)]] });
+  ticket('C101', 'hung', 'ELECTRICAL', 'Bóng đèn hành lang tầng 1 hỏng', 'Hành lang tối vào buổi tối.', 'normal', 'closed', at('2026-10-02', 19), { assignee: owner, resolvedAt: at('2026-10-03', 10), closedAt: at('2026-10-03', 18), resolution: 'Đã thay bóng LED 18W.', events: [['assign', 'new', 'accepted', owner, at('2026-10-02', 20), null, owner], ['status', 'accepted', 'resolved', owner, at('2026-10-03', 10)], ['status', 'resolved', 'closed', owner, at('2026-10-03', 18)]] });
   ticket('A102', 'khoa', 'REPAIR', 'Máy lạnh không mát', 'Máy lạnh chạy nhưng không mát, có tiếng kêu.', 'high', 'accepted', at('2026-10-06', 9), {
-    assignee: tech, resolvedAt: null, events: [['assign', 'new', 'accepted', manager, at('2026-10-06', 10), null, tech], ['status', 'accepted', 'resolved', tech, at('2026-10-07', 16)], ['status', 'resolved', 'closed', manager, at('2026-10-08', 9)], ['reopen', 'closed', 'accepted', manager, at('2026-10-19', 9), 'Khách báo máy lạnh lại không mát sau 10 ngày.']],
-    messages: [[tech, 'Đã vệ sinh và bơm gas.', false, at('2026-10-07', 16)], [manager, 'Mở lại theo phản ánh mới của khách; kiểm tra block.', true, at('2026-10-19', 9)]], dueAt: at('2026-10-19', 21),
+    assignee: owner, resolvedAt: null, events: [['assign', 'new', 'accepted', owner, at('2026-10-06', 10), null, owner], ['status', 'accepted', 'resolved', owner, at('2026-10-07', 16)], ['status', 'resolved', 'closed', owner, at('2026-10-08', 9)], ['reopen', 'closed', 'accepted', owner, at('2026-10-19', 9), 'Khách báo máy lạnh lại không mát sau 10 ngày.']],
+    messages: [[owner, 'Đã vệ sinh và bơm gas.', false, at('2026-10-07', 16)], [owner, 'Mở lại theo phản ánh mới của khách; kiểm tra block.', true, at('2026-10-19', 9)]], dueAt: at('2026-10-19', 21),
   });
-  ticket('C203', null, 'REPAIR', 'Sơn lại tường phòng C203', 'Sơn lại toàn bộ tường, thay rèm trước khi cho thuê lại.', 'low', 'in_progress', at('2026-10-05', 15), { reporter: owner, assignee: tech, events: [['assign', 'new', 'accepted', owner, at('2026-10-05', 16), null, tech], ['status', 'accepted', 'in_progress', tech, at('2026-10-07', 8)]] });
+  ticket('C203', null, 'REPAIR', 'Sơn lại tường phòng C203', 'Sơn lại toàn bộ tường, thay rèm trước khi cho thuê lại.', 'low', 'in_progress', at('2026-10-05', 15), { reporter: owner, assignee: owner, events: [['assign', 'new', 'accepted', owner, at('2026-10-05', 16), null, owner], ['status', 'accepted', 'in_progress', owner, at('2026-10-07', 8)]] });
   db.counters.ticket = ticketSeq;
 
   // ------------------------------------------------------------ chi phí (phân hệ mở rộng)
   db.expenses.push(
-    { id: id('expense:1'), propertyId: BT.id, roomId: rooms.A104.id, ticketId: id('ticket:1'), categoryId: id('ecat:ANCU:REPAIR'), amount: 1200000, incurredOn: '2026-10-14', paidAt: at('2026-10-14', 16), description: 'Chống thấm mái tôn phòng A104', evidenceFileId: null, recordedBy: manager.id, reversalOfId: null, reason: null, createdAt: at('2026-10-14', 16) },
-    { id: id('expense:2'), propertyId: CG.id, roomId: null, ticketId: id('ticket:6'), categoryId: id('ecat:ANCU:REPAIR'), amount: 85000, incurredOn: '2026-10-03', paidAt: at('2026-10-03', 10), description: 'Bóng LED hành lang', evidenceFileId: null, recordedBy: tech.id, reversalOfId: null, reason: null, createdAt: at('2026-10-03', 11) },
+    { id: id('expense:1'), propertyId: BT.id, roomId: rooms.A104.id, ticketId: id('ticket:1'), categoryId: id('ecat:ANCU:REPAIR'), amount: 1200000, incurredOn: '2026-10-14', paidAt: at('2026-10-14', 16), description: 'Chống thấm mái tôn phòng A104', evidenceFileId: null, recordedBy: owner.id, reversalOfId: null, reason: null, createdAt: at('2026-10-14', 16) },
+    { id: id('expense:2'), propertyId: CG.id, roomId: null, ticketId: id('ticket:6'), categoryId: id('ecat:ANCU:REPAIR'), amount: 85000, incurredOn: '2026-10-03', paidAt: at('2026-10-03', 10), description: 'Bóng LED hành lang', evidenceFileId: null, recordedBy: owner.id, reversalOfId: null, reason: null, createdAt: at('2026-10-03', 11) },
     { id: id('expense:3'), propertyId: BT.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:UTILITY'), amount: 12500000, incurredOn: '2026-10-05', paidAt: at('2026-10-05', 9), description: 'Tiền điện đầu vào tháng 9 (hóa đơn điện lực)', evidenceFileId: null, recordedBy: owner.id, reversalOfId: null, reason: null, createdAt: at('2026-10-05', 9) },
-    { id: id('expense:4'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 300000, incurredOn: '2026-10-06', paidAt: null, description: 'Vệ sinh sân phơi (ghi nhầm số tiền)', evidenceFileId: null, recordedBy: manager.id, reversalOfId: null, reason: null, createdAt: at('2026-10-06', 9) },
-    { id: id('expense:5'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 300000, incurredOn: '2026-10-06', paidAt: null, description: 'Đảo bút toán vệ sinh sân phơi ghi nhầm', evidenceFileId: null, recordedBy: manager.id, reversalOfId: id('expense:4'), reason: 'Ghi nhầm số tiền, đúng là 200.000 đ.', createdAt: at('2026-10-06', 10) },
-    { id: id('expense:6'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 200000, incurredOn: '2026-10-06', paidAt: at('2026-10-06', 17), description: 'Vệ sinh sân phơi', evidenceFileId: null, recordedBy: manager.id, reversalOfId: null, reason: null, createdAt: at('2026-10-06', 10, 5) },
+    { id: id('expense:4'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 300000, incurredOn: '2026-10-06', paidAt: null, description: 'Vệ sinh sân phơi (ghi nhầm số tiền)', evidenceFileId: null, recordedBy: owner.id, reversalOfId: null, reason: null, createdAt: at('2026-10-06', 9) },
+    { id: id('expense:5'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 300000, incurredOn: '2026-10-06', paidAt: null, description: 'Đảo bút toán vệ sinh sân phơi ghi nhầm', evidenceFileId: null, recordedBy: owner.id, reversalOfId: id('expense:4'), reason: 'Ghi nhầm số tiền, đúng là 200.000 đ.', createdAt: at('2026-10-06', 10) },
+    { id: id('expense:6'), propertyId: TD.id, roomId: null, ticketId: null, categoryId: id('ecat:ANCU:OPERATION'), amount: 200000, incurredOn: '2026-10-06', paidAt: at('2026-10-06', 17), description: 'Vệ sinh sân phơi', evidenceFileId: null, recordedBy: owner.id, reversalOfId: null, reason: null, createdAt: at('2026-10-06', 10, 5) },
   );
 
   // ------------------------------------------------------------ cấu hình, mẫu nhắc, tác vụ nền
@@ -802,7 +762,6 @@ export function buildSeed() {
     { id: id('backup:2'), organizationId: null, kind: 'restore_test', status: 'succeeded', reference: 'MÔ PHỎNG – khôi phục thử', startedAt: at('2026-10-01', 3), finishedAt: at('2026-10-01', 3, 25), note: 'Bản ghi minh họa cho lần kiểm tra khôi phục định kỳ.' },
   );
   ['bank', 'payment_gateway', 'esign', 'tax_invoice'].forEach((kind) => db.integrations.push({ id: id(`integration:${kind}`), organizationId: org.id, kind, provider: null, status: 'not_configured', settings: {}, secretRef: null, updatedAt: null }));
-  db.supportGrants.push({ id: id('grant:1'), organizationId: org.id, grantedTo: sysadmin.id, grantedBy: owner.id, reason: 'Hỗ trợ kiểm tra lỗi phát hành hàng loạt kỳ 9.', startsAt: at('2026-10-20', 9), expiresAt: at('2026-10-23', 18), revokedAt: null });
 
   // ------------------------------------------------------------ AI mẫu
   db.aiConversations.push({ id: id('ai:1'), organizationId: org.id, userId: owner.id, title: 'Phòng trống tháng 11', createdAt: at('2026-10-19', 20), dataScope: { properties: 'all', period: '2026-10' } });
@@ -812,8 +771,8 @@ export function buildSeed() {
   );
 
   // ------------------------------------------------------------ thông báo và nhật ký
-  const staffIds = [owner.id, manager.id];
-  notify(db, { organizationId: org.id, recipientIds: [...staffIds, staff.id], eventKey: 'inquiry:1', title: 'Yêu cầu thuê mới YC-0001', body: 'Chị Hạnh hỏi phòng A204, muốn xem cuối tuần.', url: `/admin/viewings?inquiry=${id('inquiry:1')}`, at: '2026-10-21T02:41:00.000Z' });
+  const staffIds = [owner.id, owner.id];
+  notify(db, { organizationId: org.id, recipientIds: [...staffIds, owner.id], eventKey: 'inquiry:1', title: 'Yêu cầu thuê mới YC-0001', body: 'Chị Hạnh hỏi phòng A204, muốn xem cuối tuần.', url: `/admin/viewings?inquiry=${id('inquiry:1')}`, at: '2026-10-21T02:41:00.000Z' });
   notify(db, { organizationId: org.id, recipientIds: staffIds, eventKey: 'payment.reported:an', title: 'Khách báo chuyển khoản 1.655.000 đ', body: 'Nguyễn Văn An (A101) báo đã chuyển, chờ xác minh.', url: '/admin/invoices?hasPending=true', at: at('2026-10-20', 20, 16) });
   notify(db, { organizationId: org.id, recipientIds: staffIds, eventKey: 'ticket.overdue:3', title: 'SC-0003 quá hạn xử lý', body: 'Ổ cắm A203 mất điện, ưu tiên khẩn cấp (4 giờ).', url: `/admin/tickets/${id('ticket:3')}`, at: at('2026-10-20', 11) });
   notify(db, { organizationId: org.id, recipientIds: staffIds, eventKey: 'contract.expiring:bao', title: 'Hợp đồng A201 hết hạn 31/10/2026', body: 'Phạm Quốc Bảo: còn 11 ngày. Liên hệ gia hạn hoặc chuẩn bị trả phòng.', url: `/admin/contracts/${id('contract:bao')}`, at: at('2026-10-21', 8) });
@@ -824,7 +783,7 @@ export function buildSeed() {
   audit(db, ctxAt(at('2026-09-10', 17)), { action: 'billing_period.lock', tableName: 'billing_periods', recordId: periods['BT:2026-08'].id, after: { status: 'locked' }, reason: 'Đã đối soát thu tiền tháng 8.' });
   audit(db, ctxAt(at('2026-09-12', 9)), { action: 'billing_period.unlock', tableName: 'billing_periods', recordId: periods['TD:2026-08'].id, before: { status: 'locked' }, after: { status: 'open' }, reason: 'Mở lại để kiểm tra chỉ số nước B204 theo phản ánh của khách.' });
   audit(db, ctxAt(at('2026-08-25', 10)), { action: 'charge_rate.change', tableName: 'charge_rates', recordId: id('rate:BT:WATER:2026-09-01'), before: { unitPrice: 22000 }, after: { unitPrice: 25000, effectiveFrom: '2026-09-01' }, reason: 'Điều chỉnh giá nước theo giá đầu vào mới.' });
-  audit(db, ctxAt(at('2026-10-02', 10), manager), { action: 'payment.confirm', tableName: 'payments', recordId: anPayment.id, after: { amount: 2000000, allocatedTo: sep.an.code } });
+  audit(db, ctxAt(at('2026-10-02', 10), owner), { action: 'payment.confirm', tableName: 'payments', recordId: anPayment.id, after: { amount: 2000000, allocatedTo: sep.an.code } });
 
-  return db;
+  return singleBusiness(db);
 }

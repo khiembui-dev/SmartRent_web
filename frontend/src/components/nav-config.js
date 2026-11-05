@@ -37,19 +37,7 @@ export const ADMIN_NAV = [
   },
 ];
 
-export const SYSTEM_NAV = [
-  {
-    title: 'Quản trị hệ thống',
-    items: [
-      { path: '/system', label: 'Đơn vị chủ trọ', icon: 'buildings', exact: true },
-      { path: '/system/users', label: 'Tài khoản', icon: 'people' },
-      { path: '/system/operations', label: 'Hỗ trợ & vận hành', icon: 'hdd-stack' },
-      { path: '/system/notifications', label: 'Thông báo', icon: 'bell' },
-    ],
-  },
-];
-
-// Menu khu khách hàng. member: chỉ hiện khi đã đăng nhập; finance: người ở cùng không có nghĩa vụ thanh toán nên không hiện.
+// Menu trang khách hàng.
 export const CUSTOMER_NAV = [
   { path: '/rooms', label: 'Thuê phòng', icon: 'door-open' },
   { path: '/invoices', label: 'Hóa đơn', icon: 'receipt', member: true, finance: true },

@@ -46,7 +46,7 @@ function createSignedContract(ctx, { tenancy, tenant, property, contract, signat
     archivedAt: null, createdBy: ctx.user.id, createdAt: ctx.now,
   };
   db.contracts.push(record);
-  const landlord = find(db.users, find(db.memberships, db.memberships.find((m) => m.organizationId === ctx.organizationId && m.roleIds.some((rid) => find(db.businessRoles, rid)?.code === 'owner'))?.id)?.userId) || ctx.user;
+  const landlord = ctx.user;
   const version = {
     id: uuid(), contractId: record.id, versionNo: 1, effectiveFrom, endsOn: contract.endsOn, requiredDeposit: contract.requiredDeposit, invoiceDay: contract.invoiceDay,
     dueAfterDays: contract.dueAfterDays, prorationPolicy: contract.prorationPolicy, termsText: contract.termsText, changeReason: contract.changeReason || null,

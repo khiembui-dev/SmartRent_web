@@ -1,940 +1,513 @@
--- SmartRent: view số liệu, hàm tính giá, trigger bảo vệ dữ liệu.
--- Mọi số suy ra (tổng hóa đơn, đã thu, còn nợ, cọc đang giữ, trạng thái ở) chỉ có một nguồn là các view ở đây.
 BEGIN;
-SET LOCAL search_path = smartrent, public;
-
-CREATE FUNCTION vn_today() RETURNS date LANGUAGE sql STABLE AS $$
-  SELECT (now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date
+SET search_path=smartrent,public;
+CREATE SEQUENCE document_codes;
+CREATE FUNCTION next_code(prefix text) RETURNS text LANGUAGE sql VOLATILE AS $$
+ SELECT prefix||'-'||lpad(nextval('smartrent.document_codes')::text,8,'0')
 $$;
+CREATE FUNCTION request_user_id() RETURNS uuid LANGUAGE sql STABLE AS $$
+ SELECT nullif(current_setting('smartrent.user_id',true),'')::uuid
+$$;
+CREATE FUNCTION require_admin(uid uuid) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN IF NOT EXISTS(SELECT 1 FROM users WHERE id=uid AND role='admin' AND is_active) THEN
+ RAISE EXCEPTION 'admin_required' USING ERRCODE='23514'; END IF; END $$;
+CREATE FUNCTION require_customer(uid uuid) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN PERFORM 1 FROM users WHERE id=uid AND role='user' FOR KEY SHARE;
+IF NOT FOUND THEN
+ RAISE EXCEPTION 'customer_required' USING ERRCODE='23514'; END IF; END $$;
+CREATE FUNCTION lock_customer(uid uuid) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN PERFORM 1 FROM users WHERE id=uid FOR NO KEY UPDATE; END $$;
+CREATE FUNCTION require_files(ids jsonb, public_only boolean DEFAULT false) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE v jsonb; f files;
+BEGIN
+ IF jsonb_typeof(ids) IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'file_ids_must_be_array' USING ERRCODE='23514'; END IF;
+ FOR v IN SELECT value FROM jsonb_array_elements(ids) LOOP
+  SELECT * INTO f FROM files WHERE id=(v#>>'{}')::uuid FOR SHARE;
+  IF f.id IS NULL OR f.scan_status<>'clean' OR (public_only AND f.visibility<>'public') OR (NOT public_only AND f.visibility<>'private') THEN
+   RAISE EXCEPTION 'invalid_file_reference' USING ERRCODE='23514'; END IF;
+ END LOOP;
+END $$;
+CREATE FUNCTION unique_json_keys(items jsonb, key_name text) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(items) x WHERE jsonb_typeof(x)<>'object' OR nullif(x->>key_name,'') IS NULL)
+ OR (SELECT count(*)<>count(DISTINCT x->>key_name) FROM jsonb_array_elements(items) x) THEN
+  RAISE EXCEPTION 'invalid_or_duplicate_json_key: %',key_name USING ERRCODE='23514'; END IF;
+END $$;
+CREATE FUNCTION require_json_fields(item jsonb, fields text[]) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+ IF jsonb_typeof(item) IS DISTINCT FROM 'object' OR EXISTS(
+  SELECT 1 FROM unnest(fields) k WHERE NOT item ? k OR item->k='null'::jsonb OR nullif(btrim(item->>k),'') IS NULL
+ ) THEN RAISE EXCEPTION 'missing_json_field' USING ERRCODE='23514'; END IF;
+END $$;
+CREATE FUNCTION validate_rates(items jsonb) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE x jsonb;
+BEGIN
+ PERFORM unique_json_keys(items,'id');
+ FOR x IN SELECT value FROM jsonb_array_elements(items) LOOP
+  PERFORM require_json_fields(x,ARRAY['code','name','unit','category','method','cycle','unitPrice','effectiveFrom']);
+  IF NOT x ?& ARRAY['id','code','name','unit','category','method','cycle','unitPrice','effectiveFrom']
+    OR jsonb_typeof(x->'unitPrice') IS DISTINCT FROM 'number'
+    OR (x->>'unitPrice')::numeric<0 OR (x->>'unitPrice')::numeric<>trunc((x->>'unitPrice')::numeric)
+    OR x->>'category' NOT IN ('rent','electricity','water','service','other')
+    OR x->>'method' NOT IN ('fixed','metered','per_person','per_quantity')
+    OR x->>'cycle' NOT IN ('monthly','once')
+    OR nullif(x->>'effectiveFrom','') IS NULL
+    OR (x->>'effectiveTo')::date<=(x->>'effectiveFrom')::date THEN
+   RAISE EXCEPTION 'invalid_rate' USING ERRCODE='23514'; END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(items) a,jsonb_array_elements(items) b
+ WHERE a->>'id'<b->>'id' AND a->>'code'=b->>'code'
+ AND daterange((a->>'effectiveFrom')::date,(a->>'effectiveTo')::date,'[)') &&
+     daterange((b->>'effectiveFrom')::date,(b->>'effectiveTo')::date,'[)')) THEN
+  RAISE EXCEPTION 'overlapping_rates' USING ERRCODE='23514'; END IF;
+END $$;
+CREATE FUNCTION protect_user() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN
+ IF TG_OP='DELETE' THEN
+  IF OLD.role='admin' THEN RAISE EXCEPTION 'cannot_delete_admin' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM contracts c,jsonb_array_elements(c.occupants) x WHERE x->>'userId'=OLD.id::text) THEN
+   RAISE EXCEPTION 'user_is_contract_occupant' USING ERRCODE='23514'; END IF;
+  RETURN OLD;
+ END IF;
+ IF TG_OP='UPDATE' THEN
+  IF NEW.role<>OLD.role THEN RAISE EXCEPTION 'role_is_immutable' USING ERRCODE='23514'; END IF;
+  IF NEW.password_hash IS DISTINCT FROM OLD.password_hash OR NOT NEW.is_active OR NOT NEW.login_enabled THEN
+   NEW.security_stamp=gen_random_uuid();
+   UPDATE auth_tokens SET revoked_at=coalesce(revoked_at,now()) WHERE user_id=OLD.id;
+  END IF;
+ END IF;
+ NEW.updated_at=now(); RETURN NEW;
+END $$;
+CREATE TRIGGER protect_user BEFORE UPDATE OR DELETE ON users FOR EACH ROW EXECUTE FUNCTION protect_user();
 
--- ============================================================================
--- 1. Tiền: hóa đơn, phân bổ, cọc
--- ============================================================================
-CREATE VIEW v_invoice_totals AS
-SELECT i.id AS invoice_id,
-       coalesce(sum(l.sign * round(l.quantity * l.unit_price * l.proration_numerator / l.proration_denominator, 0)), 0)::numeric(18,0) AS amount
-FROM invoices i LEFT JOIN invoice_lines l ON l.invoice_id = i.id
-GROUP BY i.id;
+CREATE FUNCTION guard_catalog() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE img jsonb; changes boolean;
+BEGIN
+ PERFORM validate_rates(NEW.rates);
+ IF TG_TABLE_NAME='properties' THEN
+  PERFORM unique_json_keys(NEW.amenity_options,'code');
+  IF NOT NEW.is_active AND EXISTS(SELECT 1 FROM contracts c JOIN rooms r ON r.id=c.room_id WHERE r.property_id=NEW.id AND c.status IN ('active','planned')) THEN
+   RAISE EXCEPTION 'property_has_occupants' USING ERRCODE='23514'; END IF;
+ ELSE
+  PERFORM 1 FROM properties WHERE id=NEW.property_id FOR UPDATE;
+  IF TG_OP='UPDATE' AND NEW.property_id<>OLD.property_id THEN RAISE EXCEPTION 'room_property_is_immutable' USING ERRCODE='23514'; END IF;
+  PERFORM unique_json_keys(NEW.amenities,'code');
+  PERFORM unique_json_keys(NEW.images,'fileId');
+  IF (SELECT count(*) FROM jsonb_array_elements(NEW.images) x WHERE coalesce((x->>'isCover')::boolean,false))>1 THEN
+   RAISE EXCEPTION 'one_cover_image' USING ERRCODE='23514'; END IF;
+  FOR img IN SELECT value FROM jsonb_array_elements(NEW.images) LOOP
+   PERFORM require_files(jsonb_build_array(img->>'fileId'),true);
+   IF coalesce((img->>'sortOrder')::int,0)<0 THEN RAISE EXCEPTION 'invalid_image_order' USING ERRCODE='23514'; END IF;
+  END LOOP;
+  IF NEW.listing_status='published' AND jsonb_array_length(NEW.images)=0 THEN RAISE EXCEPTION 'published_room_needs_photo' USING ERRCODE='23514'; END IF;
+  IF NEW.operating_status<>'available' AND EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.id AND status IN ('active','planned')) THEN
+   RAISE EXCEPTION 'room_has_occupants' USING ERRCODE='23514'; END IF;
+  IF TG_OP='UPDATE' AND NEW.operating_status<>OLD.operating_status THEN
+   NEW.status_history=OLD.status_history||jsonb_build_array(jsonb_build_object('at',now(),'from',OLD.operating_status,'to',NEW.operating_status,'reason',NEW.status_reason,'actorId',request_user_id()));
+  END IF;
+ END IF;
+ NEW.updated_at=now(); RETURN NEW;
+END $$;
+CREATE TRIGGER catalog_property BEFORE INSERT OR UPDATE ON properties FOR EACH ROW EXECUTE FUNCTION guard_catalog();
+CREATE TRIGGER catalog_room BEFORE INSERT OR UPDATE ON rooms FOR EACH ROW EXECUTE FUNCTION guard_catalog();
 
-CREATE VIEW v_deposit_movements AS
-SELECT d.*,
-       (CASE d.kind WHEN 'receipt' THEN 1
-                    WHEN 'reversal' THEN CASE o.kind WHEN 'receipt' THEN -1 ELSE 1 END
-                    ELSE -1 END * d.amount)::numeric(18,0) AS signed_amount
-FROM deposit_entries d LEFT JOIN deposit_entries o ON o.id = d.related_entry_id;
+CREATE FUNCTION expire_holds() RETURNS void LANGUAGE sql AS $$
+ UPDATE bookings SET hold_status='expired' WHERE hold_status='holding' AND hold_expires_at<=now()
+$$;
+CREATE FUNCTION guard_booking() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE x jsonb; rid uuid; c contracts;
+BEGIN
+ PERFORM require_customer(NEW.user_id);
+ IF TG_OP='UPDATE' AND (NEW.user_id<>OLD.user_id OR NEW.kind<>OLD.kind OR NEW.room_id IS DISTINCT FROM OLD.room_id OR NEW.contract_id IS DISTINCT FROM OLD.contract_id) THEN
+  RAISE EXCEPTION 'booking_identity_is_immutable' USING ERRCODE='23514'; END IF;
+ IF TG_OP='UPDATE' AND OLD.kind<>'viewing' AND OLD.status<>'pending' THEN RAISE EXCEPTION 'closed_request_is_immutable' USING ERRCODE='23514'; END IF;
+ IF NEW.kind<>'viewing' AND NEW.status NOT IN ('pending','approved','rejected','cancelled') THEN RAISE EXCEPTION 'invalid_request_status' USING ERRCODE='23514'; END IF;
+ IF NEW.kind='profile_change' AND EXISTS(SELECT 1 FROM jsonb_object_keys(NEW.changes) k WHERE k NOT IN ('phone','email')) THEN
+  RAISE EXCEPTION 'unsupported_profile_change_field' USING ERRCODE='23514'; END IF;
+ IF NEW.contract_id IS NOT NULL THEN
+  SELECT * INTO c FROM contracts WHERE id=NEW.contract_id;
+  IF c.user_id IS DISTINCT FROM NEW.user_id THEN RAISE EXCEPTION 'request_not_representative' USING ERRCODE='23514'; END IF;
+ END IF;
+ IF NEW.reviewed_by IS NOT NULL THEN PERFORM require_admin(NEW.reviewed_by); END IF;
+ IF NEW.kind<>'viewing' AND NEW.status IN ('approved','rejected') AND NEW.reviewed_by IS NULL THEN RAISE EXCEPTION 'request_needs_reviewer' USING ERRCODE='23514'; END IF;
+ PERFORM unique_json_keys(NEW.appointments,'id');
+ IF NEW.kind<>'viewing' AND NEW.appointments<>'[]' THEN RAISE EXCEPTION 'appointments_require_viewing' USING ERRCODE='23514'; END IF;
+ IF (SELECT count(*) FROM jsonb_array_elements(NEW.appointments) a WHERE a->>'status'='scheduled')>1 THEN RAISE EXCEPTION 'one_scheduled_appointment' USING ERRCODE='23514'; END IF;
+ FOR x IN SELECT value FROM jsonb_array_elements(NEW.appointments) LOOP
+  PERFORM require_json_fields(x,ARRAY['startsAt','endsAt','status','hostId']);
+  IF NOT x ?& ARRAY['startsAt','endsAt','status','hostId'] OR (x->>'endsAt')::timestamptz<=(x->>'startsAt')::timestamptz
+   OR x->>'status' NOT IN ('scheduled','completed','no_show','cancelled') THEN RAISE EXCEPTION 'invalid_appointment' USING ERRCODE='23514'; END IF;
+  PERFORM require_admin((x->>'hostId')::uuid);
+ END LOOP;
+ IF NEW.hold_status='holding' THEN
+  PERFORM 1 FROM rooms WHERE id=NEW.room_id FOR UPDATE;
+  IF NEW.hold_expires_at<=now() OR NOT EXISTS(SELECT 1 FROM rooms r JOIN properties p ON p.id=r.property_id WHERE r.id=NEW.room_id AND r.operating_status='available' AND p.is_active) THEN RAISE EXCEPTION 'room_not_available' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.room_id AND status<>'cancelled' AND daterange(starts_on,move_out_on,'[)')&&daterange(NEW.hold_from,NEW.hold_to,'[)')) THEN RAISE EXCEPTION 'room_is_occupied' USING ERRCODE='23514'; END IF;
+ END IF;
+ IF TG_OP='UPDATE' AND (NEW.status<>OLD.status OR NEW.hold_status IS DISTINCT FROM OLD.hold_status OR NEW.appointments<>OLD.appointments) THEN
+  NEW.history=OLD.history||jsonb_build_array(jsonb_build_object('at',now(),'status',NEW.status,'holdStatus',NEW.hold_status,'notes',NEW.decision_notes,'actorId',request_user_id()));
+ END IF;
+ NEW.updated_at=now(); RETURN NEW;
+END $$;
+CREATE TRIGGER booking_guard BEFORE INSERT OR UPDATE ON bookings FOR EACH ROW EXECUTE FUNCTION guard_booking();
 
-CREATE VIEW v_allocation_movements AS
-SELECT a.*,
-       CASE WHEN a.kind = 'apply' THEN a.amount ELSE -a.amount END AS signed_amount,
-       coalesce(a.payment_id, d.payment_id) AS funding_payment_id
-FROM payment_allocations a LEFT JOIN deposit_entries d ON d.id = a.deposit_entry_id;
+CREATE FUNCTION validate_reading_snapshot(value jsonb) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE x jsonb;
+BEGIN
+ FOR x IN SELECT v FROM jsonb_each(value) e(k,v) LOOP
+  PERFORM require_json_fields(x,ARRAY['value','observedAt']);
+  IF NOT x ?& ARRAY['value','observedAt'] OR jsonb_typeof(x->'value') IS DISTINCT FROM 'number' OR (x->>'value')::numeric<0 OR nullif(x->>'observedAt','') IS NULL THEN RAISE EXCEPTION 'invalid_reading_snapshot' USING ERRCODE='23514'; END IF;
+  PERFORM (x->>'observedAt')::timestamptz;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM jsonb_object_keys(value) k WHERE k NOT IN ('electricity','water')) THEN RAISE EXCEPTION 'invalid_reading_kind' USING ERRCODE='23514'; END IF;
+END $$;
+CREATE FUNCTION guard_contract() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE v jsonb; person jsonb; r rooms; b bookings; latest jsonb;
+BEGIN
+ IF TG_OP='DELETE' THEN
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(OLD.versions) v WHERE nullif(v->>'signedAt','') IS NOT NULL) THEN RAISE EXCEPTION 'signed_contract_cannot_delete' USING ERRCODE='23514'; END IF;
+  RETURN OLD;
+ END IF;
+ PERFORM require_customer(NEW.user_id);
+ PERFORM lock_customer(NEW.user_id);
+ SELECT * INTO r FROM rooms WHERE id=NEW.room_id FOR UPDATE;
+ PERFORM 1 FROM properties WHERE id=r.property_id FOR UPDATE;
+ IF TG_OP='UPDATE' THEN
+  IF NEW.user_id<>OLD.user_id OR NEW.room_id<>OLD.room_id OR NEW.starts_on<>OLD.starts_on OR NEW.code<>OLD.code OR NEW.booking_id IS DISTINCT FROM OLD.booking_id THEN RAISE EXCEPTION 'contract_identity_is_immutable' USING ERRCODE='23514'; END IF;
+  FOR v IN SELECT value FROM jsonb_array_elements(OLD.versions) WHERE nullif(value->>'signedAt','') IS NOT NULL LOOP
+   IF NOT NEW.versions @> jsonb_build_array(v) THEN RAISE EXCEPTION 'signed_version_is_immutable' USING ERRCODE='23514'; END IF;
+  END LOOP;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(OLD.versions) x WHERE nullif(x->>'signedAt','') IS NOT NULL) AND NEW.initial_readings<>OLD.initial_readings THEN RAISE EXCEPTION 'signed_initial_readings_are_immutable' USING ERRCODE='23514'; END IF;
+  IF OLD.status IN ('ended','cancelled') AND (to_jsonb(NEW)-'archived_at'-'updated_at') IS DISTINCT FROM (to_jsonb(OLD)-'archived_at'-'updated_at') THEN RAISE EXCEPTION 'closed_contract_is_immutable' USING ERRCODE='23514'; END IF;
+ END IF;
+ IF NEW.status IN ('active','planned') THEN
+  IF r.operating_status<>'available' OR NOT EXISTS(SELECT 1 FROM properties WHERE id=r.property_id AND is_active) THEN RAISE EXCEPTION 'room_not_available' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM bookings WHERE room_id=NEW.room_id AND hold_status='holding' AND hold_expires_at>now() AND id IS DISTINCT FROM NEW.booking_id AND daterange(hold_from,hold_to,'[)')&&daterange(NEW.starts_on,NEW.move_out_on,'[)')) THEN RAISE EXCEPTION 'room_is_reserved' USING ERRCODE='23514'; END IF;
+ END IF;
+ IF NEW.booking_id IS NOT NULL THEN
+  SELECT * INTO b FROM bookings WHERE id=NEW.booking_id;
+  IF b.kind IS DISTINCT FROM 'viewing' OR b.user_id IS DISTINCT FROM NEW.user_id OR b.room_id IS DISTINCT FROM NEW.room_id OR b.status IN ('rejected','cancelled') THEN RAISE EXCEPTION 'booking_mismatch' USING ERRCODE='23514'; END IF;
+ END IF;
+ PERFORM unique_json_keys(NEW.versions,'id');
+ PERFORM unique_json_keys(NEW.versions,'versionNo');
+ IF (SELECT count(*) FROM jsonb_array_elements(NEW.versions) x WHERE nullif(x->>'signedAt','') IS NULL)>1 THEN RAISE EXCEPTION 'one_draft_version' USING ERRCODE='23514'; END IF;
+ FOR v IN SELECT value FROM jsonb_array_elements(NEW.versions) LOOP
+  PERFORM require_json_fields(v,ARRAY['effectiveFrom','endsOn','requiredDeposit','invoiceDay','dueAfterDays','termsText','rates','fileIds']);
+  IF NOT v ?& ARRAY['effectiveFrom','endsOn','requiredDeposit','invoiceDay','dueAfterDays','termsText','rates','fileIds'] OR
+   (v->>'versionNo')::int<1 OR (v->>'endsOn')::date<=(v->>'effectiveFrom')::date OR
+   (v->>'requiredDeposit')::numeric<0 OR (v->>'invoiceDay')::int NOT BETWEEN 1 AND 31 OR
+   (v->>'dueAfterDays')::int NOT BETWEEN 0 AND 365 OR jsonb_typeof(v->'rates') IS DISTINCT FROM 'array' THEN RAISE EXCEPTION 'invalid_contract_version' USING ERRCODE='23514'; END IF;
+  PERFORM validate_rates(v->'rates');
+  PERFORM require_files(v->'fileIds');
+  IF nullif(v->>'signedAt','') IS NOT NULL THEN
+   PERFORM require_admin((v->>'signedBy')::uuid);
+   IF jsonb_array_length(v->'fileIds')=0 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v->'rates') x WHERE x->>'category'='rent' AND (x->>'unitPrice')::numeric>0) THEN RAISE EXCEPTION 'signed_version_needs_file_and_rent' USING ERRCODE='23514'; END IF;
+  END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.versions) a,jsonb_array_elements(NEW.versions) b
+ WHERE (a->>'versionNo')::int<(b->>'versionNo')::int AND nullif(a->>'signedAt','') IS NOT NULL AND nullif(b->>'signedAt','') IS NOT NULL
+ AND daterange((a->>'effectiveFrom')::date,(a->>'endsOn')::date,'[)')&&daterange((b->>'effectiveFrom')::date,(b->>'endsOn')::date,'[)')) THEN RAISE EXCEPTION 'overlapping_contract_versions' USING ERRCODE='23514'; END IF;
+ SELECT value INTO latest FROM jsonb_array_elements(NEW.versions) WHERE nullif(value->>'signedAt','') IS NOT NULL ORDER BY (value->>'versionNo')::int DESC LIMIT 1;
+ IF latest IS NOT NULL THEN NEW.ends_on=(latest->>'endsOn')::date; NEW.required_deposit=(latest->>'requiredDeposit')::numeric; END IF;
+ IF NEW.status='active' AND NEW.onboarding_mode='new' AND latest IS NULL THEN RAISE EXCEPTION 'new_checkin_needs_signed_contract' USING ERRCODE='23514'; END IF;
+ PERFORM require_files(NEW.attachments);
+ PERFORM unique_json_keys(NEW.occupants,'userId');
+ FOR person IN SELECT value FROM jsonb_array_elements(NEW.occupants) LOOP
+  PERFORM require_json_fields(person,ARRAY['userId','joinedOn']);
+  PERFORM require_customer((person->>'userId')::uuid);
+  IF person->>'userId'=NEW.user_id::text OR NOT person ? 'joinedOn' OR (person->>'joinedOn')::date<NEW.starts_on OR
+   (person->>'leftOn')::date<=(person->>'joinedOn')::date THEN RAISE EXCEPTION 'invalid_contract_occupant' USING ERRCODE='23514'; END IF;
+ END LOOP;
+ IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.occupants) point WHERE
+  1+(SELECT count(*) FROM jsonb_array_elements(NEW.occupants) p WHERE daterange((p->>'joinedOn')::date,(p->>'leftOn')::date,'[)') @> (point->>'joinedOn')::date)>r.capacity) THEN RAISE EXCEPTION 'room_capacity_exceeded' USING ERRCODE='23514'; END IF;
+ PERFORM validate_reading_snapshot(NEW.initial_readings); PERFORM validate_reading_snapshot(NEW.final_readings);
+ IF NEW.status='active' AND NEW.onboarding_mode='new' AND EXISTS(
+  SELECT 1 FROM jsonb_array_elements(latest->'rates') x WHERE x->>'method'='metered' AND x->>'category' IN ('electricity','water') AND NOT NEW.initial_readings ? (x->>'category')) THEN RAISE EXCEPTION 'checkin_needs_initial_readings' USING ERRCODE='23514'; END IF;
+ IF NEW.status='cancelled' AND (latest IS NOT NULL OR EXISTS(SELECT 1 FROM invoices WHERE contract_id=NEW.id) OR EXISTS(SELECT 1 FROM payments WHERE contract_id=NEW.id)) THEN RAISE EXCEPTION 'cannot_cancel_contract_with_documents' USING ERRCODE='23514'; END IF;
+ NEW.updated_at=now(); RETURN NEW;
+END $$;
+CREATE TRIGGER contract_guard BEFORE INSERT OR UPDATE OR DELETE ON contracts FOR EACH ROW EXECUTE FUNCTION guard_contract();
+CREATE FUNCTION link_booking() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN
+ IF NEW.booking_id IS NOT NULL AND NEW.status<>'cancelled' THEN UPDATE bookings SET status='converted',hold_status=CASE WHEN hold_status IS NOT NULL THEN 'converted' END WHERE id=NEW.booking_id; END IF;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER contract_booking AFTER INSERT ON contracts FOR EACH ROW EXECUTE FUNCTION link_booking();
+
+CREATE FUNCTION guard_period() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN
+ IF NEW.locked_by IS NOT NULL THEN PERFORM require_admin(NEW.locked_by); END IF;
+ IF TG_OP='UPDATE' THEN
+  IF NEW.property_id<>OLD.property_id OR NEW.month_start<>OLD.month_start THEN RAISE EXCEPTION 'period_identity_is_immutable' USING ERRCODE='23514'; END IF;
+  IF OLD.status='locked' AND NEW.status='open' AND nullif(btrim(NEW.unlock_reason),'') IS NULL THEN RAISE EXCEPTION 'unlock_reason_required' USING ERRCODE='23514'; END IF;
+  IF NEW.status<>OLD.status THEN NEW.history=OLD.history||jsonb_build_array(jsonb_build_object('at',now(),'status',NEW.status,'reason',NEW.unlock_reason,'actorId',request_user_id())); END IF;
+ END IF; RETURN NEW;
+END $$;
+CREATE TRIGGER period_guard BEFORE INSERT OR UPDATE ON billing_periods FOR EACH ROW EXECUTE FUNCTION guard_period();
+CREATE FUNCTION require_open_period(pid uuid) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE state text;
+BEGIN
+ IF pid IS NOT NULL THEN
+  SELECT status INTO state FROM billing_periods WHERE id=pid FOR UPDATE;
+  IF state IS DISTINCT FROM 'open' THEN RAISE EXCEPTION 'billing_period_locked' USING ERRCODE='23514'; END IF;
+ END IF;
+END $$;
 
 CREATE VIEW v_invoice_balances AS
-WITH adjustments AS (
-  SELECT i.original_invoice_id,
-         sum(CASE WHEN i.kind = 'credit_adjustment' THEN -t.amount ELSE t.amount END) AS amount
-  FROM invoices i JOIN v_invoice_totals t ON t.invoice_id = i.id
-  WHERE i.status = 'issued' AND i.kind IN ('debit_adjustment','credit_adjustment')
-  GROUP BY i.original_invoice_id
-), paid AS (
-  SELECT invoice_id, sum(signed_amount) AS amount FROM v_allocation_movements GROUP BY invoice_id
-)
-SELECT i.id AS invoice_id, i.tenancy_id, i.billing_period_id, i.code, i.kind, i.status, i.issued_on, i.due_on,
-       t.amount AS original_amount,
-       coalesce(a.amount, 0)::numeric(18,0) AS adjustment_amount,
-       (t.amount + coalesce(a.amount, 0))::numeric(18,0) AS receivable_amount,
-       coalesce(p.amount, 0)::numeric(18,0) AS paid_amount,
-       (CASE WHEN i.status = 'issued' THEN t.amount + coalesce(a.amount, 0) - coalesce(p.amount, 0) ELSE 0 END)::numeric(18,0) AS outstanding_amount,
-       CASE WHEN t.amount + coalesce(a.amount, 0) = 0 THEN 'paid'
-            WHEN coalesce(p.amount, 0) = 0 THEN 'unpaid'
-            WHEN coalesce(p.amount, 0) < t.amount + coalesce(a.amount, 0) THEN 'partial'
-            ELSE 'paid' END AS payment_status,
-       (i.status = 'issued' AND i.due_on < vn_today()
-        AND t.amount + coalesce(a.amount, 0) - coalesce(p.amount, 0) > 0) AS is_overdue
-FROM invoices i
-JOIN v_invoice_totals t ON t.invoice_id = i.id
-LEFT JOIN adjustments a ON a.original_invoice_id = i.id
-LEFT JOIN paid p ON p.invoice_id = i.id
-WHERE i.kind NOT IN ('debit_adjustment','credit_adjustment');
-
-CREATE VIEW v_tenant_debts AS
-SELECT t.id AS tenant_id, t.organization_id,
-       coalesce(sum(b.outstanding_amount), 0)::numeric(18,0) AS outstanding_amount,
-       coalesce(sum(b.outstanding_amount) FILTER (WHERE b.is_overdue), 0)::numeric(18,0) AS overdue_amount,
-       count(*) FILTER (WHERE b.is_overdue) AS overdue_count
-FROM tenants t
-LEFT JOIN tenancies n ON n.representative_tenant_id = t.id
-LEFT JOIN v_invoice_balances b ON b.tenancy_id = n.id
-GROUP BY t.id;
-
+ SELECT i.id,i.contract_id,i.status,i.total_amount,
+ (CASE WHEN i.status='issued' AND i.adjusts_invoice_id IS NULL THEN i.total_amount+coalesce(adj.amount,0) ELSE 0 END)::numeric(16,0) receivable_amount,
+ coalesce(paid.amount,0)::numeric(16,0) paid_amount,
+ (CASE WHEN i.status='issued' AND i.adjusts_invoice_id IS NULL THEN i.total_amount+coalesce(adj.amount,0) ELSE 0 END-coalesce(paid.amount,0))::numeric(16,0) outstanding_amount,
+ CASE WHEN i.status<>'issued' OR i.adjusts_invoice_id IS NOT NULL THEN NULL WHEN coalesce(paid.amount,0)>=i.total_amount+coalesce(adj.amount,0) THEN 'paid' WHEN coalesce(paid.amount,0)=0 THEN 'unpaid' ELSE 'partial' END payment_status,
+ (i.status='issued' AND i.adjusts_invoice_id IS NULL AND i.due_on<(now() AT TIME ZONE 'Asia/Ho_Chi_Minh')::date AND i.total_amount+coalesce(adj.amount,0)>coalesce(paid.amount,0)) is_overdue
+ FROM invoices i
+ LEFT JOIN LATERAL(SELECT sum(total_amount) amount FROM invoices WHERE adjusts_invoice_id=i.id AND status='issued') adj ON true
+ LEFT JOIN LATERAL(SELECT sum((a->>'amount')::numeric*CASE WHEN p.kind IN ('receipt_reversal','deposit_offset_reversal') THEN -1 ELSE 1 END) amount
+ FROM payments p CROSS JOIN LATERAL jsonb_array_elements(p.allocations) a WHERE p.status='confirmed' AND a->>'invoiceId'=i.id::text) paid ON true;
 CREATE VIEW v_deposit_balances AS
-SELECT n.id AS tenancy_id, coalesce(sum(d.signed_amount), 0)::numeric(18,0) AS held_amount
-FROM tenancies n LEFT JOIN v_deposit_movements d ON d.tenancy_id = n.id
-GROUP BY n.id;
+ SELECT c.id contract_id,
+ coalesce(sum(CASE WHEN p.kind IN ('deposit_receipt','deposit_offset_reversal') THEN p.amount ELSE -p.amount END),0)::numeric(16,0) held,
+ coalesce(sum(p.amount) FILTER(WHERE p.kind='deposit_receipt'),0)::numeric(16,0) received,
+ coalesce(sum(p.amount) FILTER(WHERE p.kind='deposit_refund'),0)::numeric(16,0) refunded,
+ coalesce(sum(CASE WHEN p.kind='deposit_offset' THEN p.amount WHEN p.kind='deposit_offset_reversal' THEN -p.amount ELSE 0 END),0)::numeric(16,0) offset_amount
+ FROM contracts c LEFT JOIN payments p ON p.contract_id=c.id AND p.kind LIKE 'deposit_%' AND p.status='confirmed' GROUP BY c.id;
 
-CREATE VIEW v_payment_balances AS
-SELECT p.id AS payment_id, p.tenant_id, p.status, p.amount,
-       coalesce(r.amount, 0)::numeric(18,0) AS reversed_amount,
-       coalesce(a.amount, 0)::numeric(18,0) AS invoice_allocated_amount,
-       coalesce(d.amount, 0)::numeric(18,0) AS deposit_held_amount,
-       (CASE WHEN p.status = 'confirmed'
-             THEN p.amount - coalesce(r.amount, 0) - coalesce(a.amount, 0) - coalesce(d.amount, 0)
-             ELSE 0 END)::numeric(18,0) AS unapplied_amount
-FROM payments p
-LEFT JOIN (SELECT payment_id, sum(amount) AS amount FROM payment_reversals GROUP BY payment_id) r ON r.payment_id = p.id
-LEFT JOIN (SELECT funding_payment_id, sum(signed_amount) AS amount FROM v_allocation_movements GROUP BY funding_payment_id) a ON a.funding_payment_id = p.id
-LEFT JOIN (SELECT payment_id, sum(signed_amount) AS amount FROM v_deposit_movements GROUP BY payment_id) d ON d.payment_id = p.id;
-
-CREATE VIEW v_cash_movements AS
-SELECT p.id AS transaction_id, p.tenant_id, p.received_at AS occurred_at, p.method_code,
-       p.amount AS signed_amount, 'receipt'::text AS kind
-FROM payments p WHERE p.status = 'confirmed'
-UNION ALL
-SELECT r.id, p.tenant_id, r.occurred_at, r.method_code, -r.amount, r.kind
-FROM payment_reversals r JOIN payments p ON p.id = r.payment_id;
-
--- ============================================================================
--- 2. Trạng thái suy ra cho các màn hình
--- ============================================================================
-CREATE VIEW v_room_status AS
-SELECT r.*,
-       CASE WHEN a.id IS NOT NULL THEN 'occupied' ELSE r.operating_status END AS occupancy_status,
-       a.id AS active_tenancy_id,
-       a.representative_tenant_id AS active_tenant_id,
-       a.actual_move_in AS occupied_since,
-       EXISTS (SELECT 1 FROM tenancies t WHERE t.room_id = r.id AND t.status = 'planned') AS has_planned_tenancy
-FROM rooms r
-LEFT JOIN tenancies a ON a.room_id = r.id AND a.status = 'active';
-
-CREATE VIEW v_contract_status AS
-WITH version_info AS (
-  SELECT contract_id,
-         count(*) AS version_count,
-         bool_or(signed_at IS NULL) AS has_draft_version,
-         min(effective_from) FILTER (WHERE signed_at IS NOT NULL) AS first_signed_from,
-         (array_agg(ends_on ORDER BY effective_from DESC) FILTER (WHERE signed_at IS NOT NULL))[1] AS signed_ends_on,
-         (array_agg(ends_on ORDER BY effective_from DESC))[1] AS latest_ends_on
-  FROM contract_versions GROUP BY contract_id
-), resolved AS (
-  SELECT c.id AS contract_id, c.code, c.tenancy_id, c.predecessor_contract_id, n.status AS tenancy_status,
-         p.contract_warning_days,
-         coalesce(v.first_signed_from, v.latest_ends_on) AS first_signed_from,
-         coalesce(v.signed_ends_on, v.latest_ends_on) AS ends_on,
-         v.version_count, coalesce(v.has_draft_version, false) AS has_draft_version,
-         CASE WHEN c.archived_at IS NOT NULL THEN 'archived'
-              WHEN c.terminated_on IS NOT NULL THEN 'terminated'
-              WHEN v.first_signed_from IS NULL THEN 'draft'
-              WHEN v.first_signed_from > vn_today() THEN 'signed'
-              WHEN v.signed_ends_on <= vn_today() THEN 'expired'
-              ELSE 'active' END AS status
-  FROM contracts c
-  JOIN tenancies n ON n.id = c.tenancy_id
-  JOIN rooms r ON r.id = n.room_id
-  JOIN properties p ON p.id = r.property_id
-  LEFT JOIN version_info v ON v.contract_id = c.id
-)
-SELECT contract_id, code, tenancy_id, predecessor_contract_id, status, ends_on,
-       ends_on - 1 AS display_end_on,
-       ends_on - vn_today() AS days_left,
-       (status = 'active' AND ends_on - vn_today() <= contract_warning_days) AS expiring,
-       (status = 'expired' AND tenancy_status = 'active') AS still_occupied_after_expiry,
-       version_count, has_draft_version
-FROM resolved;
-
-CREATE VIEW v_tenant_status AS
-SELECT t.id AS tenant_id, t.organization_id,
-       CASE WHEN EXISTS (SELECT 1 FROM tenancies x WHERE x.representative_tenant_id = t.id AND x.status = 'active')
-              OR EXISTS (SELECT 1 FROM tenancy_residents r JOIN tenancies x ON x.id = r.tenancy_id
-                         WHERE r.tenant_id = t.id AND x.status = 'active' AND (r.left_on IS NULL OR r.left_on > vn_today())) THEN 'active'
-            WHEN EXISTS (SELECT 1 FROM tenancies x WHERE x.representative_tenant_id = t.id AND x.status = 'planned') THEN 'planned'
-            WHEN EXISTS (SELECT 1 FROM tenancies x WHERE x.representative_tenant_id = t.id AND x.status = 'ended')
-              OR EXISTS (SELECT 1 FROM tenancy_residents r WHERE r.tenant_id = t.id) THEN 'former'
-            ELSE 'none' END AS residence_status,
-       (t.user_id IS NOT NULL) AS has_portal_account
-FROM tenants t;
-
--- ============================================================================
--- 3. Ngày và giá. Mọi khoảng thời gian dùng [đầu, cuối)
--- ============================================================================
-CREATE FUNCTION invoice_date(p_month date, p_day integer) RETURNS date LANGUAGE sql IMMUTABLE AS $$
-  SELECT (date_trunc('month', p_month)::date +
-          (least(p_day, extract(day FROM date_trunc('month', p_month) + interval '1 month - 1 day')::int) - 1))::date
-$$;
-
-CREATE FUNCTION quick_contract_end_exclusive(p_start date, p_months integer) RETURNS date LANGUAGE sql IMMUTABLE AS $$
-  SELECT (p_start + make_interval(months => p_months))::date
-$$;
-
--- Giá theo thứ tự: phiên bản hợp đồng đã ký -> riêng phòng -> cơ sở. Giá 0 vẫn là giá và vẫn được ưu tiên.
-CREATE FUNCTION effective_rates(p_tenancy uuid, p_on date)
-RETURNS TABLE (charge_type_id uuid, rate_id uuid, unit_price numeric, calculation_method varchar,
-               billing_cycle varchar, proration_mode varchar, source_scope text)
-LANGUAGE sql STABLE AS $$
-  WITH context AS (
-    SELECT t.room_id, r.property_id FROM smartrent.tenancies t
-    JOIN smartrent.rooms r ON r.id = t.room_id WHERE t.id = p_tenancy
-  ), candidates AS (
-    SELECT cr.*,
-           CASE WHEN cr.contract_version_id IS NOT NULL THEN 3 WHEN cr.room_id IS NOT NULL THEN 2 ELSE 1 END AS rank,
-           cv.effective_from AS contract_start,
-           CASE WHEN cr.contract_version_id IS NOT NULL THEN 'contract' WHEN cr.room_id IS NOT NULL THEN 'room' ELSE 'property' END AS source
-    FROM smartrent.charge_rates cr
-    CROSS JOIN context x
-    LEFT JOIN smartrent.contract_versions cv ON cv.id = cr.contract_version_id
-    LEFT JOIN smartrent.contracts c ON c.id = cv.contract_id
-    WHERE (cr.property_id = x.property_id OR cr.room_id = x.room_id
-           OR (c.tenancy_id = p_tenancy AND cv.signed_at IS NOT NULL AND cv.effective_from <= p_on))
-      AND cr.effective_from <= p_on AND (cr.effective_to IS NULL OR cr.effective_to > p_on)
-  )
-  SELECT DISTINCT ON (c.charge_type_id) c.charge_type_id, c.id, c.unit_price, c.calculation_method,
-         c.billing_cycle, c.proration_mode, c.source
-  FROM candidates c
-  ORDER BY c.charge_type_id, c.rank DESC, c.contract_start DESC NULLS LAST, c.effective_from DESC
-$$;
-
--- Giá của phòng chưa có đợt thuê: dùng cho trang Thuê phòng và form tạo hợp đồng.
-CREATE FUNCTION room_rates(p_room uuid, p_on date)
-RETURNS TABLE (charge_type_id uuid, rate_id uuid, unit_price numeric, calculation_method varchar,
-               billing_cycle varchar, proration_mode varchar, source_scope text)
-LANGUAGE sql STABLE AS $$
-  SELECT DISTINCT ON (cr.charge_type_id) cr.charge_type_id, cr.id, cr.unit_price, cr.calculation_method,
-         cr.billing_cycle, cr.proration_mode,
-         CASE WHEN cr.room_id IS NOT NULL THEN 'room' ELSE 'property' END
-  FROM smartrent.charge_rates cr
-  JOIN smartrent.rooms r ON r.id = p_room
-  WHERE (cr.room_id = r.id OR cr.property_id = r.property_id)
-    AND cr.effective_from <= p_on AND (cr.effective_to IS NULL OR cr.effective_to > p_on)
-  ORDER BY cr.charge_type_id, CASE WHEN cr.room_id IS NOT NULL THEN 2 ELSE 1 END DESC, cr.effective_from DESC
-$$;
-
--- Trang Thuê phòng: chỉ phòng trống ở admin, tin đang công khai, cơ sở còn hoạt động.
-CREATE VIEW v_public_rooms AS
-SELECT l.id AS listing_id, l.slug, l.title, l.description AS listing_description, l.video_url, l.published_at,
-       r.id AS room_id, r.code AS room_code, r.name AS room_name, r.room_type_id, r.floor_label, r.area_m2, r.capacity,
-       r.required_deposit, r.description, r.rules_text,
-       p.id AS property_id, p.organization_id, p.name AS property_name, p.address_line, p.locality, p.province,
-       p.latitude, p.longitude,
-       (SELECT rr.unit_price FROM room_rates(r.id, vn_today()) rr
-        JOIN charge_types ct ON ct.id = rr.charge_type_id WHERE ct.category = 'rent' LIMIT 1) AS rent
-FROM room_listings l
-JOIN rooms r ON r.id = l.room_id
-JOIN properties p ON p.id = r.property_id
-JOIN organizations o ON o.id = p.organization_id
-WHERE l.status = 'published' AND r.operating_status = 'available' AND p.is_active AND o.is_active
-  AND NOT EXISTS (SELECT 1 FROM tenancies t WHERE t.room_id = r.id AND t.status IN ('planned','active'));
-
--- ============================================================================
--- 4. Cấp mã chứng từ
--- ============================================================================
-CREATE FUNCTION next_document_no(p_organization uuid, p_series text) RETURNS bigint LANGUAGE sql AS $$
-  INSERT INTO smartrent.document_counters(organization_id, series, last_value)
-  VALUES (p_organization, p_series, 1)
-  ON CONFLICT (organization_id, series) DO UPDATE SET last_value = smartrent.document_counters.last_value + 1
-  RETURNING last_value
-$$;
-
--- ============================================================================
--- 5. Dữ liệu các đơn vị không được nối chéo nhau
--- ============================================================================
-CREATE FUNCTION organization_of(p_table text, p_id uuid) RETURNS uuid LANGUAGE plpgsql STABLE AS $$
-DECLARE parent_table text; parent_column text; parent_id uuid;
-BEGIN
-  IF p_id IS NULL THEN RETURN NULL; END IF;
-  IF p_table = 'organizations' THEN RETURN p_id; END IF;
-  IF p_table IN ('organization_memberships','business_roles','support_access_grants','stored_files','properties','room_types',
-                 'amenities','tenants','charge_types','ticket_categories','sla_policies','bank_accounts','notifications','email_outbox') THEN
-    EXECUTE format('SELECT organization_id FROM smartrent.%I WHERE id = $1', p_table) INTO parent_id USING p_id;
-    RETURN parent_id;
-  END IF;
-  IF p_table = 'charge_rates' THEN
-    SELECT coalesce(smartrent.organization_of('properties', property_id),
-                    smartrent.organization_of('rooms', room_id),
-                    smartrent.organization_of('contract_versions', contract_version_id))
-    INTO parent_id FROM smartrent.charge_rates WHERE id = p_id;
-    RETURN parent_id;
-  END IF;
-  SELECT x.pt, x.pc INTO parent_table, parent_column FROM (VALUES
-    ('rooms','properties','property_id'), ('room_images','rooms','room_id'), ('room_listings','rooms','room_id'),
-    ('rental_inquiries','rooms','room_id'), ('room_viewings','rental_inquiries','inquiry_id'),
-    ('tenancies','rooms','room_id'), ('tenancy_requests','tenancies','tenancy_id'),
-    ('contracts','tenancies','tenancy_id'), ('contract_versions','contracts','contract_id'),
-    ('billing_periods','properties','property_id'), ('handovers','tenancies','tenancy_id'),
-    ('meters','rooms','room_id'), ('meter_readings','meters','meter_id'),
-    ('invoices','tenancies','tenancy_id'), ('invoice_lines','invoices','invoice_id'),
-    ('charge_instances','tenancies','tenancy_id'), ('payments','tenants','tenant_id'),
-    ('payment_reversals','payments','payment_id'), ('checkout_settlements','tenancies','tenancy_id'),
-    ('deposit_entries','tenancies','tenancy_id'), ('payment_allocations','invoices','invoice_id'),
-    ('tickets','rooms','room_id'), ('ticket_messages','tickets','ticket_id')
-  ) x(t, pt, pc) WHERE x.t = p_table;
-  IF parent_table IS NULL THEN RAISE EXCEPTION 'Unknown ownership path: %', p_table; END IF;
-  EXECUTE format('SELECT %I FROM smartrent.%I WHERE id = $1', parent_column, p_table) INTO parent_id USING p_id;
-  RETURN smartrent.organization_of(parent_table, parent_id);
-END $$;
-
-CREATE FUNCTION guard_same_organization() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE j jsonb := to_jsonb(NEW); left_org uuid; right_org uuid;
-BEGIN
-  left_org := smartrent.organization_of(TG_ARGV[0], (j->>TG_ARGV[1])::uuid);
-  right_org := smartrent.organization_of(TG_ARGV[2], (j->>TG_ARGV[3])::uuid);
-  IF left_org IS NOT NULL AND right_org IS NOT NULL AND left_org <> right_org THEN
-    RAISE EXCEPTION 'Cross-organization reference on % (% / %)', TG_TABLE_NAME, TG_ARGV[1], TG_ARGV[3] USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END $$;
-
-DO $$
-DECLARE r record; seq integer := 0;
-BEGIN
-  FOR r IN SELECT * FROM (VALUES
-    ('membership_roles','organization_memberships','membership_id','business_roles','role_id'),
-    ('membership_properties','organization_memberships','membership_id','properties','property_id'),
-    ('rooms','properties','property_id','room_types','room_type_id'),
-    ('room_amenities','rooms','room_id','amenities','amenity_id'),
-    ('room_images','rooms','room_id','stored_files','file_id'),
-    ('tenant_identity_documents','tenants','tenant_id','stored_files','front_file_id'),
-    ('tenant_identity_documents','tenants','tenant_id','stored_files','back_file_id'),
-    ('rental_inquiries','rooms','room_id','tenants','tenant_id'),
-    ('tenancies','rooms','room_id','tenants','representative_tenant_id'),
-    ('tenancies','rooms','room_id','rental_inquiries','inquiry_id'),
-    ('tenancy_residents','tenancies','tenancy_id','tenants','tenant_id'),
-    ('contracts','tenancies','tenancy_id','contracts','predecessor_contract_id'),
-    ('contract_parties','contract_versions','contract_version_id','tenants','tenant_id'),
-    ('contract_files','contract_versions','contract_version_id','stored_files','file_id'),
-    ('contract_attachments','contracts','contract_id','stored_files','file_id'),
-    ('charge_rates','properties','property_id','charge_types','charge_type_id'),
-    ('charge_rates','rooms','room_id','charge_types','charge_type_id'),
-    ('charge_rates','contract_versions','contract_version_id','charge_types','charge_type_id'),
-    ('handover_files','handovers','handover_id','stored_files','file_id'),
-    ('meter_readings','meters','meter_id','tenancies','tenancy_id'),
-    ('meter_readings','meters','meter_id','billing_periods','billing_period_id'),
-    ('meter_readings','meters','meter_id','handovers','handover_id'),
-    ('invoices','tenancies','tenancy_id','billing_periods','billing_period_id'),
-    ('invoices','tenancies','tenancy_id','invoices','original_invoice_id'),
-    ('charge_instances','tenancies','tenancy_id','charge_types','charge_type_id'),
-    ('charge_instances','tenancies','tenancy_id','billing_periods','billing_period_id'),
-    ('invoice_lines','invoices','invoice_id','charge_types','charge_type_id'),
-    ('invoice_lines','invoices','invoice_id','charge_instances','charge_instance_id'),
-    ('invoice_lines','invoices','invoice_id','charge_rates','source_rate_id'),
-    ('invoice_meter_segments','invoice_lines','invoice_line_id','meter_readings','from_reading_id'),
-    ('invoice_meter_segments','invoice_lines','invoice_line_id','meter_readings','to_reading_id'),
-    ('payments','tenants','tenant_id','properties','property_id'),
-    ('payments','tenants','tenant_id','bank_accounts','bank_account_id'),
-    ('payment_files','payments','payment_id','stored_files','file_id'),
-    ('payment_intended_invoices','payments','payment_id','invoices','invoice_id'),
-    ('payment_reversals','payments','payment_id','stored_files','evidence_file_id'),
-    ('checkout_settlements','tenancies','tenancy_id','handovers','checkout_handover_id'),
-    ('deposit_entries','tenancies','tenancy_id','payments','payment_id'),
-    ('deposit_entries','tenancies','tenancy_id','checkout_settlements','settlement_id'),
-    ('payment_allocations','invoices','invoice_id','payments','payment_id'),
-    ('payment_allocations','invoices','invoice_id','deposit_entries','deposit_entry_id'),
-    ('tickets','rooms','room_id','tenancies','tenancy_id'),
-    ('tickets','rooms','room_id','ticket_categories','category_id'),
-    ('tickets','rooms','room_id','sla_policies','sla_policy_id'),
-    ('ticket_files','tickets','ticket_id','ticket_messages','message_id'),
-    ('ticket_files','tickets','ticket_id','stored_files','file_id')
-  ) x(t, lt, lc, rt, rc)
-  LOOP
-    seq := seq + 1;
-    EXECUTE format('CREATE TRIGGER %I BEFORE INSERT OR UPDATE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.guard_same_organization(%L,%L,%L,%L)',
-                   'scope_' || seq, r.t, r.lt, r.lc, r.rt, r.rc);
-  END LOOP;
-END $$;
-
--- Cột sở hữu không được đổi sau khi tạo: tránh làm các liên kết đang có trở thành sai đơn vị, sai phòng.
-CREATE FUNCTION guard_fixed_columns() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE c text;
-BEGIN
-  FOREACH c IN ARRAY TG_ARGV LOOP
-    IF to_jsonb(OLD)->c IS DISTINCT FROM to_jsonb(NEW)->c THEN
-      RAISE EXCEPTION 'Immutable ownership: %.%', TG_TABLE_NAME, c USING ERRCODE = '23514';
-    END IF;
-  END LOOP;
-  RETURN NEW;
-END $$;
-
-DO $$
-DECLARE r record;
-BEGIN
-  FOR r IN SELECT * FROM (VALUES
-    ('organization_memberships','organization_id'), ('business_roles','organization_id'), ('properties','organization_id'),
-    ('room_types','organization_id'), ('amenities','organization_id'), ('tenants','organization_id'),
-    ('rooms','property_id'), ('tenancies','room_id'), ('tenancies','representative_tenant_id'),
-    ('contracts','tenancy_id'), ('contract_versions','contract_id'), ('charge_types','organization_id'),
-    ('charge_rates','property_id'), ('charge_rates','room_id'), ('charge_rates','contract_version_id'),
-    ('charge_rates','charge_type_id'), ('meters','room_id'), ('meters','meter_kind'),
-    ('billing_periods','property_id'), ('billing_periods','month_start'), ('invoices','tenancy_id'),
-    ('invoice_lines','invoice_id'), ('charge_instances','tenancy_id'), ('tickets','room_id'),
-    ('ticket_categories','organization_id'), ('sla_policies','organization_id'), ('bank_accounts','organization_id')
-  ) x(t, c)
-  LOOP
-    EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.guard_fixed_columns(%L)',
-                   'fixed_' || r.c, r.t, r.c);
-  END LOOP;
-END $$;
-
--- Sổ và nhật ký chỉ ghi thêm. Sai thì ghi dòng đảo liên kết, không sửa dòng cũ.
-CREATE FUNCTION reject_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  -- Xóa phòng chưa có lịch sử kéo theo lịch sử trạng thái của chính phòng đó; đây là trường hợp duy nhất được phép.
-  IF TG_OP = 'DELETE' AND TG_TABLE_NAME = 'room_status_events' AND pg_trigger_depth() > 1 THEN RETURN OLD; END IF;
-  RAISE EXCEPTION '% is append-only; use a linked reversal or new entry', TG_TABLE_NAME USING ERRCODE = '23514';
-END $$;
-
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['payment_reversals','payment_allocations','deposit_entries','audit_logs','ticket_events',
-                           'room_status_events','billing_period_events'] LOOP
-    EXECUTE format('CREATE TRIGGER append_only BEFORE UPDATE OR DELETE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.reject_mutation()', t);
-  END LOOP;
-END $$;
-
--- ============================================================================
--- 6. Liên kết nghiệp vụ
--- ============================================================================
-CREATE FUNCTION guard_domain_links() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected_id uuid; actual_id uuid; room_status text;
-BEGIN
-  IF TG_TABLE_NAME = 'tenancies' THEN
-    IF TG_OP = 'INSERT' AND NEW.status IN ('planned','active') THEN
-      SELECT operating_status INTO room_status FROM smartrent.rooms WHERE id = NEW.room_id;
-      IF room_status <> 'available' THEN
-        RAISE EXCEPTION 'Room is % and cannot take a new tenancy', room_status USING ERRCODE = '23514';
-      END IF;
-    END IF;
-    IF NEW.inquiry_id IS NOT NULL THEN
-      expected_id := NEW.room_id;
-      SELECT room_id INTO actual_id FROM smartrent.rental_inquiries WHERE id = NEW.inquiry_id;
-    END IF;
-  ELSIF TG_TABLE_NAME = 'invoices' THEN
-    IF NEW.billing_period_id IS NOT NULL THEN
-      SELECT r.property_id INTO expected_id FROM smartrent.tenancies t JOIN smartrent.rooms r ON r.id = t.room_id WHERE t.id = NEW.tenancy_id;
-      SELECT property_id INTO actual_id FROM smartrent.billing_periods WHERE id = NEW.billing_period_id;
-    END IF;
-  ELSIF TG_TABLE_NAME = 'tickets' THEN
-    IF NEW.tenancy_id IS NOT NULL THEN
-      SELECT room_id INTO expected_id FROM smartrent.tenancies WHERE id = NEW.tenancy_id;
-      actual_id := NEW.room_id;
-    END IF;
-  ELSIF TG_TABLE_NAME = 'ticket_files' THEN
-    IF NEW.message_id IS NOT NULL THEN
-      expected_id := NEW.ticket_id;
-      SELECT ticket_id INTO actual_id FROM smartrent.ticket_messages WHERE id = NEW.message_id;
-    END IF;
-  ELSIF TG_TABLE_NAME = 'tenant_identity_documents' THEN
-    IF EXISTS (SELECT 1 FROM smartrent.stored_files WHERE id IN (NEW.front_file_id, NEW.back_file_id) AND visibility <> 'private') THEN
-      RAISE EXCEPTION 'Identity files must be private' USING ERRCODE = '23514';
-    END IF;
-  ELSIF TG_TABLE_NAME = 'payment_intended_invoices' THEN
-    SELECT tenant_id INTO expected_id FROM smartrent.payments WHERE id = NEW.payment_id;
-    SELECT t.representative_tenant_id INTO actual_id FROM smartrent.invoices i
-      JOIN smartrent.tenancies t ON t.id = i.tenancy_id WHERE i.id = NEW.invoice_id;
-  END IF;
-  IF expected_id IS DISTINCT FROM actual_id THEN
-    RAISE EXCEPTION 'Mismatched property/room/document on %', TG_TABLE_NAME USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END $$;
-
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['tenancies','invoices','tickets','ticket_files','tenant_identity_documents','payment_intended_invoices'] LOOP
-    EXECUTE format('CREATE TRIGGER domain_links BEFORE INSERT OR UPDATE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.guard_domain_links()', t);
-  END LOOP;
-END $$;
-
--- Không ngừng khai thác phòng đang có người; muốn gỡ khách phải đi qua trả phòng.
-CREATE FUNCTION guard_room_status() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.operating_status = 'inactive' AND OLD.operating_status <> 'inactive'
-     AND EXISTS (SELECT 1 FROM smartrent.tenancies WHERE room_id = NEW.id AND status IN ('planned','active')) THEN
-    RAISE EXCEPTION 'Room has a current tenancy; check out first' USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER room_status_guard BEFORE UPDATE ON rooms FOR EACH ROW EXECUTE FUNCTION guard_room_status();
-
--- ============================================================================
--- 7. Hợp đồng đã ký và bảng giá không sửa được
--- ============================================================================
-CREATE FUNCTION guard_contract() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE version_id uuid;
-BEGIN
-  IF TG_TABLE_NAME = 'contract_versions' THEN
-    IF TG_OP <> 'INSERT' AND OLD.signed_at IS NOT NULL THEN
-      RAISE EXCEPTION 'Signed contract version is immutable' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP <> 'DELETE' AND NEW.signed_at IS NOT NULL THEN
-      IF NOT EXISTS (SELECT 1 FROM smartrent.contract_parties WHERE contract_version_id = NEW.id AND party_role = 'landlord')
-         OR NOT EXISTS (SELECT 1 FROM smartrent.contract_parties WHERE contract_version_id = NEW.id AND party_role = 'representative')
-         OR NOT EXISTS (SELECT 1 FROM smartrent.contract_files WHERE contract_version_id = NEW.id AND file_kind IN ('signed','appendix')) THEN
-        RAISE EXCEPTION 'Signing requires party snapshots and a signed file or appendix' USING ERRCODE = '23514';
-      END IF;
-    END IF;
-  ELSE
-    version_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.contract_version_id ELSE NEW.contract_version_id END;
-    IF EXISTS (SELECT 1 FROM smartrent.contract_versions WHERE id = version_id AND signed_at IS NOT NULL) THEN
-      RAISE EXCEPTION 'Signed contract children are immutable' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
-END $$;
-CREATE TRIGGER contract_guard BEFORE INSERT OR UPDATE OR DELETE ON contract_versions FOR EACH ROW EXECUTE FUNCTION guard_contract();
-CREATE TRIGGER contract_guard BEFORE INSERT OR UPDATE OR DELETE ON contract_parties FOR EACH ROW EXECUTE FUNCTION guard_contract();
-CREATE TRIGGER contract_guard BEFORE INSERT OR UPDATE OR DELETE ON contract_files FOR EACH ROW EXECUTE FUNCTION guard_contract();
-
-CREATE FUNCTION guard_rate() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE version_id uuid;
-BEGIN
-  version_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.contract_version_id ELSE NEW.contract_version_id END;
-  IF EXISTS (SELECT 1 FROM smartrent.contract_versions WHERE id = version_id AND signed_at IS NOT NULL) THEN
-    RAISE EXCEPTION 'Rates of signed version are immutable' USING ERRCODE = '23514';
-  END IF;
-  -- Dòng giá chưa lên hóa đơn được xóa khi nhập nhầm; đã lên hóa đơn thì khóa ngoại của invoice_lines chặn.
-  IF TG_OP = 'UPDATE' AND (to_jsonb(NEW) - 'effective_to') IS DISTINCT FROM (to_jsonb(OLD) - 'effective_to') THEN
-    RAISE EXCEPTION 'Create a new dated rate; only closing effective_to is permitted' USING ERRCODE = '23514';
-  END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
-END $$;
-CREATE TRIGGER rate_guard BEFORE INSERT OR UPDATE OR DELETE ON charge_rates FOR EACH ROW EXECUTE FUNCTION guard_rate();
-
--- ============================================================================
--- 8. Chỉ số công tơ
--- ============================================================================
-CREATE FUNCTION guard_reading() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE m record; prev numeric; following numeric; room uuid; period_state text;
-BEGIN
-  IF TG_OP = 'DELETE' THEN RAISE EXCEPTION 'Void a reading and append a correction' USING ERRCODE = '23514'; END IF;
-  SELECT * INTO m FROM smartrent.meters WHERE id = NEW.meter_id FOR UPDATE;
-  IF TG_OP = 'UPDATE' AND ((to_jsonb(NEW) - ARRAY['status','void_reason']) IS DISTINCT FROM (to_jsonb(OLD) - ARRAY['status','void_reason'])
-      OR OLD.status <> 'valid' OR NEW.status <> 'void') THEN
-    RAISE EXCEPTION 'Only valid -> void is allowed; append replacement reading' USING ERRCODE = '23514';
-  END IF;
-  SELECT status INTO period_state FROM smartrent.billing_periods WHERE id = NEW.billing_period_id FOR UPDATE;
-  IF period_state = 'locked' THEN RAISE EXCEPTION 'Billing period is locked' USING ERRCODE = '23514'; END IF;
-  IF TG_OP = 'UPDATE' AND EXISTS (
-      SELECT 1 FROM smartrent.invoice_meter_segments s
-      JOIN smartrent.invoice_lines l ON l.id = s.invoice_line_id
-      JOIN smartrent.invoices i ON i.id = l.invoice_id
-      WHERE i.status IN ('issued','void') AND OLD.id IN (s.from_reading_id, s.to_reading_id)) THEN
-    RAISE EXCEPTION 'Reading belongs to an issued document; use financial adjustment' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.observed_at < m.installed_at OR (m.removed_at IS NOT NULL AND NEW.observed_at > m.removed_at) THEN
-    RAISE EXCEPTION 'Reading outside meter lifecycle' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.tenancy_id IS NOT NULL THEN
-    SELECT room_id INTO room FROM smartrent.tenancies WHERE id = NEW.tenancy_id;
-    IF room <> m.room_id THEN RAISE EXCEPTION 'Reading/tenancy room mismatch' USING ERRCODE = '23514'; END IF;
-  END IF;
-  IF NEW.handover_id IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM smartrent.handovers h WHERE h.id = NEW.handover_id AND h.tenancy_id = NEW.tenancy_id) THEN
-    RAISE EXCEPTION 'Reading/handover tenancy mismatch' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.billing_period_id IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM smartrent.billing_periods bp JOIN smartrent.rooms r ON r.property_id = bp.property_id
-      WHERE bp.id = NEW.billing_period_id AND r.id = m.room_id) THEN
-    RAISE EXCEPTION 'Reading/billing property mismatch' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.supersedes_id IS NOT NULL AND NOT EXISTS (
-      SELECT 1 FROM smartrent.meter_readings x WHERE x.id = NEW.supersedes_id AND x.meter_id = NEW.meter_id AND x.status = 'void') THEN
-    RAISE EXCEPTION 'Correction must reference void reading of the same meter' USING ERRCODE = '23514';
-  END IF;
-  IF NEW.status = 'valid' THEN
-    SELECT reading_value INTO prev FROM smartrent.meter_readings
-      WHERE meter_id = NEW.meter_id AND status = 'valid' AND observed_at < NEW.observed_at ORDER BY observed_at DESC LIMIT 1;
-    SELECT reading_value INTO following FROM smartrent.meter_readings
-      WHERE meter_id = NEW.meter_id AND status = 'valid' AND observed_at > NEW.observed_at ORDER BY observed_at LIMIT 1;
-    IF NEW.reading_value < prev OR NEW.reading_value > following THEN
-      RAISE EXCEPTION 'Non-monotonic meter reading' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER reading_guard BEFORE INSERT OR UPDATE OR DELETE ON meter_readings FOR EACH ROW EXECUTE FUNCTION guard_reading();
-
-CREATE FUNCTION guard_meter_segment() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE a record; b record; tenancy uuid;
-BEGIN
-  SELECT * INTO a FROM smartrent.meter_readings WHERE id = NEW.from_reading_id;
-  SELECT * INTO b FROM smartrent.meter_readings WHERE id = NEW.to_reading_id;
-  SELECT i.tenancy_id INTO tenancy FROM smartrent.invoice_lines l
-    JOIN smartrent.invoices i ON i.id = l.invoice_id WHERE l.id = NEW.invoice_line_id;
-  IF a.meter_id <> b.meter_id OR a.observed_at >= b.observed_at OR a.reading_value > b.reading_value
-     OR a.status <> 'valid' OR b.status <> 'valid'
-     OR a.tenancy_id IS DISTINCT FROM tenancy OR b.tenancy_id IS DISTINCT FROM tenancy THEN
-    RAISE EXCEPTION 'Invalid meter segment; both readings must belong to this tenancy and meter' USING ERRCODE = '23514';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER segment_guard BEFORE INSERT OR UPDATE ON invoice_meter_segments FOR EACH ROW EXECUTE FUNCTION guard_meter_segment();
-
--- ============================================================================
--- 9. Hóa đơn phát hành rồi không sửa
--- ============================================================================
 CREATE FUNCTION guard_invoice() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE doc smartrent.invoices%ROWTYPE; doc_id uuid; total numeric;
+#variable_conflict use_column
+DECLARE c contracts; x jsonb; total numeric; k text; start_value numeric; end_value numeric; from_at timestamptz; to_at timestamptz; previous_value numeric; previous_at timestamptz; version jsonb;
 BEGIN
-  IF TG_TABLE_NAME = 'invoices' THEN
-    IF TG_OP <> 'INSERT' AND OLD.status IN ('issued','void') THEN
-      IF TG_OP = 'DELETE' OR OLD.status = 'void' OR NEW.status <> 'void'
-         OR (to_jsonb(OLD) - ARRAY['status','voided_at','voided_by','void_reason'])
-            IS DISTINCT FROM (to_jsonb(NEW) - ARRAY['status','voided_at','voided_by','void_reason']) THEN
-        RAISE EXCEPTION 'Issued invoice is immutable; adjust or void with reason' USING ERRCODE = '23514';
-      END IF;
-    END IF;
-    IF TG_OP = 'INSERT' AND NEW.status <> 'draft' THEN
-      RAISE EXCEPTION 'Create draft first' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP <> 'DELETE' AND NEW.original_invoice_id IS NOT NULL AND NOT EXISTS (
-        SELECT 1 FROM smartrent.invoices o
-        WHERE o.id = NEW.original_invoice_id AND o.tenancy_id = NEW.tenancy_id
-          AND o.kind NOT IN ('debit_adjustment','credit_adjustment')
-          AND ((NEW.kind = 'replacement' AND o.status = 'void') OR (NEW.kind <> 'replacement' AND o.status = 'issued'))) THEN
-      RAISE EXCEPTION 'Invalid original invoice' USING ERRCODE = '23514';
-    END IF;
-    IF TG_OP = 'UPDATE' AND NEW.status = 'issued' AND OLD.status = 'draft' THEN
-      SELECT amount INTO total FROM smartrent.v_invoice_totals WHERE invoice_id = NEW.id;
-      IF total < 0 OR NOT EXISTS (SELECT 1 FROM smartrent.invoice_lines WHERE invoice_id = NEW.id) THEN
-        RAISE EXCEPTION 'Invoice must have lines and a nonnegative face amount' USING ERRCODE = '23514';
-      END IF;
-      -- Số dư đầu kỳ là nợ chuyển từ sổ cũ, không phát sinh từ bảng giá hay hợp đồng trên hệ thống.
-      IF NEW.kind NOT IN ('debit_adjustment','credit_adjustment','opening_balance') THEN
-        IF NOT EXISTS (SELECT 1 FROM smartrent.contracts c JOIN smartrent.contract_versions v ON v.contract_id = c.id
-                       WHERE c.tenancy_id = NEW.tenancy_id AND v.signed_at IS NOT NULL) THEN
-          RAISE EXCEPTION 'No signed contract for tenancy' USING ERRCODE = '23514';
-        END IF;
-        IF EXISTS (
-            SELECT 1 FROM smartrent.invoice_lines l
-            JOIN smartrent.charge_types c ON c.id = l.charge_type_id
-            LEFT JOIN smartrent.charge_rates r ON r.id = l.source_rate_id
-            WHERE l.invoice_id = NEW.id AND c.category IN ('rent','electricity','water','service')
-              AND (r.id IS NULL OR r.charge_type_id <> l.charge_type_id OR r.unit_price <> l.unit_price)) THEN
-          RAISE EXCEPTION 'Missing/mismatched rate snapshot' USING ERRCODE = '23514';
-        END IF;
-      END IF;
-      IF EXISTS (
-          SELECT 1 FROM smartrent.invoice_lines l
-          JOIN smartrent.charge_rates r ON r.id = l.source_rate_id
-          LEFT JOIN smartrent.charge_instances ci ON ci.id = l.charge_instance_id
-          LEFT JOIN smartrent.invoice_charge_claims cl ON cl.invoice_line_id = l.id
-          WHERE l.invoice_id = NEW.id AND r.billing_cycle = 'once'
-            AND (ci.id IS NULL OR ci.billing_period_id IS NOT NULL OR cl.charge_instance_id IS DISTINCT FROM ci.id)) THEN
-        RAISE EXCEPTION 'One-time fee requires a unique non-periodic charge occurrence' USING ERRCODE = '23514';
-      END IF;
-      IF EXISTS (
-          SELECT 1 FROM smartrent.invoice_lines l
-          JOIN smartrent.charge_rates r ON r.id = l.source_rate_id
-          WHERE l.invoice_id = NEW.id AND r.calculation_method = 'metered' AND (
-            NOT EXISTS (SELECT 1 FROM smartrent.invoice_meter_segments s WHERE s.invoice_line_id = l.id)
-            OR l.quantity <> (SELECT sum(b.reading_value - a.reading_value)
-                              FROM smartrent.invoice_meter_segments s
-                              JOIN smartrent.meter_readings a ON a.id = s.from_reading_id
-                              JOIN smartrent.meter_readings b ON b.id = s.to_reading_id
-                              WHERE s.invoice_line_id = l.id))) THEN
-        RAISE EXCEPTION 'Missing meter readings or consumption mismatch' USING ERRCODE = '23514';
-      END IF;
-      -- Tiền thuê của một ngày chỉ thu một lần. Hóa đơn cuối chỉ có điện nước thì được trùng ngày với hóa đơn tháng đã phát hành.
-      IF EXISTS (SELECT 1 FROM smartrent.invoice_lines l JOIN smartrent.charge_types c ON c.id = l.charge_type_id
-                 WHERE l.invoice_id = NEW.id AND c.category = 'rent')
-         AND EXISTS (
-          SELECT 1 FROM smartrent.invoices o
-          WHERE o.tenancy_id = NEW.tenancy_id AND o.id <> NEW.id AND o.status = 'issued'
-            AND o.kind IN ('periodic','final','replacement')
-            AND daterange(o.service_from, o.service_to, '[)') && daterange(NEW.service_from, NEW.service_to, '[)')
-            AND EXISTS (SELECT 1 FROM smartrent.invoice_lines ol JOIN smartrent.charge_types oc ON oc.id = ol.charge_type_id
-                        WHERE ol.invoice_id = o.id AND oc.category = 'rent')) THEN
-        RAISE EXCEPTION 'Rent for these days is already on an issued invoice' USING ERRCODE = '23514';
-      END IF;
-    END IF;
-    IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+ SELECT * INTO c FROM contracts WHERE id=coalesce(NEW.contract_id,OLD.contract_id);
+ PERFORM lock_customer(c.user_id);
+ IF TG_OP='DELETE' THEN
+  IF OLD.status<>'draft' THEN RAISE EXCEPTION 'issued_invoice_cannot_delete' USING ERRCODE='23514'; END IF;
+  PERFORM require_open_period(OLD.period_id); RETURN OLD;
+ END IF;
+ PERFORM require_open_period(NEW.period_id);
+ IF NEW.period_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM billing_periods p JOIN rooms r ON r.property_id=p.property_id WHERE p.id=NEW.period_id AND r.id=c.room_id) THEN RAISE EXCEPTION 'invoice_period_mismatch' USING ERRCODE='23514'; END IF;
+ IF TG_OP='UPDATE' THEN
+  IF NEW.contract_id<>OLD.contract_id THEN RAISE EXCEPTION 'invoice_contract_is_immutable' USING ERRCODE='23514'; END IF;
+  IF OLD.status<>'draft' THEN
+   IF OLD.status<>'issued' OR NEW.status<>'void' OR (to_jsonb(NEW)-'status'-'voided_at'-'void_reason'-'total_amount') IS DISTINCT FROM (to_jsonb(OLD)-'status'-'voided_at'-'void_reason'-'total_amount') THEN RAISE EXCEPTION 'issued_invoice_is_immutable' USING ERRCODE='23514'; END IF;
+   IF EXISTS(SELECT 1 FROM v_invoice_balances WHERE id=OLD.id AND paid_amount<>0) OR EXISTS(SELECT 1 FROM invoices WHERE adjusts_invoice_id=OLD.id AND status='issued') THEN RAISE EXCEPTION 'release_payments_and_adjustments_before_void' USING ERRCODE='23514'; END IF;
   END IF;
-  IF TG_TABLE_NAME = 'invoice_lines' THEN
-    doc_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.invoice_id ELSE NEW.invoice_id END;
-  ELSE
-    SELECT l.invoice_id INTO doc_id FROM smartrent.invoice_lines l
-      WHERE l.id = CASE WHEN TG_OP = 'DELETE' THEN OLD.invoice_line_id ELSE NEW.invoice_line_id END;
+  IF ROW(NEW.electricity_start,NEW.electricity_end,NEW.electricity_from_at,NEW.electricity_to_at,NEW.water_start,NEW.water_end,NEW.water_from_at,NEW.water_to_at)
+   IS DISTINCT FROM ROW(OLD.electricity_start,OLD.electricity_end,OLD.electricity_from_at,OLD.electricity_to_at,OLD.water_start,OLD.water_end,OLD.water_from_at,OLD.water_to_at) THEN
+   IF (OLD.electricity_end IS NOT NULL OR OLD.water_end IS NOT NULL) AND nullif(btrim(NEW.correction_reason),'') IS NULL THEN RAISE EXCEPTION 'reading_correction_needs_reason' USING ERRCODE='23514'; END IF;
+   NEW.readings_history=OLD.readings_history||jsonb_build_array(jsonb_build_object('at',now(),'electricityStart',OLD.electricity_start,'electricityEnd',OLD.electricity_end,'waterStart',OLD.water_start,'waterEnd',OLD.water_end,'reason',NEW.correction_reason,'actorId',request_user_id()));
   END IF;
-  SELECT * INTO doc FROM smartrent.invoices WHERE id = doc_id FOR UPDATE;
-  IF doc.status <> 'draft' THEN RAISE EXCEPTION 'Invoice details are immutable after issue/void' USING ERRCODE = '23514'; END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
+ END IF;
+ PERFORM unique_json_keys(NEW.lines,'id');
+ FOR x IN SELECT value FROM jsonb_array_elements(NEW.lines) LOOP
+  PERFORM require_json_fields(x,ARRAY['code','category','description','unit','quantity','unitPrice']);
+  IF NOT x ?& ARRAY['code','category','description','unit','quantity','unitPrice'] OR
+   jsonb_typeof(x->'quantity') IS DISTINCT FROM 'number' OR jsonb_typeof(x->'unitPrice') IS DISTINCT FROM 'number' OR
+   (x->>'quantity')::numeric<0 OR (x->>'unitPrice')::numeric<0 OR (x->>'unitPrice')::numeric<>trunc((x->>'unitPrice')::numeric) OR
+   coalesce((x->>'sign')::int,1) NOT IN (-1,1) OR coalesce((x->>'denominator')::int,1)<=0 OR coalesce((x->>'numerator')::int,1)<0 OR
+   x->>'category' NOT IN ('rent','electricity','water','service','other') THEN RAISE EXCEPTION 'invalid_invoice_line' USING ERRCODE='23514'; END IF;
+ END LOOP;
+ IF NEW.adjusts_invoice_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM invoices WHERE id=NEW.adjusts_invoice_id AND contract_id=NEW.contract_id AND status='issued' AND adjusts_invoice_id IS NULL) THEN RAISE EXCEPTION 'invalid_adjustment_target' USING ERRCODE='23514'; END IF;
+ IF NEW.status='issued' AND (TG_OP='INSERT' OR OLD.status='draft') THEN
+  PERFORM require_admin(NEW.issued_by);
+  IF NEW.kind<>'opening_balance' AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(c.versions) v WHERE nullif(v->>'signedAt','') IS NOT NULL) THEN RAISE EXCEPTION 'signed_contract_required' USING ERRCODE='23514'; END IF;
+  total=invoice_total(NEW.lines);
+  IF jsonb_array_length(NEW.lines)=0 OR (NEW.kind='credit_adjustment' AND total>=0) OR (NEW.kind<>'credit_adjustment' AND total<0) THEN RAISE EXCEPTION 'invalid_invoice_total' USING ERRCODE='23514'; END IF;
+  IF NEW.metered_only AND EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.lines) x WHERE x->>'category' NOT IN ('electricity','water')) THEN RAISE EXCEPTION 'metered_final_cannot_charge_rent' USING ERRCODE='23514'; END IF;
+  IF NEW.adjusts_invoice_id IS NULL THEN
+   IF EXISTS(SELECT x->>'code' FROM jsonb_array_elements(NEW.lines) x WHERE coalesce((x->>'oneTime')::boolean,false) GROUP BY x->>'code' HAVING count(*)>1) THEN RAISE EXCEPTION 'duplicate_one_time_charge' USING ERRCODE='23514'; END IF;
+   FOREACH k IN ARRAY ARRAY['electricity','water'] LOOP
+    start_value=(to_jsonb(NEW)->>(k||'_start'))::numeric; end_value=(to_jsonb(NEW)->>(k||'_end'))::numeric;
+    from_at=(to_jsonb(NEW)->>(k||'_from_at'))::timestamptz; to_at=(to_jsonb(NEW)->>(k||'_to_at'))::timestamptz;
+    IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.lines) x WHERE x->>'category'=k) OR end_value IS NOT NULL THEN
+     IF end_value IS NULL OR (SELECT sum((x->>'quantity')::numeric) FROM jsonb_array_elements(NEW.lines) x WHERE x->>'category'=k) IS DISTINCT FROM end_value-start_value THEN RAISE EXCEPTION 'invoice_reading_quantity_mismatch' USING ERRCODE='23514'; END IF;
+     IF EXISTS(SELECT 1 FROM invoices other WHERE other.id<>NEW.id AND other.contract_id=NEW.contract_id AND other.status='issued' AND other.adjusts_invoice_id IS NULL
+      AND (to_jsonb(other)->>(k||'_end')) IS NOT NULL
+      AND tstzrange(from_at,to_at,'[)')&&tstzrange((to_jsonb(other)->>(k||'_from_at'))::timestamptz,(to_jsonb(other)->>(k||'_to_at'))::timestamptz,'[)')) THEN RAISE EXCEPTION 'consumption_already_billed' USING ERRCODE='23514'; END IF;
+     SELECT (to_jsonb(i)->>(k||'_end'))::numeric,(to_jsonb(i)->>(k||'_to_at'))::timestamptz INTO previous_value,previous_at
+      FROM invoices i WHERE i.contract_id=NEW.contract_id AND i.id<>NEW.id AND i.status='issued' AND i.adjusts_invoice_id IS NULL
+      AND (to_jsonb(i)->>(k||'_to_at'))::timestamptz<=from_at ORDER BY (to_jsonb(i)->>(k||'_to_at'))::timestamptz DESC LIMIT 1;
+     IF previous_value IS NULL THEN previous_value=(c.initial_readings->k->>'value')::numeric; previous_at=(c.initial_readings->k->>'observedAt')::timestamptz; END IF;
+     IF previous_value IS NULL OR start_value IS DISTINCT FROM previous_value OR from_at IS DISTINCT FROM previous_at THEN RAISE EXCEPTION 'reading_start_mismatch' USING ERRCODE='23514'; END IF;
+    END IF;
+   END LOOP;
+   SELECT value INTO version FROM jsonb_array_elements(c.versions) WHERE nullif(value->>'signedAt','') IS NOT NULL AND (value->>'effectiveFrom')::date<=NEW.service_from ORDER BY (value->>'versionNo')::int DESC LIMIT 1;
+   IF NEW.kind IN ('periodic','final') AND EXISTS(SELECT 1 FROM jsonb_array_elements(coalesce(version->'rates','[]')) rate
+    WHERE rate->>'method'='metered' AND rate->>'category' IN ('electricity','water') AND to_jsonb(NEW)->>((rate->>'category')||'_end') IS NULL) THEN RAISE EXCEPTION 'invoice_needs_all_readings' USING ERRCODE='23514'; END IF;
+   IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.lines) x JOIN invoices other ON other.contract_id=NEW.contract_id AND other.id<>NEW.id AND other.status='issued' AND other.adjusts_invoice_id IS NULL
+    CROSS JOIN LATERAL jsonb_array_elements(other.lines) y WHERE coalesce((x->>'oneTime')::boolean,false) AND coalesce((y->>'oneTime')::boolean,false) AND x->>'code'=y->>'code') THEN RAISE EXCEPTION 'one_time_charge_already_billed' USING ERRCODE='23514'; END IF;
+  END IF;
+ END IF; RETURN NEW;
 END $$;
 CREATE TRIGGER invoice_guard BEFORE INSERT OR UPDATE OR DELETE ON invoices FOR EACH ROW EXECUTE FUNCTION guard_invoice();
-CREATE TRIGGER invoice_line_guard BEFORE INSERT OR UPDATE OR DELETE ON invoice_lines FOR EACH ROW EXECUTE FUNCTION guard_invoice();
-CREATE TRIGGER invoice_segment_guard BEFORE INSERT OR UPDATE OR DELETE ON invoice_meter_segments FOR EACH ROW EXECUTE FUNCTION guard_invoice();
 
-CREATE FUNCTION sync_charge_claim() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION guard_payment() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE a jsonb; i invoices; c contracts; original payments; allocated numeric;
 BEGIN
-  IF TG_TABLE_NAME = 'invoices' THEN
-    IF NEW.status = 'void' THEN
-      DELETE FROM smartrent.invoice_charge_claims c USING smartrent.invoice_lines l
-      WHERE c.invoice_line_id = l.id AND l.invoice_id = NEW.id;
-    END IF;
-  ELSE
-    IF TG_OP = 'UPDATE' AND OLD.charge_instance_id IS DISTINCT FROM NEW.charge_instance_id THEN
-      DELETE FROM smartrent.invoice_charge_claims WHERE invoice_line_id = OLD.id;
-    END IF;
-    IF NEW.charge_instance_id IS NOT NULL THEN
-      IF NOT EXISTS (SELECT 1 FROM smartrent.charge_instances c JOIN smartrent.invoices i ON i.tenancy_id = c.tenancy_id
-                     WHERE c.id = NEW.charge_instance_id AND i.id = NEW.invoice_id AND c.charge_type_id = NEW.charge_type_id
-                       AND (c.billing_period_id IS NULL OR c.billing_period_id = i.billing_period_id)) THEN
-        RAISE EXCEPTION 'Charge occurrence does not match invoice' USING ERRCODE = '23514';
-      END IF;
-      INSERT INTO smartrent.invoice_charge_claims(charge_instance_id, invoice_line_id)
-      VALUES (NEW.charge_instance_id, NEW.id) ON CONFLICT (invoice_line_id) DO NOTHING;
-    END IF;
-  END IF;
-  RETURN NEW;
+ IF TG_OP='DELETE' THEN RAISE EXCEPTION 'payment_ledger_is_append_only' USING ERRCODE='23514'; END IF;
+ PERFORM require_customer(NEW.user_id); PERFORM lock_customer(NEW.user_id);
+ IF TG_OP='UPDATE' AND (OLD.status<>'pending' OR (to_jsonb(NEW)-'status'-'confirmed_by'-'confirmed_at'-'reason'-'allocations') IS DISTINCT FROM (to_jsonb(OLD)-'status'-'confirmed_by'-'confirmed_at'-'reason'-'allocations')) THEN RAISE EXCEPTION 'confirmed_payment_is_immutable' USING ERRCODE='23514'; END IF;
+ IF NEW.status='confirmed' THEN PERFORM require_admin(NEW.confirmed_by); END IF;
+ IF NEW.contract_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM contracts WHERE id=NEW.contract_id AND user_id=NEW.user_id) THEN RAISE EXCEPTION 'payment_owner_mismatch' USING ERRCODE='23514'; END IF;
+ IF NEW.intended_invoice_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE i.id=NEW.intended_invoice_id AND c.user_id=NEW.user_id AND i.status='issued' AND i.adjusts_invoice_id IS NULL) THEN RAISE EXCEPTION 'payment_owner_mismatch' USING ERRCODE='23514'; END IF;
+ PERFORM require_files(NEW.proof_file_ids);
+ PERFORM unique_json_keys(NEW.allocations,'invoiceId');
+ allocated=0;
+ FOR a IN SELECT value FROM jsonb_array_elements(NEW.allocations) ORDER BY value->>'invoiceId' LOOP
+  IF jsonb_typeof(a->'amount') IS DISTINCT FROM 'number' OR (a->>'amount')::numeric<=0 OR (a->>'amount')::numeric<>trunc((a->>'amount')::numeric) THEN RAISE EXCEPTION 'invalid_allocation' USING ERRCODE='23514'; END IF;
+  SELECT * INTO i FROM invoices WHERE id=(a->>'invoiceId')::uuid FOR UPDATE;
+  SELECT * INTO c FROM contracts WHERE id=i.contract_id;
+  IF i.id IS NULL OR i.status<>'issued' OR i.adjusts_invoice_id IS NOT NULL OR c.user_id<>NEW.user_id OR (NEW.contract_id IS NOT NULL AND c.id<>NEW.contract_id) THEN RAISE EXCEPTION 'allocation_invoice_mismatch' USING ERRCODE='23514'; END IF;
+  allocated=allocated+(a->>'amount')::numeric;
+ END LOOP;
+ IF allocated>NEW.amount OR (NEW.kind IN ('deposit_receipt','deposit_refund') AND allocated<>0) OR (NEW.kind IN ('deposit_offset','deposit_offset_reversal') AND allocated<>NEW.amount) THEN RAISE EXCEPTION 'allocation_amount_mismatch' USING ERRCODE='23514'; END IF;
+ IF NEW.reverses_id IS NOT NULL THEN
+  SELECT * INTO original FROM payments WHERE id=NEW.reverses_id;
+  IF original.status IS DISTINCT FROM 'confirmed' OR original.user_id IS DISTINCT FROM NEW.user_id OR original.contract_id IS DISTINCT FROM NEW.contract_id
+   OR (NEW.kind='receipt_reversal' AND original.kind IS DISTINCT FROM 'receipt') OR (NEW.kind='deposit_offset_reversal' AND original.kind IS DISTINCT FROM 'deposit_offset') THEN RAISE EXCEPTION 'invalid_payment_reversal' USING ERRCODE='23514'; END IF;
+ END IF; RETURN NEW;
 END $$;
-CREATE TRIGGER charge_claim_line AFTER INSERT OR UPDATE ON invoice_lines FOR EACH ROW EXECUTE FUNCTION sync_charge_claim();
-CREATE TRIGGER charge_claim_void AFTER UPDATE ON invoices FOR EACH ROW EXECUTE FUNCTION sync_charge_claim();
-
-CREATE FUNCTION guard_period_lock() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE period_id uuid; period_status text;
+CREATE TRIGGER payment_guard BEFORE INSERT OR UPDATE OR DELETE ON payments FOR EACH ROW EXECUTE FUNCTION guard_payment();
+CREATE FUNCTION validate_finance(uid uuid) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE p payments; a jsonb; reversed numeric; allocated numeric; reversed_allocated numeric;
 BEGIN
-  IF TG_TABLE_NAME = 'billing_periods' THEN
-    IF OLD.status = 'locked' AND NEW.status = 'open'
-       AND nullif(btrim(current_setting('smartrent.reason', true)), '') IS NULL THEN
-      RAISE EXCEPTION 'Unlock requires transaction-local reason' USING ERRCODE = '23514';
-    END IF;
-  ELSE
-    IF TG_TABLE_NAME = 'invoices' THEN
-      period_id := CASE WHEN TG_OP = 'DELETE' THEN OLD.billing_period_id ELSE NEW.billing_period_id END;
-    ELSE
-      SELECT i.billing_period_id INTO period_id FROM smartrent.invoices i
-        WHERE i.id = CASE WHEN TG_OP = 'DELETE' THEN OLD.invoice_id ELSE NEW.invoice_id END;
-    END IF;
-    SELECT status INTO period_status FROM smartrent.billing_periods WHERE id = period_id FOR UPDATE;
-    IF period_status = 'locked' THEN
-      RAISE EXCEPTION 'Billing period is locked; unlock with reason before adjustment' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; ELSE RETURN NEW; END IF;
-END $$;
-CREATE TRIGGER period_guard BEFORE UPDATE ON billing_periods FOR EACH ROW EXECUTE FUNCTION guard_period_lock();
-CREATE TRIGGER period_guard BEFORE INSERT OR UPDATE OR DELETE ON invoices FOR EACH ROW EXECUTE FUNCTION guard_period_lock();
-CREATE TRIGGER period_guard BEFORE INSERT OR UPDATE OR DELETE ON invoice_lines FOR EACH ROW EXECUTE FUNCTION guard_period_lock();
-
--- ============================================================================
--- 10. Sổ tài chính: khóa theo khách rồi kiểm tra cân đối lúc COMMIT
--- ============================================================================
-CREATE FUNCTION financial_tenant(p_table text, j jsonb) RETURNS uuid LANGUAGE plpgsql STABLE AS $$
-DECLARE result uuid;
-BEGIN
-  IF p_table = 'payments' THEN
-    RETURN (j->>'tenant_id')::uuid;
-  ELSIF p_table = 'payment_reversals' THEN
-    SELECT tenant_id INTO result FROM smartrent.payments WHERE id = (j->>'payment_id')::uuid;
-  ELSIF p_table IN ('deposit_entries','invoices') THEN
-    SELECT representative_tenant_id INTO result FROM smartrent.tenancies
-      WHERE id = (j->>'tenancy_id')::uuid;
-  ELSE
-    SELECT t.representative_tenant_id INTO result FROM smartrent.invoices i
-      JOIN smartrent.tenancies t ON t.id = i.tenancy_id WHERE i.id = (j->>'invoice_id')::uuid;
-  END IF;
-  RETURN result;
-END $$;
-
-CREATE FUNCTION lock_financial_tenant() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE tenant uuid; p smartrent.payments%ROWTYPE; d smartrent.deposit_entries%ROWTYPE; original record;
-BEGIN
-  tenant := smartrent.financial_tenant(TG_TABLE_NAME, CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END);
-  PERFORM 1 FROM smartrent.tenants WHERE id = tenant FOR UPDATE;
-  -- Tách hai IF: PL/pgSQL không dừng sớm ở AND nên OLD.status sẽ lỗi trên bảng không có cột này.
-  IF TG_TABLE_NAME = 'payments' THEN
-    IF TG_OP <> 'INSERT' AND OLD.status <> 'pending' THEN
-      RAISE EXCEPTION 'Confirmed/rejected payment is immutable' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
-  IF TG_TABLE_NAME IN ('payment_reversals','deposit_entries') THEN
-    SELECT * INTO p FROM smartrent.payments WHERE id = NEW.payment_id;
-    IF p.status <> 'confirmed' OR p.tenant_id <> tenant THEN
-      RAISE EXCEPTION 'Funding must be confirmed and belong to tenant' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  IF TG_TABLE_NAME = 'deposit_entries' THEN
-    IF NEW.kind = 'reversal' THEN
-      SELECT * INTO d FROM smartrent.deposit_entries WHERE id = NEW.related_entry_id;
-      IF d.kind NOT IN ('receipt','offset') OR d.tenancy_id <> NEW.tenancy_id OR d.payment_id <> NEW.payment_id THEN
-        RAISE EXCEPTION 'Invalid deposit reversal' USING ERRCODE = '23514';
-      END IF;
-    ELSIF NEW.kind = 'refund' AND NOT EXISTS (
-        SELECT 1 FROM smartrent.payment_reversals r
-        WHERE r.id = NEW.payment_reversal_id AND r.payment_id = NEW.payment_id AND r.kind = 'refund') THEN
-      RAISE EXCEPTION 'Deposit refund requires confirmed cash refund' USING ERRCODE = '23514';
-    END IF;
-  ELSIF TG_TABLE_NAME = 'payment_allocations' THEN
-    IF NEW.payment_id IS NOT NULL THEN
-      SELECT * INTO p FROM smartrent.payments WHERE id = NEW.payment_id;
-    ELSE
-      SELECT * INTO d FROM smartrent.deposit_entries WHERE id = NEW.deposit_entry_id;
-      SELECT * INTO p FROM smartrent.payments WHERE id = d.payment_id;
-      IF d.kind <> 'offset' THEN RAISE EXCEPTION 'Deposit allocation requires offset entry' USING ERRCODE = '23514'; END IF;
-    END IF;
-    IF p.tenant_id <> tenant OR p.status <> 'confirmed' THEN
-      RAISE EXCEPTION 'Allocation payer mismatch/unconfirmed' USING ERRCODE = '23514';
-    END IF;
-    IF NEW.kind = 'reversal' THEN
-      SELECT * INTO original FROM smartrent.payment_allocations WHERE id = NEW.reverses_id;
-      IF original.kind <> 'apply' OR original.invoice_id <> NEW.invoice_id
-         OR original.payment_id IS DISTINCT FROM NEW.payment_id
-         OR original.deposit_entry_id IS DISTINCT FROM NEW.deposit_entry_id THEN
-        RAISE EXCEPTION 'Reversal must keep original invoice and funding source' USING ERRCODE = '23514';
-      END IF;
-    END IF;
-  END IF;
-  RETURN NEW;
-END $$;
-
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['payments','payment_reversals','deposit_entries','payment_allocations','invoices','invoice_lines'] LOOP
-    EXECUTE format('CREATE TRIGGER financial_lock BEFORE INSERT OR UPDATE OR DELETE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.lock_financial_tenant()', t);
+ IF EXISTS(SELECT 1 FROM v_invoice_balances b JOIN contracts c ON c.id=b.contract_id WHERE c.user_id=uid AND (b.receivable_amount<0 OR b.paid_amount<0 OR b.outstanding_amount<0)) THEN RAISE EXCEPTION 'invoice_overallocated' USING ERRCODE='23514'; END IF;
+ IF EXISTS(SELECT 1 FROM v_deposit_balances b JOIN contracts c ON c.id=b.contract_id WHERE c.user_id=uid AND b.held<0) THEN RAISE EXCEPTION 'deposit_overdrawn' USING ERRCODE='23514'; END IF;
+ IF EXISTS(SELECT 1 FROM v_deposit_balances b JOIN contracts c ON c.id=b.contract_id WHERE c.user_id=uid AND c.status='ended' AND b.held<>0) THEN RAISE EXCEPTION 'ended_contract_deposit_not_settled' USING ERRCODE='23514'; END IF;
+ FOR p IN SELECT * FROM payments WHERE user_id=uid AND status='confirmed' AND kind IN ('receipt','deposit_offset') LOOP
+  SELECT coalesce(sum(amount),0) INTO reversed FROM payments WHERE reverses_id=p.id AND status='confirmed';
+  IF reversed>p.amount THEN RAISE EXCEPTION 'payment_overreversed' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM payments r CROSS JOIN LATERAL jsonb_array_elements(r.allocations) x WHERE r.reverses_id=p.id AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(p.allocations) a WHERE a->>'invoiceId'=x->>'invoiceId')) THEN RAISE EXCEPTION 'reversal_allocation_mismatch' USING ERRCODE='23514'; END IF;
+  FOR a IN SELECT value FROM jsonb_array_elements(p.allocations) LOOP
+   SELECT coalesce(sum((x->>'amount')::numeric),0) INTO reversed_allocated FROM payments r CROSS JOIN LATERAL jsonb_array_elements(r.allocations) x WHERE r.reverses_id=p.id AND r.status='confirmed' AND x->>'invoiceId'=a->>'invoiceId';
+   IF reversed_allocated>(a->>'amount')::numeric THEN RAISE EXCEPTION 'allocation_overreversed' USING ERRCODE='23514'; END IF;
   END LOOP;
+  SELECT coalesce(sum((x->>'amount')::numeric),0) INTO allocated FROM jsonb_array_elements(p.allocations) x;
+  SELECT coalesce(sum((x->>'amount')::numeric),0) INTO reversed_allocated FROM payments r CROSS JOIN LATERAL jsonb_array_elements(r.allocations) x WHERE r.reverses_id=p.id AND r.status='confirmed';
+  IF p.amount-reversed-allocated+reversed_allocated<0 THEN RAISE EXCEPTION 'payment_overspent' USING ERRCODE='23514'; END IF;
+ END LOOP;
 END $$;
-
-CREATE FUNCTION validate_financial_tenant(p_tenant uuid) RETURNS void LANGUAGE plpgsql AS $$
+CREATE FUNCTION finance_after_write() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE uid uuid;
 BEGIN
-  IF EXISTS (SELECT 1 FROM smartrent.v_payment_balances WHERE tenant_id = p_tenant AND
-      (unapplied_amount < 0 OR reversed_amount > amount OR invoice_allocated_amount < 0 OR deposit_held_amount < 0
-       OR (status <> 'confirmed' AND (reversed_amount <> 0 OR invoice_allocated_amount <> 0 OR deposit_held_amount <> 0)))) THEN
-    RAISE EXCEPTION 'Payment overallocated/reversed or not confirmed' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.v_deposit_movements d JOIN smartrent.payments p ON p.id = d.payment_id
-             WHERE p.tenant_id = p_tenant GROUP BY d.tenancy_id, d.payment_id HAVING sum(d.signed_amount) < 0) THEN
-    RAISE EXCEPTION 'Deposit funding lot cannot be negative' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.v_invoice_balances b JOIN smartrent.tenancies t ON t.id = b.tenancy_id
-             WHERE t.representative_tenant_id = p_tenant
-               AND (b.paid_amount < 0 OR (b.status = 'issued' AND (b.outstanding_amount < 0 OR b.receivable_amount < 0))
-                    OR (b.status <> 'issued' AND b.paid_amount <> 0))) THEN
-    RAISE EXCEPTION 'Invoice overpaid, negative, or void/draft with live allocation' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.payment_allocations a JOIN smartrent.invoices i ON i.id = a.invoice_id
-             JOIN smartrent.tenancies t ON t.id = i.tenancy_id
-             WHERE t.representative_tenant_id = p_tenant AND i.kind IN ('debit_adjustment','credit_adjustment')) THEN
-    RAISE EXCEPTION 'Allocate against base invoice, not adjustment document' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.payment_allocations a JOIN smartrent.invoices i ON i.id = a.invoice_id
-             JOIN smartrent.tenancies t ON t.id = i.tenancy_id
-             LEFT JOIN smartrent.payment_allocations r ON r.reverses_id = a.id
-             WHERE t.representative_tenant_id = p_tenant AND a.kind = 'apply'
-             GROUP BY a.id HAVING coalesce(sum(r.amount), 0) > a.amount) THEN
-    RAISE EXCEPTION 'Allocation reversal exceeds original' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.deposit_entries d JOIN smartrent.payments p ON p.id = d.payment_id
-             LEFT JOIN smartrent.deposit_entries r ON r.related_entry_id = d.id AND r.kind = 'reversal'
-             WHERE p.tenant_id = p_tenant GROUP BY d.id HAVING coalesce(sum(r.amount), 0) > d.amount) THEN
-    RAISE EXCEPTION 'Deposit reversal exceeds original' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.deposit_entries d JOIN smartrent.payments p ON p.id = d.payment_id
-             WHERE p.tenant_id = p_tenant AND d.kind = 'offset'
-               AND d.amount - coalesce((SELECT sum(r.amount) FROM smartrent.deposit_entries r WHERE r.related_entry_id = d.id AND r.kind = 'reversal'), 0)
-                   <> coalesce((SELECT sum(a.signed_amount) FROM smartrent.v_allocation_movements a WHERE a.deposit_entry_id = d.id), 0)) THEN
-    RAISE EXCEPTION 'Deposit offset must equal net invoice allocation' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.payment_reversals r JOIN smartrent.payments p ON p.id = r.payment_id
-             JOIN smartrent.deposit_entries d ON d.payment_reversal_id = r.id
-             WHERE p.tenant_id = p_tenant GROUP BY r.id HAVING sum(d.amount) > r.amount) THEN
-    RAISE EXCEPTION 'Deposit refund exceeds associated cash refund' USING ERRCODE = '23514';
-  END IF;
-  IF EXISTS (SELECT 1 FROM smartrent.invoices o JOIN smartrent.tenancies t ON t.id = o.tenancy_id
-             JOIN smartrent.invoices a ON a.original_invoice_id = o.id
-             WHERE t.representative_tenant_id = p_tenant AND o.status <> 'issued' AND a.status = 'issued'
-               AND a.kind IN ('debit_adjustment','credit_adjustment')) THEN
-    RAISE EXCEPTION 'Void adjustments before voiding their base invoice' USING ERRCODE = '23514';
-  END IF;
+ IF TG_TABLE_NAME='payments' THEN uid=NEW.user_id; ELSE SELECT user_id INTO uid FROM contracts WHERE id=NEW.contract_id; END IF;
+ PERFORM validate_finance(uid); RETURN NULL;
 END $$;
+CREATE CONSTRAINT TRIGGER payment_balances AFTER INSERT OR UPDATE ON payments DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION finance_after_write();
+CREATE CONSTRAINT TRIGGER invoice_balances AFTER INSERT OR UPDATE ON invoices DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION finance_after_write();
 
-CREATE FUNCTION deferred_financial_check() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION validate_checkout() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE c contracts; k text;
 BEGIN
-  PERFORM smartrent.validate_financial_tenant(
-    smartrent.financial_tenant(TG_TABLE_NAME, CASE WHEN TG_OP = 'DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END));
-  RETURN NULL;
-END $$;
-
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['payments','payment_reversals','deposit_entries','payment_allocations','invoices','invoice_lines'] LOOP
-    EXECUTE format('CREATE CONSTRAINT TRIGGER financial_balanced AFTER INSERT OR UPDATE OR DELETE ON smartrent.%I DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION smartrent.deferred_financial_check()', t);
+ SELECT * INTO c FROM contracts WHERE id=NEW.id;
+ IF c.status='ended' THEN
+  IF EXISTS(SELECT 1 FROM v_deposit_balances WHERE contract_id=c.id AND held<>0) THEN RAISE EXCEPTION 'checkout_deposit_not_settled' USING ERRCODE='23514'; END IF;
+  IF EXISTS(SELECT 1 FROM v_invoice_balances WHERE contract_id=c.id AND outstanding_amount>0) AND nullif(btrim(c.remaining_debt_reason),'') IS NULL THEN RAISE EXCEPTION 'checkout_debt_needs_reason' USING ERRCODE='23514'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM invoices WHERE contract_id=c.id AND kind='final' AND status='issued') THEN RAISE EXCEPTION 'checkout_needs_final_invoice' USING ERRCODE='23514'; END IF;
+  FOR k IN SELECT jsonb_object_keys(c.initial_readings) LOOP
+   IF NOT c.final_readings ? k OR (c.final_readings->k->>'value')::numeric<(c.initial_readings->k->>'value')::numeric THEN RAISE EXCEPTION 'checkout_needs_final_readings' USING ERRCODE='23514'; END IF;
+   IF NOT EXISTS(SELECT 1 FROM invoices i WHERE i.contract_id=c.id AND i.kind='final' AND i.status='issued'
+     AND (to_jsonb(i)->>(k||'_end'))::numeric=(c.final_readings->k->>'value')::numeric) THEN RAISE EXCEPTION 'checkout_readings_mismatch' USING ERRCODE='23514'; END IF;
   END LOOP;
+  IF EXISTS(SELECT 1 FROM jsonb_array_elements(c.occupants) x WHERE x->>'leftOn' IS NULL OR (x->>'leftOn')::date>c.move_out_on) THEN RAISE EXCEPTION 'checkout_must_close_occupants' USING ERRCODE='23514'; END IF;
+ END IF; RETURN NULL;
 END $$;
+CREATE CONSTRAINT TRIGGER contract_checkout AFTER INSERT OR UPDATE ON contracts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_checkout();
 
--- ============================================================================
--- 11. Nhận phòng thường: lúc COMMIT phải đủ hợp đồng đã ký, biên bản và chỉ số đầu
--- ============================================================================
-CREATE FUNCTION validate_tenancy_state() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE t smartrent.tenancies%ROWTYPE;
+CREATE FUNCTION guard_ticket() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE x jsonb; previous jsonb;
 BEGIN
-  SELECT * INTO t FROM smartrent.tenancies WHERE id = NEW.id;
-  IF t.status = 'active' AND t.onboarding_mode = 'normal' THEN
-    IF NOT EXISTS (SELECT 1 FROM smartrent.contracts c JOIN smartrent.contract_versions v ON v.contract_id = c.id
-                   WHERE c.tenancy_id = t.id AND v.signed_at IS NOT NULL
-                     AND v.effective_from <= t.actual_move_in AND v.ends_on > t.actual_move_in)
-       OR NOT EXISTS (SELECT 1 FROM smartrent.handovers h
-                      WHERE h.tenancy_id = t.id AND h.kind = 'checkin' AND h.confirmed_at IS NOT NULL) THEN
-      RAISE EXCEPTION 'Normal check-in needs signed contract and confirmed handover' USING ERRCODE = '23514';
-    END IF;
-    IF EXISTS (SELECT 1 FROM smartrent.effective_rates(t.id, t.actual_move_in) er
-               JOIN smartrent.charge_types ct ON ct.id = er.charge_type_id
-               WHERE er.calculation_method = 'metered'
-                 AND NOT EXISTS (SELECT 1 FROM smartrent.meters m
-                                 JOIN smartrent.meter_readings mr ON mr.meter_id = m.id
-                                 JOIN smartrent.handovers h ON h.id = mr.handover_id
-                                 WHERE m.room_id = t.room_id AND m.meter_kind = ct.category
-                                   AND mr.tenancy_id = t.id AND mr.status = 'valid'
-                                   AND h.confirmed_at IS NOT NULL AND h.kind = 'checkin')) THEN
-      RAISE EXCEPTION 'Missing handover baseline for metered utility' USING ERRCODE = '23514';
-    END IF;
-  END IF;
-  RETURN NULL;
-END $$;
-CREATE CONSTRAINT TRIGGER tenancy_consistent AFTER INSERT OR UPDATE ON tenancies
-  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_tenancy_state();
-
--- ============================================================================
--- 12. Nhật ký tự động. Ứng dụng đặt smartrent.actor_id, reason, correlation_id bằng set_config(..., true)
--- ============================================================================
-CREATE FUNCTION audit_change() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE j jsonb; oldj jsonb; org uuid; entity_id uuid; ownership record;
-BEGIN
-  IF TG_OP <> 'DELETE' THEN j := to_jsonb(NEW); END IF;
-  IF TG_OP <> 'INSERT' THEN oldj := to_jsonb(OLD); END IF;
-  entity_id := coalesce((j->>'id')::uuid, (oldj->>'id')::uuid);
-  IF TG_OP <> 'DELETE' THEN
-    org := smartrent.organization_of(TG_TABLE_NAME, entity_id);
-  ELSE
-    org := (oldj->>'organization_id')::uuid;
-    IF org IS NULL THEN
-      FOR ownership IN SELECT * FROM (VALUES
-        ('tenancy_id','tenancies'), ('tenant_id','tenants'), ('property_id','properties'), ('room_id','rooms'),
-        ('contract_version_id','contract_versions'), ('meter_id','meters'), ('invoice_id','invoices'), ('contract_id','contracts')
-      ) x(parent_column, parent_table) LOOP
-        IF nullif(oldj->>ownership.parent_column, '') IS NOT NULL THEN
-          org := smartrent.organization_of(ownership.parent_table, (oldj->>ownership.parent_column)::uuid);
-          EXIT;
-        END IF;
-      END LOOP;
-    END IF;
-  END IF;
-  INSERT INTO smartrent.audit_logs(organization_id, actor_id, action, table_name, record_key, old_data, new_data, reason, correlation_id)
-  VALUES (org, nullif(current_setting('smartrent.actor_id', true), '')::uuid, TG_OP, TG_TABLE_NAME,
-          jsonb_build_object('id', entity_id), oldj, j,
-          nullif(current_setting('smartrent.reason', true), ''),
-          nullif(current_setting('smartrent.correlation_id', true), '')::uuid);
-  RETURN NULL;
-END $$;
-
-DO $$
-DECLARE t text;
-BEGIN
-  FOREACH t IN ARRAY ARRAY['organizations','properties','rooms','tenants','rental_inquiries','tenancies','contracts','contract_versions',
-                           'charge_rates','meters','meter_readings','invoices','invoice_lines','payments','payment_reversals',
-                           'payment_allocations','deposit_entries','checkout_settlements','tickets'] LOOP
-    EXECUTE format('CREATE TRIGGER audit_row AFTER INSERT OR UPDATE OR DELETE ON smartrent.%I FOR EACH ROW EXECUTE FUNCTION smartrent.audit_change()', t);
+ IF NEW.assigned_to IS NOT NULL THEN PERFORM require_admin(NEW.assigned_to); END IF;
+ IF NEW.contract_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM contracts WHERE id=NEW.contract_id AND room_id=NEW.room_id) THEN RAISE EXCEPTION 'ticket_room_mismatch' USING ERRCODE='23514'; END IF;
+ PERFORM require_files(NEW.attachment_file_ids);
+ PERFORM unique_json_keys(NEW.messages,'id');
+ FOR x IN SELECT value FROM jsonb_array_elements(NEW.messages) LOOP
+  PERFORM require_json_fields(x,ARRAY['authorId','body','createdAt','isInternal']);
+  PERFORM (x->>'createdAt')::timestamptz;
+  IF jsonb_typeof(x->'isInternal') IS DISTINCT FROM 'boolean' THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
+  IF NOT x ?& ARRAY['authorId','body','createdAt','isInternal'] OR nullif(btrim(x->>'body'),'') IS NULL OR NOT EXISTS(SELECT 1 FROM users WHERE id=(x->>'authorId')::uuid) THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
+  IF (x->>'isInternal')::boolean THEN PERFORM require_admin((x->>'authorId')::uuid); END IF;
+  PERFORM require_files(coalesce(x->'fileIds','[]'));
+ END LOOP;
+ IF TG_OP='UPDATE' THEN
+  IF NEW.room_id<>OLD.room_id OR NEW.contract_id IS DISTINCT FROM OLD.contract_id OR NEW.reported_by<>OLD.reported_by THEN RAISE EXCEPTION 'ticket_identity_is_immutable' USING ERRCODE='23514'; END IF;
+  FOR previous IN SELECT value FROM jsonb_array_elements(OLD.messages) LOOP
+   IF NOT NEW.messages @> jsonb_build_array(previous) THEN RAISE EXCEPTION 'ticket_messages_are_append_only' USING ERRCODE='23514'; END IF;
   END LOOP;
+  IF NEW.status<>OLD.status OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to THEN
+   NEW.history=OLD.history||jsonb_build_array(jsonb_build_object('at',now(),'from',OLD.status,'to',NEW.status,'assignedTo',NEW.assigned_to,'actorId',request_user_id()));
+  END IF;
+ END IF;
+ NEW.updated_at=now(); RETURN NEW;
 END $$;
+CREATE TRIGGER ticket_guard BEFORE INSERT OR UPDATE ON tickets FOR EACH ROW EXECUTE FUNCTION guard_ticket();
+CREATE FUNCTION protect_file() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE signed_ref boolean; used boolean;
+BEGIN
+ SELECT EXISTS(SELECT 1 FROM contracts c CROSS JOIN LATERAL jsonb_array_elements(c.versions) v
+ WHERE nullif(v->>'signedAt','') IS NOT NULL AND v->'fileIds' @> jsonb_build_array(OLD.id::text)) INTO signed_ref;
+ IF signed_ref AND (TG_OP='DELETE' OR (to_jsonb(NEW)-'scan_status') IS DISTINCT FROM (to_jsonb(OLD)-'scan_status')) THEN RAISE EXCEPTION 'signed_file_is_immutable' USING ERRCODE='23514'; END IF;
+ IF TG_OP='DELETE' THEN
+  SELECT EXISTS(SELECT 1 FROM rooms r,jsonb_array_elements(r.images) x WHERE x->>'fileId'=OLD.id::text)
+   OR EXISTS(SELECT 1 FROM contracts c WHERE c.attachments @> jsonb_build_array(OLD.id::text) OR EXISTS(SELECT 1 FROM jsonb_array_elements(c.versions) v WHERE v->'fileIds' @> jsonb_build_array(OLD.id::text)))
+   OR EXISTS(SELECT 1 FROM payments p WHERE p.proof_file_ids @> jsonb_build_array(OLD.id::text))
+   OR EXISTS(SELECT 1 FROM tickets t WHERE t.attachment_file_ids @> jsonb_build_array(OLD.id::text) OR EXISTS(SELECT 1 FROM jsonb_array_elements(t.messages) m WHERE m->'fileIds' @> jsonb_build_array(OLD.id::text))) INTO used;
+  IF used THEN RAISE EXCEPTION 'file_is_referenced' USING ERRCODE='23514'; END IF;
+  RETURN OLD;
+ END IF; RETURN NEW;
+END $$;
+CREATE TRIGGER file_guard BEFORE UPDATE OR DELETE ON files FOR EACH ROW EXECUTE FUNCTION protect_file();
+
+CREATE VIEW v_room_occupancy AS
+ SELECT r.*,CASE WHEN EXISTS(SELECT 1 FROM contracts c WHERE c.room_id=r.id AND c.status='active') THEN 'occupied'
+ WHEN EXISTS(SELECT 1 FROM bookings b WHERE b.room_id=r.id AND b.hold_status='holding' AND b.hold_expires_at>now()) THEN 'reserved' ELSE r.operating_status END occupancy_status FROM rooms r;
+CREATE VIEW v_public_rooms AS
+ SELECT r.id,r.property_id,r.code,r.name,r.area_m2,r.capacity,r.room_type_code,r.room_type_name,r.listing_slug,r.listing_title,r.listing_description,r.video_url,r.rules_text,r.required_deposit,r.amenities,r.rates,
+ coalesce((SELECT jsonb_agg(x) FROM jsonb_array_elements(r.images) x JOIN files f ON f.id=(x->>'fileId')::uuid WHERE f.visibility='public' AND f.scan_status='clean'),'[]'::jsonb) images
+ FROM rooms r JOIN properties p ON p.id=r.property_id WHERE r.listing_status='published' AND p.is_active AND r.operating_status<>'inactive'
+ AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.images) x JOIN files f ON f.id=(x->>'fileId')::uuid WHERE f.visibility='public' AND f.scan_status='clean');
+CREATE VIEW v_user_contracts AS
+ SELECT c.id,c.code,c.room_id,c.user_id,c.status,c.starts_on,c.ends_on,c.move_in_on,c.move_out_on,(c.user_id=request_user_id()) finance_visible
+ FROM contracts c WHERE c.user_id=request_user_id() OR EXISTS(SELECT 1 FROM jsonb_array_elements(c.occupants) p WHERE p->>'userId'=request_user_id()::text AND p->>'leftOn' IS NULL);
+CREATE VIEW v_user_invoices AS
+ SELECT i.*,b.receivable_amount,b.paid_amount,b.outstanding_amount,b.payment_status,b.is_overdue FROM invoices i JOIN v_invoice_balances b ON b.id=i.id JOIN contracts c ON c.id=i.contract_id WHERE c.user_id=request_user_id() AND i.status<>'draft';
+CREATE VIEW v_user_bookings AS SELECT * FROM bookings WHERE user_id=request_user_id();
+CREATE VIEW v_user_tickets AS
+ SELECT t.id,t.code,t.room_id,t.contract_id,t.reported_by,t.category_code,t.title,t.description,t.priority,t.status,t.due_at,t.resolution_notes,t.attachment_file_ids,
+ coalesce((SELECT jsonb_agg(m ORDER BY m->>'createdAt') FROM jsonb_array_elements(t.messages) m WHERE NOT coalesce((m->>'isInternal')::boolean,false)),'[]'::jsonb) messages,
+ t.history,t.created_at,t.updated_at
+ FROM tickets t WHERE t.reported_by=request_user_id() OR EXISTS(SELECT 1 FROM contracts c WHERE c.id=t.contract_id AND c.user_id=request_user_id());
+CREATE VIEW v_user_notifications AS SELECT * FROM notifications WHERE recipient_id=request_user_id();
+
+-- SQL runtime chỉ dùng ở backend. Đây không phải RLS: API vẫn kiểm tra ownership.
+CREATE FUNCTION configure_runtime(role_name name) RETURNS void LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+BEGIN
+ EXECUTE format('GRANT USAGE ON SCHEMA smartrent TO %I',role_name);
+ EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA smartrent TO %I',role_name);
+ EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA smartrent TO %I',role_name);
+ EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA smartrent TO %I',role_name);
+ EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON smartrent.users FROM %I',role_name);
+ EXECUTE format('GRANT INSERT (id,code,display_name,email,phone,password_hash,login_enabled,is_active,avatar_file_id,date_of_birth,address_line,locality,province,emergency_contact_name,emergency_contact_phone,notes,identity_documents,email_verified_at,accepted_terms_at) ON smartrent.users TO %I',role_name);
+ EXECUTE format('GRANT UPDATE (code,display_name,email,phone,password_hash,login_enabled,is_active,avatar_file_id,date_of_birth,address_line,locality,province,emergency_contact_name,emergency_contact_phone,notes,identity_documents,failed_login_count,locked_until,last_login_at,email_verified_at,accepted_terms_at) ON smartrent.users TO %I',role_name);
+ EXECUTE format('REVOKE EXECUTE ON FUNCTION smartrent.configure_runtime(name) FROM %I',role_name);
+END $$;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA smartrent FROM PUBLIC;
 COMMIT;

@@ -23,7 +23,6 @@ export function meContext(db, user) {
     const properties = db.properties.filter((p) => p.organizationId === org.id && (m.propertyScope === 'all' || m.propertyIds.includes(p.id)));
     return {
       id: org.id, code: org.code, name: org.name, isActive: org.isActive, membershipId: m.id, status: m.status,
-      roles: m.roleIds.map((rid) => find(db.businessRoles, rid)).filter(Boolean).map((r) => ({ id: r.id, code: r.code, name: r.name })),
       permissions: [...permissionsOf(db, m)].sort(), propertyScope: m.propertyScope,
       properties: properties.map((p) => ({ id: p.id, code: p.code, name: p.name })),
     };
@@ -40,32 +39,27 @@ export function meContext(db, user) {
   });
   return {
     user: {
-      id: user.id, displayName: user.displayName, email: user.email, phone: user.phone, twoFactorEnabled: user.twoFactorEnabled,
+      id: user.id, role: user.role, displayName: user.displayName, email: user.email, phone: user.phone, twoFactorEnabled: user.twoFactorEnabled,
       avatarFileId: user.avatarFileId || null, avatarUrl: user.avatarFileId ? fileContent(find(db.files, user.avatarFileId)) : null,
     },
-    isSystemAdmin: user.systemRoles?.includes('SystemAdmin') || false,
     organizations,
-    pendingInvitations: memberships.filter((m) => m.status === 'invited')
-      .map((m) => ({ organizationId: m.organizationId, organizationName: find(db.organizations, m.organizationId).name })),
     tenantProfiles,
   };
 }
 
 export default function register(r) {
   r.post('/api/v1/auth/login', (ctx) => {
-    const { email, password } = ctx.body;
+    const { email, password, audience = 'customer' } = ctx.body;
     const v = validator();
     v.required('email', email, 'Email');
     v.required('password', password, 'Mật khẩu');
     v.check();
     const user = ctx.db.users.find((u) => u.email.toLowerCase() === String(email).trim().toLowerCase());
     if (!user || user.mockPassword !== password) fail(401, 'invalid_credentials', 'Email hoặc mật khẩu chưa đúng.');
-    if (!user.isActive) fail(403, 'account_locked', 'Tài khoản đang bị khóa. Liên hệ chủ trọ hoặc quản trị hệ thống.');
-    const hasActiveRole = ctx.db.memberships.some((m) => m.userId === user.id && m.status === 'active')
-      || ctx.db.tenants.some((t) => t.userId === user.id) || user.systemRoles.length > 0;
-    if (!hasActiveRole) {
-      fail(403, 'membership_inactive', 'Tài khoản chưa có đơn vị hoạt động (đang chờ nhận lời mời hoặc đã bị tạm khóa).');
-    }
+    if (!user.isActive) fail(403, 'account_locked', 'Tài khoản đang bị khóa. Liên hệ chủ trọ.');
+    if (!['admin', 'customer'].includes(audience)) fail(422, 'invalid_audience', 'Khu vực đăng nhập không hợp lệ.');
+    if (audience === 'admin' && user.role !== 'admin') fail(403, 'admin_only', 'Chỉ tài khoản admin (chủ trọ) được đăng nhập trang quản trị.');
+    if (audience === 'customer' && user.role !== 'user') fail(403, 'customer_only', 'Tài khoản admin vui lòng đăng nhập tại /admin.');
     return openSession(ctx, user);
   }, { auth: 'public' });
 
@@ -88,7 +82,7 @@ export default function register(r) {
     const org = ctx.db.organizations.find((o) => o.isActive);
     if (!org) fail(503, 'registration_closed', 'Chưa nhận đăng ký tài khoản lúc này.');
     const user = {
-      id: uuid(), key: null, email, displayName: b.fullName.trim(), phone: b.phone, isActive: true, systemRoles: [], mockPassword: b.password,
+      id: uuid(), key: null, email, displayName: b.fullName.trim(), phone: b.phone, isActive: true, role: 'user', mockPassword: b.password,
       emailConfirmed: false, twoFactorEnabled: false, createdAt: ctx.now, lastLoginAt: null,
     };
     ctx.db.users.push(user);

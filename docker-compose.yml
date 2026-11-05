@@ -1,6 +1,6 @@
-# Database cho team backend. Mỗi máy chạy một bản riêng, cùng cấu trúc và cùng dữ liệu mẫu.
+# Database cho team backend. Mỗi máy chạy một bản riêng, cùng cấu trúc và danh mục ban đầu; không tự nạp demo.
 # Lần đầu: copy .env.example .env   rồi   docker compose up -d
-# Xem hướng dẫn ở database/HUONG_DAN_CAI_DAT.md.
+# Xem hướng dẫn ở database/README.md. Baseline hiện tại gồm 13 bảng.
 name: smartrent
 
 services:
@@ -18,7 +18,7 @@ services:
       # Mặc định 5433 để không đụng PostgreSQL đã cài trên máy ở cổng 5432.
       - "${DB_PORT:-5433}:5432"
     volumes:
-      - smartrent-db-data:/var/lib/postgresql/data
+      - smartrent-compact-db-data:/var/lib/postgresql/data
       - ./database:/smartrent-database:ro
       - ./database/docker/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
@@ -34,4 +34,4 @@ services:
       start_period: 180s
 
 volumes:
-  smartrent-db-data:
+  smartrent-compact-db-data:

@@ -6,7 +6,7 @@ const id = encodeURIComponent;
 const withKey = (idempotencyKey) => (idempotencyKey ? { idempotencyKey } : {});
 
 export const authApi = {
-  login: (email, password) => http.post('/api/v1/auth/login', { email, password }),
+  login: (email, password, audience = 'customer') => http.post('/api/v1/auth/login', { email, password, audience }),
   register: (body) => http.post('/api/v1/auth/register', body),
   logout: () => http.post('/api/v1/auth/logout', {}),
   forgotPassword: (email) => http.post('/api/v1/auth/forgot-password', { email }),
@@ -236,9 +236,6 @@ export const settingsApi = {
   integrations: () => http.get('/api/v1/integrations'),
   saveIntegration: (integrationId, body) => http.put(`/api/v1/integrations/${id(integrationId)}`, body),
   testIntegration: (integrationId) => http.post(`/api/v1/integrations/${id(integrationId)}/test`, {}),
-  supportAccess: () => http.get('/api/v1/support-access'),
-  grantSupportAccess: (body) => http.post('/api/v1/support-access', body),
-  revokeSupportAccess: (grantId) => http.post(`/api/v1/support-access/${id(grantId)}/revoke`, {}),
 };
 
 export const filesApi = {
@@ -276,18 +273,4 @@ export const portalApi = {
   createRequest: (body, key) => http.post('/api/v1/portal/requests', body, withKey(key)),
   cancelRequest: (requestId) => http.post(`/api/v1/portal/requests/${id(requestId)}/cancel`, {}),
   catalog: () => http.get('/api/v1/portal/catalog'),
-};
-
-export const systemApi = {
-  organizations: (query, options) => http.get('/api/v1/system/organizations', query, options),
-  createOrganization: (body) => http.post('/api/v1/system/organizations', body),
-  suspendOrganization: (orgId, reason) => http.post(`/api/v1/system/organizations/${id(orgId)}/suspend`, { reason }),
-  activateOrganization: (orgId) => http.post(`/api/v1/system/organizations/${id(orgId)}/activate`, {}),
-  users: (query, options) => http.get('/api/v1/system/users', query, options),
-  lockUser: (userId, reason) => http.post(`/api/v1/system/users/${id(userId)}/lock`, { reason }),
-  unlockUser: (userId) => http.post(`/api/v1/system/users/${id(userId)}/unlock`, {}),
-  supportAccess: () => http.get('/api/v1/system/support-access'),
-  backups: () => http.get('/api/v1/system/backups'),
-  runBackup: (kind) => http.post('/api/v1/system/backups', { kind }),
-  health: () => http.get('/api/v1/system/health'),
 };

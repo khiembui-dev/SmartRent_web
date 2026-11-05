@@ -1,354 +1,140 @@
--- Kiểm thử nghiệp vụ theo đúng luồng website. Chạy sau 01, 02, 03, 04 bằng psql -v ON_ERROR_STOP=1.
--- Mọi dữ liệu thử nằm trong transaction và ROLLBACK cuối file.
+\set ON_ERROR_STOP on
+SET search_path=smartrent,public;
 BEGIN;
-SET LOCAL search_path = smartrent, public;
-CREATE TEMP TABLE test_results (name text NOT NULL);
-
-CREATE FUNCTION pg_temp.assert_true(p_condition boolean, p_name text) RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-  IF p_condition IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %', p_name; END IF;
-  INSERT INTO test_results VALUES (p_name);
+CREATE TEMP TABLE test_results(name text PRIMARY KEY,passed boolean NOT NULL);
+CREATE FUNCTION pg_temp.ok(label text,condition boolean) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN IF condition IS DISTINCT FROM true THEN RAISE EXCEPTION 'FAIL: %',label; END IF; INSERT INTO test_results VALUES(label,true); END $$;
+CREATE FUNCTION pg_temp.reject(label text,statement text,expected text) RETURNS void LANGUAGE plpgsql AS $$
+DECLARE caught boolean=false;
+BEGIN BEGIN EXECUTE statement; SET CONSTRAINTS ALL IMMEDIATE;
+ EXCEPTION WHEN OTHERS THEN IF position(expected in SQLERRM)=0 AND SQLSTATE<>expected THEN RAISE EXCEPTION 'FAIL %: [%] %',label,SQLSTATE,SQLERRM; END IF; caught=true; END;
+ IF NOT caught THEN RAISE EXCEPTION 'FAIL %: invalid write succeeded',label; END IF;
+ INSERT INTO test_results VALUES(label,true);
 END $$;
+SELECT pg_temp.ok('Exactly 13 tables',(SELECT count(*)=13 FROM information_schema.tables WHERE table_schema='smartrent' AND table_type='BASE TABLE'));
+SELECT pg_temp.ok('Removed tables absent',NOT EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='smartrent' AND table_name IN ('activity_log','operations','meters','meter_readings','tenancy_residents','tenants','inquiries','viewings','reservations','requests','amenities','room_amenities','room_images','charge_types','charge_rates','tenancies','contract_versions','contract_files','invoice_lines','payment_allocations','deposit_entries','ticket_categories','ticket_messages')));
+SELECT pg_temp.ok('Only two role values',(SELECT count(*) FILTER(WHERE role='admin')=1 AND bool_and(role IN ('admin','user')) FROM users));
+SELECT pg_temp.ok('Customer profile without login remains in users',(SELECT NOT login_enabled AND email IS NULL AND password_hash IS NULL FROM users WHERE code='KH-003'));
+SELECT pg_temp.reject('No third role',$q$INSERT INTO users(role,display_name) VALUES('staff','Invalid')$q$,'23514');
+SELECT pg_temp.reject('One admin',$q$INSERT INTO users(role,display_name,email,password_hash,login_enabled) VALUES('admin','Other','other@test','disabled_test_hash_123456',true)$q$,'23505');
+SELECT pg_temp.reject('Role immutable',$q$UPDATE users SET role='admin' WHERE code='KH-001'$q$,'role_is_immutable');
+SELECT pg_temp.reject('Admin not deleted',$q$DELETE FROM users WHERE role='admin'$q$,'cannot_delete_admin');
+SELECT pg_temp.reject('Login requires credentials',$q$UPDATE users SET login_enabled=true WHERE code='KH-003'$q$,'23514');
+SELECT pg_temp.reject('Unique normalized email',$q$INSERT INTO users(display_name,email) VALUES('Dup',' USER@example.test ')$q$,'23505');
+INSERT INTO auth_tokens(user_id,kind,token_hash,expires_at) SELECT id,'session',repeat('a',64),now()+interval '1 hour' FROM users WHERE code='KH-001';
+UPDATE users SET password_hash='changed_disabled_hash_123456' WHERE code='KH-001';
+SELECT pg_temp.ok('Password change revokes sessions',(SELECT revoked_at IS NOT NULL FROM auth_tokens WHERE token_hash=repeat('a',64)));
+SELECT pg_temp.reject('Token expiry valid',$q$INSERT INTO auth_tokens(user_id,kind,token_hash,expires_at) SELECT id,'session',repeat('b',64),now()-interval '1 day' FROM users WHERE code='KH-001'$q$,'23514');
 
-CREATE FUNCTION pg_temp.expect_failure(p_sql text, p_state text, p_name text) RETURNS void LANGUAGE plpgsql AS $$
-DECLARE failed boolean := false; actual_state text;
-BEGIN
-  BEGIN
-    EXECUTE p_sql;
-    SET CONSTRAINTS ALL IMMEDIATE;
-  EXCEPTION WHEN OTHERS THEN
-    GET STACKED DIAGNOSTICS actual_state = RETURNED_SQLSTATE;
-    IF actual_state <> p_state THEN
-      RAISE EXCEPTION 'FAIL: %, expected %, got %: %', p_name, p_state, actual_state, SQLERRM;
-    END IF;
-    failed := true;
-  END;
-  SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true(failed, p_name);
-END $$;
+SELECT pg_temp.ok('Public listing and embedded image',(SELECT count(*)=1 AND bool_and(jsonb_array_length(images)=1) FROM v_public_rooms));
+SELECT pg_temp.reject('Case insensitive room code',$q$INSERT INTO rooms(property_id,code,name,area_m2,capacity) SELECT id,'a101','Duplicate',20,2 FROM properties$q$,'23505');
+SELECT pg_temp.reject('Published room needs image',$q$UPDATE rooms SET images='[]' WHERE code='A101'$q$,'published_room_needs_photo');
+SELECT pg_temp.reject('Embedded image references real file',$q$UPDATE rooms SET images='[{"fileId":"00000000-0000-0000-0000-000000000001"}]' WHERE code='A101'$q$,'invalid_file_reference');
+SELECT pg_temp.reject('Embedded image unique',$q$UPDATE rooms SET images=images||images WHERE code='A101'$q$,'invalid_or_duplicate_json_key');
+SELECT pg_temp.reject('Embedded amenities unique',$q$UPDATE rooms SET amenities=amenities||amenities WHERE code='A101'$q$,'invalid_or_duplicate_json_key');
+SELECT pg_temp.reject('Rate JSON must be array',$q$UPDATE rooms SET rates='{}' WHERE code='A101'$q$,'22023');
+SELECT pg_temp.reject('Rate price nonnegative',$q$UPDATE rooms SET rates=jsonb_set(rates,'{0,unitPrice}','-1') WHERE code='A101'$q$,'invalid_rate');
+SELECT pg_temp.reject('Rate method matches UI',$q$UPDATE rooms SET rates=jsonb_set(rates,'{0,method}','"per_vehicle"') WHERE code='A101'$q$,'invalid_rate');
+SELECT pg_temp.reject('Rate effective periods unique',$q$UPDATE rooms SET rates=rates||jsonb_build_array(jsonb_set(rates->0,'{id}','"another-rent"')) WHERE code='A101'$q$,'overlapping_rates');
+SELECT pg_temp.reject('Occupied room stays active',$q$UPDATE rooms SET operating_status='inactive' WHERE code='A101'$q$,'room_has_occupants');
+SELECT pg_temp.reject('Occupied property stays active',$q$UPDATE properties SET is_active=false,inactive_reason='Closed'$q$,'property_has_occupants');
+SELECT pg_temp.reject('Room with history cannot delete',$q$DELETE FROM rooms WHERE code='A101'$q$,'23503');
 
-DO $$
-DECLARE
-  u uuid := gen_random_uuid(); customer uuid := gen_random_uuid(); org uuid := gen_random_uuid(); org2 uuid := gen_random_uuid();
-  prop uuid := gen_random_uuid(); prop2 uuid := gen_random_uuid();
-  rt uuid; rt2 uuid := gen_random_uuid();
-  room uuid := gen_random_uuid(); room2 uuid := gen_random_uuid(); room3 uuid := gen_random_uuid(); empty_room uuid := gen_random_uuid();
-  tenant uuid := gen_random_uuid(); tenant2 uuid := gen_random_uuid(); foreign_tenant uuid := gen_random_uuid(); resident uuid := gen_random_uuid();
-  inquiry uuid := gen_random_uuid(); viewing uuid := gen_random_uuid();
-  stay_id uuid := gen_random_uuid(); contract uuid := gen_random_uuid(); version uuid := gen_random_uuid();
-  file uuid := gen_random_uuid(); public_file uuid := gen_random_uuid();
-  period uuid := gen_random_uuid(); period2 uuid := gen_random_uuid(); period_feb uuid := gen_random_uuid();
-  rent uuid; elec uuid; water uuid; service uuid; internet uuid; other uuid; opening uuid;
-  rrent uuid := gen_random_uuid(); relec uuid := gen_random_uuid(); rwater uuid := gen_random_uuid();
-  rservice uuid := gen_random_uuid(); rinternet uuid := gen_random_uuid(); rother uuid := gen_random_uuid();
-  h uuid := gen_random_uuid(); me uuid := gen_random_uuid(); mw uuid := gen_random_uuid();
-  e0 uuid := gen_random_uuid(); e1 uuid := gen_random_uuid(); w0 uuid := gen_random_uuid(); w1 uuid := gen_random_uuid();
-  e2 uuid := gen_random_uuid(); w2 uuid := gen_random_uuid();
-  invoice uuid := gen_random_uuid(); il_e uuid := gen_random_uuid(); il_w uuid := gen_random_uuid(); occurrence uuid := gen_random_uuid();
-  payment uuid := gen_random_uuid(); paykey uuid := gen_random_uuid(); alloc uuid := gen_random_uuid(); pending uuid := gen_random_uuid();
-  deposit_payment uuid := gen_random_uuid(); deposit uuid := gen_random_uuid(); offset_entry uuid := gen_random_uuid();
-  offset_alloc uuid := gen_random_uuid(); refund uuid := gen_random_uuid(); draft2 uuid := gen_random_uuid();
-  adjustment uuid := gen_random_uuid(); final_invoice uuid := gen_random_uuid(); rent_final uuid := gen_random_uuid();
-  fl_e uuid := gen_random_uuid(); fl_w uuid := gen_random_uuid();
-  import_stay uuid := gen_random_uuid(); opening_invoice uuid := gen_random_uuid(); ticket uuid := gen_random_uuid(); message uuid := gen_random_uuid();
-  contract2 uuid := gen_random_uuid(); version2 uuid := gen_random_uuid();
-  extra_rate uuid := gen_random_uuid(); settlement uuid := gen_random_uuid(); checkout_handover uuid := gen_random_uuid();
-BEGIN
-  -- ---------------------------------------------------------------- Thiết lập cơ sở, phòng (khu Cơ sở, Phòng)
-  INSERT INTO users(id, user_name, normalized_user_name, email, normalized_email, display_name, phone_number)
-  VALUES (u, 'chu', 'CHU', 'chu@example.com', 'CHU@EXAMPLE.COM', 'Chủ thử', '0900000001'),
-         (customer, 'khach', 'KHACH', 'khach@example.com', 'KHACH@EXAMPLE.COM', 'Khách thử', '0900000002');
-  INSERT INTO organizations(id, code, name) VALUES (org, 'T-' || org, 'Đơn vị thử'), (org2, 'T-' || org2, 'Đơn vị khác');
-  PERFORM initialize_organization(org, u);
-  PERFORM pg_temp.assert_true((SELECT count(*) = 9 FROM charge_types WHERE organization_id = org), 'Khởi tạo đơn vị có đủ khoản thu');
-  PERFORM pg_temp.assert_true((SELECT count(*) = 14 FROM amenities WHERE organization_id = org), 'Khởi tạo đơn vị có sẵn tiện ích');
-  PERFORM pg_temp.assert_true((SELECT count(*) = 3 FROM business_roles WHERE organization_id = org), 'Khởi tạo đơn vị có ba vai trò');
-  PERFORM pg_temp.assert_true((SELECT bool_and(permission_code <> 'payments.reverse') FROM business_role_permissions p JOIN business_roles b ON b.id = p.role_id
-                               WHERE b.organization_id = org AND b.code = 'manager'), 'Quản lý không có quyền đảo tiền');
-  PERFORM pg_temp.expect_failure(format('UPDATE organization_settings SET invoice_create_day = 10, meter_reading_day = 20 WHERE organization_id = %L', org), '23514', 'Ngày tạo hóa đơn không trước ngày nhập số');
-  PERFORM pg_temp.assert_true(normalize_text('Đỗ Thị Bích') = 'do thi bich', 'Tìm không dấu chuẩn hóa đúng tiếng Việt');
-  PERFORM pg_temp.assert_true(next_document_no(org, 'invoice') = 1 AND next_document_no(org, 'invoice') = 2, 'Bộ đếm cấp mã tăng dần');
+SELECT pg_temp.reject('Booking customer must be user',$q$UPDATE bookings SET user_id=(SELECT id FROM users WHERE role='admin') WHERE code='LX-001'$q$,'customer_required');
+SELECT pg_temp.reject('One open viewing per room/customer',$q$INSERT INTO bookings(code,user_id,room_id,occupants,contact_name) SELECT 'DUP',user_id,room_id,occupants,contact_name FROM bookings WHERE code='LX-001'$q$,'23505');
+SELECT pg_temp.reject('One scheduled appointment',$q$UPDATE bookings SET appointments=appointments||jsonb_build_array(jsonb_set(appointments->0,'{id}','"appt-2"')) WHERE code='LX-001'$q$,'one_scheduled_appointment');
+SELECT pg_temp.reject('Appointment host admin',$q$UPDATE bookings SET appointments=jsonb_set(appointments,'{0,hostId}',to_jsonb((SELECT id::text FROM users WHERE code='KH-001'))) WHERE code='LX-001'$q$,'admin_required');
+SELECT pg_temp.reject('Appointment time valid',$q$UPDATE bookings SET appointments=jsonb_set(appointments,'{0,endsAt}',appointments->0->'startsAt') WHERE code='LX-001'$q$,'invalid_appointment');
+SELECT pg_temp.reject('Profile change cannot assign role',$q$UPDATE bookings SET changes='{"role":{"to":"admin"}}' WHERE code='YC-001'$q$,'unsupported_profile_change_field');
+SELECT pg_temp.reject('Representative owns renewal request',$q$INSERT INTO bookings(code,user_id,contract_id,kind,status,desired_on) SELECT 'BAD-REQUEST',u.id,c.id,'renewal','pending','2028-09-01' FROM users u,contracts c WHERE u.code='KH-002'$q$,'request_not_representative');
+SELECT pg_temp.reject('Reviewed request needs admin',$q$UPDATE bookings SET status='approved' WHERE code='YC-001'$q$,'request_needs_reviewer');
+SELECT pg_temp.reject('Occupied room cannot be held',$q$INSERT INTO bookings(code,user_id,room_id,contact_name,occupants,hold_status,hold_from,hold_expires_at) SELECT 'HOLD-BAD',u.id,r.id,'New',1,'holding','2026-11-01',now()+interval '1 day' FROM users u,rooms r WHERE u.code='KH-003' AND r.code='A101'$q$,'room_is_occupied');
+UPDATE bookings SET hold_status='holding',hold_from='2026-11-01',hold_expires_at=now()+interval '1 day' WHERE code='LX-001';
+SELECT pg_temp.reject('Checkin cannot take other hold',$q$INSERT INTO contracts(code,room_id,user_id,onboarding_mode,starts_on,move_in_on) SELECT 'HELD',r.id,u.id,'import','2026-11-01','2026-11-01' FROM rooms r,users u WHERE r.code='A102' AND u.code='KH-001'$q$,'room_is_reserved');
+UPDATE bookings SET hold_status='cancelled',hold_reason='Cancel' WHERE code='LX-001';
 
-  INSERT INTO properties(id, organization_id, code, name, address_line, locality, province) VALUES
-    (prop, org, 'CS1', 'Cơ sở thử', 'Địa chỉ', 'Phường', 'Thành phố'), (prop2, org, 'CS2', 'Cơ sở hai', 'Địa chỉ', 'Phường', 'Thành phố');
-  SELECT id INTO rt FROM room_types WHERE organization_id = org AND code = 'STANDARD';
-  INSERT INTO room_types(id, organization_id, code, name) VALUES (rt2, org2, 'OTHER', 'Khác');
-  INSERT INTO rooms(id, property_id, room_type_id, code, name, area_m2, capacity, required_deposit) VALUES
-    (room, prop, rt, 'P101', 'Phòng 101', 25, 3, 3000000), (room2, prop, rt, 'P102', 'Phòng 102', 25, 3, 3000000),
-    (room3, prop, rt, 'P103', 'Phòng 103', 25, 3, 3000000), (empty_room, prop, rt, 'P104', 'Phòng 104', 25, 3, 3000000);
-  PERFORM pg_temp.expect_failure(format('INSERT INTO rooms(property_id, room_type_id, code, name, area_m2, capacity) VALUES (%L, %L, ''P101'', ''Trùng'', 20, 2)', prop, rt), '23505', 'Mã phòng duy nhất trong cơ sở');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO rooms(property_id, room_type_id, code, name, area_m2, capacity) VALUES (%L, %L, ''P999'', ''Sai đơn vị'', 20, 2)', prop, rt2), '23514', 'Chặn nối dữ liệu khác đơn vị');
-  PERFORM pg_temp.assert_true((SELECT occupancy_status = 'available' FROM v_room_status WHERE id = room), 'Tạo phòng không tự phát sinh thuê');
+SELECT pg_temp.reject('No overlapping rental',$q$INSERT INTO contracts(code,room_id,user_id,onboarding_mode,starts_on,move_in_on) SELECT 'OVERLAP',room_id,user_id,'import','2026-11-01','2026-11-01' FROM contracts$q$,'23P01');
+SELECT pg_temp.reject('New checkin needs signed version',$q$INSERT INTO contracts(code,room_id,user_id,starts_on,move_in_on) SELECT 'NO-SIGN',r.id,u.id,'2026-11-01','2026-11-01' FROM rooms r,users u WHERE r.code='A102' AND u.code='KH-003'$q$,'new_checkin_needs_signed_contract');
+INSERT INTO contracts(code,room_id,user_id,onboarding_mode,starts_on,move_in_on) SELECT 'IMPORTED',r.id,u.id,'import','2026-11-01','2026-11-01' FROM rooms r,users u WHERE r.code='A102' AND u.code='KH-003';
+SELECT pg_temp.ok('Import works before contract signed',(SELECT versions='[]' FROM contracts WHERE code='IMPORTED'));
+SELECT pg_temp.reject('Signed embedded version immutable',$q$UPDATE contracts SET versions=jsonb_set(versions,'{0,termsText}','"Tampered"') WHERE code='HDTH-001'$q$,'signed_version_is_immutable');
+SELECT pg_temp.reject('Signed embedded version cannot disappear',$q$UPDATE contracts SET versions='[]' WHERE code='HDTH-001'$q$,'signed_version_is_immutable');
+SELECT pg_temp.reject('Signed file storage immutable',$q$UPDATE files SET storage_key='tampered.pdf' WHERE purpose='contract_signed'$q$,'signed_file_is_immutable');
+SELECT pg_temp.reject('Cannot delete referenced photo',$q$DELETE FROM files WHERE purpose='room_image'$q$,'file_is_referenced');
+SELECT pg_temp.reject('Occupant must exist',$q$UPDATE contracts SET occupants='[{"userId":"00000000-0000-0000-0000-000000000001","joinedOn":"2026-09-01"}]' WHERE code='HDTH-001'$q$,'customer_required');
+SELECT pg_temp.reject('Occupant count respects capacity',$q$UPDATE contracts SET occupants=occupants||jsonb_build_array(jsonb_build_object('userId',(SELECT id FROM users WHERE code='KH-003'),'joinedOn','2026-09-01')) WHERE code='HDTH-001'$q$,'room_capacity_exceeded');
+SELECT pg_temp.reject('Occupant profile cannot be deleted',$q$DELETE FROM users WHERE code='KH-002'$q$,'user_is_contract_occupant');
+SELECT pg_temp.reject('Cancel does not erase signed rental',$q$UPDATE contracts SET status='cancelled' WHERE code='HDTH-001'$q$,'cannot_cancel_contract_with_documents');
 
-  SELECT id INTO rent FROM charge_types WHERE organization_id = org AND code = 'RENT';
-  SELECT id INTO elec FROM charge_types WHERE organization_id = org AND code = 'ELECTRICITY';
-  SELECT id INTO water FROM charge_types WHERE organization_id = org AND code = 'WATER';
-  SELECT id INTO service FROM charge_types WHERE organization_id = org AND code = 'SERVICE';
-  SELECT id INTO internet FROM charge_types WHERE organization_id = org AND code = 'INTERNET';
-  SELECT id INTO other FROM charge_types WHERE organization_id = org AND code = 'OTHER';
-  SELECT id INTO opening FROM charge_types WHERE organization_id = org AND code = 'OPENING_BALANCE';
-  INSERT INTO charge_rates(id, property_id, charge_type_id, effective_from, unit_price, calculation_method, billing_cycle) VALUES
-    (rrent, prop, rent, '2026-01-01', 3000000, 'fixed', 'monthly'), (relec, prop, elec, '2026-01-01', 4000, 'metered', 'monthly'),
-    (rwater, prop, water, '2026-01-01', 25000, 'metered', 'monthly'), (rservice, prop, service, '2026-01-01', 100000, 'fixed', 'monthly'),
-    (rinternet, prop, internet, '2026-01-01', 50000, 'fixed', 'monthly'), (rother, prop, other, '2026-01-01', 30000, 'fixed', 'once');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO charge_rates(property_id, charge_type_id, effective_from, unit_price, calculation_method) VALUES (%L, %L, ''2026-03-01'', 1, ''metered'')', prop, elec), '23P01', 'Giá cùng khoản không chồng khoảng ngày');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO charge_rates(property_id, room_id, charge_type_id, effective_from, unit_price, calculation_method) VALUES (%L, %L, %L, ''2030-01-01'', 1, ''fixed'')', prop, room, service), '23514', 'Một dòng giá chỉ thuộc một phạm vi');
-  PERFORM pg_temp.expect_failure(format('UPDATE charge_rates SET unit_price = 1 WHERE id = %L', relec), '23514', 'Đổi giá không sửa dòng cũ');
+SELECT pg_temp.ok('Invoice lines calculate total',(SELECT total_amount=3300000 FROM invoices WHERE code='HD-001'));
+SELECT pg_temp.ok('Only confirmed allocations reduce debt',(SELECT b.total_amount=3300000 AND paid_amount=1000000 AND outstanding_amount=2300000 FROM v_invoice_balances b JOIN invoices i ON i.id=b.id WHERE i.code='HD-001'));
+SELECT pg_temp.ok('Deposit separate from invoice receipt',(SELECT held=3000000 FROM v_deposit_balances b JOIN contracts c ON c.id=b.contract_id WHERE c.code='HDTH-001'));
+SELECT pg_temp.reject('Issued lines immutable',$q$UPDATE invoices SET lines=jsonb_set(lines,'{0,unitPrice}','1') WHERE code='HD-001'$q$,'issued_invoice_is_immutable');
+SELECT pg_temp.reject('Issued readings immutable',$q$UPDATE invoices SET electricity_end=999 WHERE code='HD-001'$q$,'issued_invoice_is_immutable');
+SELECT pg_temp.reject('Cannot delete issued invoice',$q$DELETE FROM invoices WHERE code='HD-001'$q$,'issued_invoice_cannot_delete');
+SELECT pg_temp.reject('Paid invoice cannot void',$q$UPDATE invoices SET status='void',voided_at=now(),void_reason='Mistake' WHERE code='HD-001'$q$,'release_payments_and_adjustments_before_void');
+INSERT INTO billing_periods(property_id,month_start) SELECT id,'2026-10-01' FROM properties;
+INSERT INTO invoices(code,contract_id,period_id,service_from,service_to) SELECT 'DRAFT',c.id,p.id,'2026-10-01','2026-11-01' FROM contracts c,billing_periods p WHERE c.code='HDTH-001' AND p.month_start='2026-10-01';
+SELECT pg_temp.reject('Negative meter values rejected',$q$UPDATE invoices SET electricity_start=-1 WHERE code='DRAFT'$q$,'23514');
+SELECT pg_temp.reject('Invoice quantity nonnegative',$q$UPDATE invoices SET lines='[{"id":"x","code":"RENT","category":"rent","description":"Rent","unit":"month","quantity":-1,"unitPrice":1}]' WHERE code='DRAFT'$q$,'invalid_invoice_line');
+SELECT pg_temp.reject('Invoice divisor positive',$q$UPDATE invoices SET lines='[{"id":"x","code":"RENT","category":"rent","description":"Rent","unit":"month","quantity":1,"unitPrice":1,"denominator":0}]' WHERE code='DRAFT'$q$,'invalid_invoice_line');
+UPDATE billing_periods SET status='locked',locked_by=(SELECT id FROM users WHERE role='admin'),locked_at=now() WHERE month_start='2026-10-01';
+SELECT pg_temp.reject('Locked period blocks readings',$q$UPDATE invoices SET electricity_start=150 WHERE code='DRAFT'$q$,'billing_period_locked');
+SELECT pg_temp.reject('Unlock needs reason',$q$UPDATE billing_periods SET status='open',locked_by=NULL,locked_at=NULL WHERE month_start='2026-10-01'$q$,'unlock_reason_required');
+UPDATE billing_periods SET status='open',locked_by=NULL,locked_at=NULL,unlock_reason='Correct readings' WHERE month_start='2026-10-01';
+SELECT pg_temp.ok('Period has embedded history',(SELECT jsonb_array_length(history)=2 FROM billing_periods WHERE month_start='2026-10-01'));
+DELETE FROM invoices WHERE code='DRAFT';
 
-  INSERT INTO room_listings(room_id, slug, title, status, published_at, video_url) VALUES
-    (room, 'p101', 'Phòng 101', 'published', now(), '/videos/tour.mp4'), (room2, 'p102', 'Phòng 102', 'published', now(), NULL),
-    (room3, 'p103', 'Phòng 103', 'hidden', NULL, NULL);
-  PERFORM pg_temp.assert_true((SELECT count(*) = 2 FROM v_public_rooms WHERE organization_id = org), 'Trang Thuê phòng chỉ hiện tin đang công khai');
-  PERFORM pg_temp.assert_true((SELECT v.rent = 3000000 AND v.video_url IS NOT NULL FROM v_public_rooms v WHERE v.slug = 'p101'), 'Tin công khai có giá thuê và video');
+SELECT pg_temp.reject('Customer cannot confirm receipt',$q$UPDATE payments SET status='confirmed',confirmed_at=now(),confirmed_by=(SELECT id FROM users WHERE code='KH-001') WHERE code='PT-002'$q$,'admin_required');
+SELECT pg_temp.reject('Confirmed payment immutable',$q$UPDATE payments SET amount=1 WHERE code='PT-001'$q$,'confirmed_payment_is_immutable');
+SELECT pg_temp.reject('Ledger cannot delete',$q$DELETE FROM payments WHERE code='PT-001'$q$,'payment_ledger_is_append_only');
+SELECT pg_temp.reject('Bank reference unique',$q$INSERT INTO payments(code,user_id,amount,method,external_reference) SELECT 'BANK-DUP',user_id,1,'bank_transfer','demo-bank-001' FROM payments WHERE code='PT-002'$q$,'23505');
+SELECT pg_temp.reject('Allocation cannot exceed amount',$q$INSERT INTO payments(code,user_id,amount,method,allocations) SELECT 'ALLOC-BAD',user_id,1,'cash',allocations FROM payments WHERE code='PT-001'$q$,'allocation_amount_mismatch');
+SELECT pg_temp.reject('Allocation invoice owner correct',$q$INSERT INTO payments(code,user_id,amount,method,allocations) SELECT 'OWNER-BAD',u.id,p.amount,'cash',p.allocations FROM payments p,users u WHERE p.code='PT-001' AND u.code='KH-003'$q$,'allocation_invoice_mismatch');
+SELECT pg_temp.reject('Confirmed receipt cannot overpay',$q$INSERT INTO payments(code,user_id,contract_id,amount,method,status,confirmed_at,confirmed_by,allocations) SELECT 'OVERPAY',c.user_id,c.id,2300001,'cash','confirmed',now(),u.id,jsonb_build_array(jsonb_build_object('invoiceId',i.id,'amount',2300001)) FROM contracts c,invoices i,users u WHERE i.code='HD-001' AND c.id=i.contract_id AND u.role='admin'$q$,'invoice_overallocated');
+SELECT pg_temp.reject('Deposit cannot refund excess',$q$INSERT INTO payments(code,user_id,contract_id,kind,amount,method,status,confirmed_at,confirmed_by,reason) SELECT 'OVERREFUND',user_id,contract_id,'deposit_refund',3000001,'cash','confirmed',now(),confirmed_by,'Return' FROM payments WHERE code='COC-001'$q$,'deposit_overdrawn');
+SELECT pg_temp.reject('Deposit offset needs allocation',$q$INSERT INTO payments(code,user_id,contract_id,kind,amount,status,confirmed_at,confirmed_by) SELECT 'OFFSET-BAD',user_id,contract_id,'deposit_offset',1,'confirmed',now(),confirmed_by FROM payments WHERE code='COC-001'$q$,'allocation_amount_mismatch');
 
-  -- ---------------------------------------------------------------- Khách đăng ký và đặt lịch xem phòng
-  INSERT INTO tenants(id, organization_id, code, full_name, user_id, phone, email) VALUES
-    (tenant, org, 'K001', 'Nguyễn Văn Khách', customer, '0900000002', 'khach@example.com'), (tenant2, org, 'K002', 'Khách hai', NULL, '0900000003', NULL),
-    (resident, org, 'K003', 'Người ở cùng', NULL, NULL, NULL);
-  INSERT INTO tenants(id, organization_id, code, full_name) VALUES (foreign_tenant, org2, 'K099', 'Khách khác đơn vị');
-  PERFORM pg_temp.assert_true((SELECT residence_status = 'none' AND has_portal_account FROM v_tenant_status WHERE tenant_id = tenant), 'Tài khoản tự đăng ký hiện là Chưa thuê');
-  PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM tenants WHERE normalize_text(full_name) LIKE '%van khach%'), 'Tìm được khách bằng chữ không dấu');
-  INSERT INTO rental_inquiries(id, code, room_id, tenant_id, contact_name, phone, preferred_viewing_at, occupants)
-  VALUES (inquiry, 'YC-0001', room, tenant, 'Nguyễn Văn Khách', '0900000002', now() + interval '1 day', 2);
-  PERFORM pg_temp.expect_failure(format('INSERT INTO rental_inquiries(code, room_id, tenant_id, contact_name, phone) VALUES (''YC-0002'', %L, %L, ''Khách'', ''0900'')', room, tenant), '23505', 'Không đặt trùng lịch cùng phòng khi yêu cầu còn mở');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO rental_inquiries(code, room_id, contact_name) VALUES (''YC-0003'', %L, ''Khách'')', room), '23514', 'Yêu cầu phải có điện thoại hoặc email');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO rental_inquiries(code, room_id, tenant_id, contact_name, phone) VALUES (''YC-0004'', %L, %L, ''Khách'', ''0900'')', room2, foreign_tenant), '23514', 'Yêu cầu không gắn khách đơn vị khác');
-  PERFORM pg_temp.assert_true((SELECT count(*) = 2 FROM v_public_rooms WHERE organization_id = org), 'Đặt lịch xem không đổi trạng thái phòng');
-  INSERT INTO room_viewings(id, inquiry_id, starts_at, ends_at, host_user_id) VALUES (viewing, inquiry, now() + interval '1 day', now() + interval '1 day 30 minutes', u);
-  UPDATE room_viewings SET status = 'completed', result_notes = 'Khách ưng phòng' WHERE id = viewing;
-  UPDATE rental_inquiries SET status = 'approved' WHERE id = inquiry;
-
-  -- ---------------------------------------------------------------- Tạo hợp đồng là nhận phòng
-  UPDATE rooms SET operating_status = 'maintenance' WHERE id = room2;
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancies(room_id, representative_tenant_id, status, planned_move_in, actual_move_in) VALUES (%L, %L, ''active'', ''2026-01-01'', ''2026-01-01'')', room2, tenant2), '23514', 'Phòng bảo trì không nhận khách');
-  UPDATE rooms SET operating_status = 'available' WHERE id = room2;
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancies(room_id, representative_tenant_id, planned_move_in) VALUES (%L, %L, ''2026-01-01'')', room, foreign_tenant), '23514', 'Đợt thuê không gắn khách đơn vị khác');
-  INSERT INTO tenancies(id, room_id, representative_tenant_id, inquiry_id, planned_move_in) VALUES (stay_id, room, tenant, inquiry, '2026-01-01');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancies(room_id, representative_tenant_id, planned_move_in) VALUES (%L, %L, ''2026-01-15'')', room, tenant2), '23P01', 'Hai khách không nhận cùng phòng trùng thời gian');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancies(room_id, representative_tenant_id, planned_move_in) VALUES (%L, %L, ''2026-01-15'')', room2, tenant), '23505', 'Một đại diện chỉ một đợt thuê đang hoạt động');
-  PERFORM pg_temp.expect_failure(format('UPDATE tenancies SET status = ''active'', actual_move_in = ''2026-01-01'' WHERE id = %L', stay_id), '23514', 'Nhận phòng thiếu hợp đồng ký và bàn giao bị chặn');
-  INSERT INTO contracts(id, tenancy_id, code, created_by) VALUES (contract, stay_id, 'HD-' || contract, u);
-  INSERT INTO contract_versions(id, contract_id, version_no, effective_from, ends_on, required_deposit, invoice_day, due_after_days, proration_policy, terms_text)
-  VALUES (version, contract, 1, '2026-01-01', '2027-01-01', 3000000, 1, 7, 'actual_days', 'Điều khoản thử');
-  INSERT INTO stored_files(id, organization_id, storage_key, original_name, content_type, byte_size, scan_status, purpose)
-  VALUES (file, org, 'test/' || file, 'contract.pdf', 'application/pdf', 100, 'clean', 'contract_signed');
-  INSERT INTO stored_files(id, organization_id, storage_key, original_name, content_type, byte_size, scan_status, visibility)
-  VALUES (public_file, org, 'test/' || public_file, 'a.jpg', 'image/jpeg', 100, 'clean', 'public');
-  PERFORM pg_temp.expect_failure(format('UPDATE contract_versions SET signed_at = now(), confirmed_by = %L, signature_method = ''paper'' WHERE id = %L', u, version), '23514', 'Ký hợp đồng bắt buộc có bản ký');
-  INSERT INTO contract_parties(contract_version_id, party_role, full_name_snapshot, address_snapshot) VALUES
-    (version, 'landlord', 'Chủ trọ', 'Địa chỉ chủ'), (version, 'representative', 'Khách thử', 'Địa chỉ khách');
-  INSERT INTO contract_files(contract_version_id, file_id, file_kind) VALUES (version, file, 'signed');
-  UPDATE contract_versions SET signed_at = now(), confirmed_by = u, signature_method = 'paper' WHERE id = version;
-  PERFORM pg_temp.expect_failure(format('UPDATE contract_versions SET required_deposit = 0 WHERE id = %L', version), '23514', 'Không sửa hợp đồng đã ký');
-  PERFORM pg_temp.expect_failure(format('DELETE FROM contract_files WHERE contract_version_id = %L', version), '23514', 'Không gỡ tệp của bản đã ký');
-  INSERT INTO contract_attachments(contract_id, file_id, note, added_by) VALUES (contract, public_file, 'Phụ lục ảnh', u);
-  PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM contract_attachments WHERE contract_id = contract), 'Bổ sung tệp vào hồ sơ sau khi ký');
-
-  INSERT INTO billing_periods(id, property_id, month_start) VALUES (period, prop, '2026-01-01'), (period2, prop2, '2026-01-01'), (period_feb, prop, '2026-02-01');
-  INSERT INTO handovers(id, tenancy_id, kind, occurred_at, landlord_confirmed_by, confirmed_at) VALUES (h, stay_id, 'checkin', '2026-01-01 08:00+07', u, now());
-  INSERT INTO handover_items(handover_id, name, quantity, condition_notes) VALUES (h, 'Giường 1m6', 1, 'Tốt');
-  INSERT INTO meters(id, room_id, meter_kind, serial_number, installed_at) VALUES
-    (me, room, 'electricity', 'E-TEST', '2026-01-01 00:00+07'), (mw, room, 'water', 'W-TEST', '2026-01-01 00:00+07');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO meters(room_id, meter_kind, serial_number, installed_at) VALUES (%L, ''water'', ''W2'', ''2026-02-01 00:00+07'')', room), '23P01', 'Mỗi phòng một công tơ đang dùng cho mỗi loại');
-  PERFORM pg_temp.expect_failure(format('UPDATE tenancies SET status = ''active'', actual_move_in = ''2026-01-01'' WHERE id = %L', stay_id), '23514', 'Nhận phòng thiếu chỉ số đầu bị chặn, không coi là 0');
-  INSERT INTO meter_readings(id, meter_id, observed_at, reading_value, tenancy_id, handover_id, reading_kind, recorded_by) VALUES
-    (e0, me, '2026-01-01 08:00+07', 100, stay_id, h, 'checkin', u), (w0, mw, '2026-01-01 08:00+07', 10, stay_id, h, 'checkin', u);
-  INSERT INTO meter_readings(id, meter_id, observed_at, reading_value, tenancy_id, billing_period_id, reading_kind, recorded_by) VALUES
-    (e1, me, '2026-01-31 18:00+07', 200, stay_id, period, 'periodic', u), (w1, mw, '2026-01-31 18:00+07', 13, stay_id, period, 'periodic', u);
-  UPDATE tenancies SET status = 'active', actual_move_in = '2026-01-01' WHERE id = stay_id;
-  UPDATE rental_inquiries SET status = 'converted' WHERE id = inquiry;
-  INSERT INTO tenancy_residents(tenancy_id, tenant_id, joined_on, relationship) VALUES (stay_id, resident, '2026-01-01', 'Bạn');
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT occupancy_status = 'occupied' AND active_tenant_id = tenant FROM v_room_status WHERE id = room), 'Đã thuê suy từ đợt thuê, không lưu trên phòng');
-  PERFORM pg_temp.assert_true((SELECT residence_status = 'active' FROM v_tenant_status WHERE tenant_id = tenant), 'Khách chuyển sang Đang thuê');
-  PERFORM pg_temp.assert_true((SELECT residence_status = 'active' FROM v_tenant_status WHERE tenant_id = resident), 'Người ở cùng cũng là đang ở');
-  PERFORM pg_temp.assert_true((SELECT count(*) = 1 FROM v_public_rooms WHERE organization_id = org), 'Phòng đã thuê biến mất khỏi trang Thuê phòng');
-  PERFORM pg_temp.expect_failure(format('UPDATE rooms SET operating_status = ''inactive'' WHERE id = %L', room), '23514', 'Không ngừng khai thác phòng đang có người');
-  PERFORM pg_temp.expect_failure(format('DELETE FROM rooms WHERE id = %L', room), '23503', 'Không xóa phòng đã có lịch sử thuê');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO meter_readings(meter_id, observed_at, reading_value, tenancy_id, reading_kind, recorded_by) VALUES (%L, ''2026-02-01 08:00+07'', 199, %L, ''periodic'', %L)', me, stay_id, u), '23514', 'Chỉ số không nhỏ hơn số trước');
-
-  -- ---------------------------------------------------------------- Tính tiền và hóa đơn (ví dụ đối chiếu của đặc tả)
-  INSERT INTO charge_instances(id, tenancy_id, charge_type_id) VALUES (occurrence, stay_id, other);
-  INSERT INTO invoices(id, tenancy_id, billing_period_id, kind, service_from, service_to, idempotency_key, created_by)
-  VALUES (invoice, stay_id, period, 'periodic', '2026-01-01', '2026-02-01', gen_random_uuid(), u);
-  INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, source_rate_id, description_snapshot, unit_snapshot, quantity, unit_price) VALUES
-    (invoice, 1, rent, rrent, 'Thuê', 'tháng', 1, 3000000), (invoice, 2, service, rservice, 'Dịch vụ', 'phòng', 1, 100000),
-    (invoice, 3, internet, rinternet, 'Internet', 'phòng', 1, 50000);
-  INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, source_rate_id, charge_instance_id, description_snapshot, unit_snapshot, quantity, unit_price)
-  VALUES (invoice, 4, other, rother, occurrence, 'Phí một lần', 'lần', 1, 30000);
-  INSERT INTO invoice_lines(id, invoice_id, line_no, charge_type_id, source_rate_id, description_snapshot, unit_snapshot, quantity, unit_price) VALUES
-    (il_e, invoice, 5, elec, relec, 'Điện', 'kWh', 100, 4000), (il_w, invoice, 6, water, rwater, 'Nước', 'm³', 3, 25000);
-  PERFORM pg_temp.expect_failure(format('UPDATE invoices SET status = ''issued'', code = ''X'', issued_on = ''2026-02-01'', due_on = ''2026-02-08'', issued_at = now(), issued_by = %L WHERE id = %L', u, invoice), '23514', 'Không phát hành khi thiếu chỉ số điện nước');
-  INSERT INTO invoice_meter_segments(invoice_line_id, from_reading_id, to_reading_id) VALUES (il_e, e0, e1), (il_w, w0, w1);
-  UPDATE invoices SET status = 'issued', code = 'INV-' || id, issued_on = '2026-02-01', due_on = '2026-02-08', issued_at = now(), issued_by = u WHERE id = invoice;
-  PERFORM pg_temp.assert_true((SELECT amount = 3655000 FROM v_invoice_totals WHERE invoice_id = invoice), 'Ví dụ đặc tả: tổng 3.655.000 đồng');
-
-  INSERT INTO payments(id, code, tenant_id, amount, received_at, method_code, status, confirmed_by, confirmed_at, idempotency_key)
-  VALUES (payment, 'PT-1', tenant, 2000000, now(), 'cash', 'confirmed', u, now(), paykey);
-  INSERT INTO payment_allocations(id, invoice_id, payment_id, kind, amount, allocated_by, idempotency_key)
-  VALUES (alloc, invoice, payment, 'apply', 2000000, u, gen_random_uuid());
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT outstanding_amount = 1655000 AND payment_status = 'partial' AND is_overdue FROM v_invoice_balances WHERE invoice_id = invoice), 'Thu 2.000.000: còn 1.655.000 và vẫn quá hạn');
-  PERFORM pg_temp.assert_true((SELECT outstanding_amount = 1655000 AND overdue_count = 1 FROM v_tenant_debts WHERE tenant_id = tenant), 'Công nợ khách khớp hóa đơn');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO payments(code, tenant_id, amount, received_at, method_code, idempotency_key) VALUES (''PT-2'', %L, 2000000, now(), ''cash'', %L)', tenant, paykey), '23505', 'Gửi lại cùng yêu cầu không thu trùng');
-  PERFORM pg_temp.expect_failure(format('UPDATE payments SET amount = 1 WHERE id = %L', payment), '23514', 'Không sửa tiền đã xác nhận');
-  PERFORM pg_temp.expect_failure(format('UPDATE invoice_lines SET unit_price = 0 WHERE id = %L', il_e), '23514', 'Không sửa dòng hóa đơn đã phát hành');
-  PERFORM pg_temp.expect_failure(format('UPDATE invoices SET due_on = due_on + 1 WHERE id = %L', invoice), '23514', 'Xác nhận thu không tăng hạn hóa đơn');
-  PERFORM pg_temp.expect_failure(format('UPDATE meter_readings SET status = ''void'', void_reason = ''sửa'' WHERE id = %L', e1), '23514', 'Số đã lên hóa đơn phát hành không sửa được');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO payment_allocations(invoice_id, payment_id, kind, amount, allocated_by, idempotency_key) VALUES (%L, %L, ''apply'', 1, %L, gen_random_uuid())', invoice, payment, u), '23514', 'Không phân bổ vượt tiền nhận');
-
-  INSERT INTO payments(id, code, tenant_id, amount, received_at, method_code, external_reference, reported_by, idempotency_key)
-  VALUES (pending, 'PT-3', tenant, 1655000, now(), 'bank_transfer', 'FT123', customer, gen_random_uuid());
-  INSERT INTO payment_intended_invoices(payment_id, invoice_id) VALUES (pending, invoice);
-  PERFORM pg_temp.assert_true((SELECT outstanding_amount = 1655000 FROM v_invoice_balances WHERE invoice_id = invoice), 'Báo chuyển khoản chưa xác minh không trừ nợ');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO payment_allocations(invoice_id, payment_id, kind, amount, allocated_by, idempotency_key) VALUES (%L, %L, ''apply'', 100000, %L, gen_random_uuid())', invoice, pending, u), '23514', 'Tiền chờ xác minh không phân bổ được');
-  PERFORM pg_temp.expect_failure(format('UPDATE invoices SET status = ''void'', voided_at = now(), voided_by = %L, void_reason = ''nhập sai'' WHERE id = %L', u, invoice), '23514', 'Không hủy hóa đơn còn phân bổ thu');
-  UPDATE payments SET status = 'rejected', rejection_reason = 'Không thấy tiền về' WHERE id = pending;
-  PERFORM pg_temp.assert_true((SELECT unapplied_amount = 0 FROM v_payment_balances WHERE payment_id = pending), 'Từ chối báo chuyển khoản không tạo số dư');
-
-  INSERT INTO invoices(id, tenancy_id, kind, service_from, service_to, idempotency_key, created_by)
-  VALUES (draft2, stay_id, 'one_time', '2026-02-01', '2026-02-02', gen_random_uuid(), u);
-  PERFORM pg_temp.expect_failure(format('INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, source_rate_id, charge_instance_id, description_snapshot, unit_snapshot, quantity, unit_price) VALUES (%L, 1, %L, %L, %L, ''Lặp'', ''lần'', 1, 30000)', draft2, other, rother, occurrence), '23505', 'Phí một lần không lặp ở hóa đơn khác');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO invoices(tenancy_id, billing_period_id, kind, service_from, service_to, idempotency_key, created_by) VALUES (%L, %L, ''periodic'', ''2026-01-01'', ''2026-02-01'', gen_random_uuid(), %L)', stay_id, period, u), '23505', 'Không lập hai hóa đơn tháng cùng đợt thuê');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO invoices(tenancy_id, billing_period_id, kind, service_from, service_to, idempotency_key, created_by) VALUES (%L, %L, ''final'', ''2026-02-01'', ''2026-02-02'', gen_random_uuid(), %L)', stay_id, period2, u), '23514', 'Tháng tính tiền phải đúng cơ sở');
-
-  INSERT INTO charge_rates(id, room_id, charge_type_id, effective_from, unit_price, calculation_method) VALUES (extra_rate, room, water, '2026-02-01', 0, 'metered');
-  PERFORM pg_temp.assert_true((SELECT unit_price = 0 AND source_scope = 'room' FROM effective_rates(stay_id, '2026-02-01') WHERE charge_type_id = water), 'Giá riêng bằng 0 vẫn được ưu tiên');
-  PERFORM pg_temp.assert_true((SELECT unit_price = 25000 AND source_scope = 'property' FROM room_rates(room3, '2026-02-01') WHERE charge_type_id = water), 'Phòng không có giá riêng kế thừa giá cơ sở');
-  PERFORM pg_temp.assert_true((SELECT amount = 3655000 FROM v_invoice_totals WHERE invoice_id = invoice), 'Đổi giá không sửa hóa đơn cũ');
-  DELETE FROM charge_rates WHERE id = extra_rate;
-  PERFORM pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM charge_rates WHERE id = extra_rate), 'Giá nhập nhầm chưa dùng thì xóa được');
-  PERFORM pg_temp.expect_failure(format('DELETE FROM charge_rates WHERE id = %L', relec), '23503', 'Giá đã lên hóa đơn không xóa được');
-
-  INSERT INTO invoices(id, tenancy_id, kind, original_invoice_id, service_from, service_to, idempotency_key, created_by)
-  VALUES (adjustment, stay_id, 'credit_adjustment', invoice, '2026-01-01', '2026-02-01', gen_random_uuid(), u);
-  INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, description_snapshot, unit_snapshot, quantity, unit_price)
-  VALUES (adjustment, 1, other, 'Điều chỉnh giảm có căn cứ', 'lần', 1, 50000);
-  UPDATE invoices SET status = 'issued', code = 'ADJ-' || id, issued_on = '2026-02-02', due_on = '2026-02-08', issued_at = now(), issued_by = u WHERE id = adjustment;
-  PERFORM pg_temp.assert_true((SELECT receivable_amount = 3605000 AND outstanding_amount = 1605000 FROM v_invoice_balances WHERE invoice_id = invoice), 'Điều chỉnh giảm liên kết làm giảm nợ, giữ số gốc');
-
-  -- ---------------------------------------------------------------- Cọc: yêu cầu, thực thu, bù trừ, hoàn
-  INSERT INTO payments(id, code, tenant_id, amount, received_at, method_code, status, confirmed_by, confirmed_at, idempotency_key)
-  VALUES (deposit_payment, 'PT-4', tenant, 3000000, now(), 'cash', 'confirmed', u, now(), gen_random_uuid());
-  INSERT INTO deposit_entries(id, tenancy_id, payment_id, kind, amount, occurred_at, reason, confirmed_by, idempotency_key)
-  VALUES (deposit, stay_id, deposit_payment, 'receipt', 3000000, now(), 'Thu cọc', u, gen_random_uuid());
-  PERFORM pg_temp.assert_true((SELECT held_amount = 3000000 FROM v_deposit_balances WHERE tenancy_id = stay_id), 'Cọc thực thu tách khỏi tiền thuê');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO deposit_entries(tenancy_id, payment_id, kind, amount, occurred_at, reason, confirmed_by, idempotency_key) VALUES (%L, %L, ''offset'', 3000001, now(), ''Sai'', %L, gen_random_uuid())', stay_id, deposit_payment, u), '23514', 'Không bù trừ quá số cọc đang giữ');
-  INSERT INTO deposit_entries(id, tenancy_id, payment_id, kind, amount, occurred_at, reason, confirmed_by, idempotency_key)
-  VALUES (offset_entry, stay_id, deposit_payment, 'offset', 100000, now(), 'Bù trừ hóa đơn', u, gen_random_uuid());
-  INSERT INTO payment_allocations(id, invoice_id, deposit_entry_id, kind, amount, allocated_by, idempotency_key)
-  VALUES (offset_alloc, invoice, offset_entry, 'apply', 100000, u, gen_random_uuid());
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT held_amount = 2900000 FROM v_deposit_balances WHERE tenancy_id = stay_id), 'Bù trừ 100.000 giảm cọc còn 2.900.000');
-  PERFORM pg_temp.assert_true((SELECT outstanding_amount = 1505000 FROM v_invoice_balances WHERE invoice_id = invoice), 'Bù trừ cọc giảm nợ đúng 100.000');
-  INSERT INTO payment_reversals(id, payment_id, amount, kind, occurred_at, method_code, reason, confirmed_by, idempotency_key)
-  VALUES (refund, deposit_payment, 200000, 'refund', now(), 'cash', 'Hoàn một phần cọc', u, gen_random_uuid());
-  INSERT INTO deposit_entries(tenancy_id, payment_id, kind, amount, payment_reversal_id, occurred_at, reason, confirmed_by, idempotency_key)
-  VALUES (stay_id, deposit_payment, 'refund', 200000, refund, now(), 'Hoàn cọc', u, gen_random_uuid());
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT held_amount = 2700000 FROM v_deposit_balances WHERE tenancy_id = stay_id), 'Hoàn cọc gắn giao dịch tiền ra');
-  PERFORM pg_temp.assert_true((SELECT unapplied_amount = 0 FROM v_payment_balances WHERE payment_id = deposit_payment), 'Nguồn tiền cọc, hoàn, bù trừ cân đối');
-  PERFORM pg_temp.expect_failure(format('DELETE FROM deposit_entries WHERE id = %L', deposit), '23514', 'Sổ cọc chỉ ghi thêm');
-  INSERT INTO payment_allocations(invoice_id, deposit_entry_id, kind, amount, reverses_id, allocated_by, reason, idempotency_key)
-  VALUES (invoice, offset_entry, 'reversal', 100000, offset_alloc, u, 'Đảo bù trừ', gen_random_uuid());
-  INSERT INTO deposit_entries(tenancy_id, payment_id, kind, amount, related_entry_id, occurred_at, reason, confirmed_by, idempotency_key)
-  VALUES (stay_id, deposit_payment, 'reversal', 100000, offset_entry, now(), 'Đảo bù trừ', u, gen_random_uuid());
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT held_amount = 2800000 FROM v_deposit_balances WHERE tenancy_id = stay_id)
-    AND (SELECT outstanding_amount = 1605000 FROM v_invoice_balances WHERE invoice_id = invoice), 'Đảo bù trừ khôi phục đúng cọc và công nợ');
-
-  -- ---------------------------------------------------------------- Khóa tháng, ngày
-  UPDATE billing_periods SET status = 'locked', locked_at = now(), locked_by = u WHERE id = period;
-  PERFORM pg_temp.expect_failure(format('INSERT INTO meter_readings(meter_id, observed_at, reading_value, tenancy_id, billing_period_id, reading_kind, recorded_by) VALUES (%L, ''2026-02-01 18:00+07'', 201, %L, %L, ''checkout'', %L)', me, stay_id, period, u), '23514', 'Khóa tháng chặn thêm chỉ số');
-  PERFORM pg_temp.expect_failure(format('UPDATE billing_periods SET status = ''open'', locked_at = NULL, locked_by = NULL WHERE id = %L', period), '23514', 'Mở khóa tháng bắt buộc lý do');
-  PERFORM set_config('smartrent.reason', 'Đối soát lại được duyệt', true);
-  UPDATE billing_periods SET status = 'open', locked_at = NULL, locked_by = NULL WHERE id = period;
-  PERFORM pg_temp.assert_true(invoice_date('2026-02-01', 31) = '2026-02-28', 'Ngày lập 31 lấy cuối tháng');
-  PERFORM pg_temp.assert_true(invoice_date('2028-02-01', 31) = '2028-02-29', 'Tháng 2 năm nhuận');
-  PERFORM pg_temp.assert_true(quick_contract_end_exclusive('2026-01-31', 1) = '2026-02-28', 'Cộng tháng xử lý ngày cuối tháng');
-
-  -- ---------------------------------------------------------------- Hợp đồng hết hạn, ticket, đề nghị của khách
-  PERFORM pg_temp.assert_true((SELECT status IN ('active','expired') AND display_end_on = '2026-12-31' FROM v_contract_status WHERE contract_id = contract), 'Ngày cuối hợp đồng hiển thị là ngày trước ends_on');
-  INSERT INTO tenancy_requests(tenancy_id, request_type, desired_on, requested_by) VALUES (stay_id, 'renewal', '2027-06-30', customer);
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancy_requests(tenancy_id, request_type, desired_on, requested_by) VALUES (%L, ''renewal'', ''2027-07-30'', %L)', stay_id, customer), '23505', 'Không gửi trùng đề nghị đang chờ');
-  INSERT INTO tenant_profile_change_requests(tenant_id, requested_by, proposed_phone, proposed_emergency_contact_name)
-  VALUES (tenant, customer, '0900000099', 'Người thân');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenant_profile_change_requests(tenant_id, requested_by, proposed_phone) VALUES (%L, %L, ''0900'')', tenant, customer), '23505', 'Mỗi khách một đề nghị sửa hồ sơ đang chờ');
-  INSERT INTO tickets(id, code, room_id, tenancy_id, category_id, title, description, reported_by)
-  VALUES (ticket, 'SC-0001', room, stay_id, (SELECT id FROM ticket_categories WHERE organization_id = org AND code = 'PLUMBING'), 'Vòi nước rò', 'Vòi bếp rò nước', customer);
-  INSERT INTO ticket_messages(id, ticket_id, author_id, body, is_internal) VALUES (message, ticket, u, 'Ghi chú nội bộ', true);
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tickets(code, room_id, tenancy_id, category_id, title, description, reported_by) VALUES (''SC-0002'', %L, %L, (SELECT id FROM ticket_categories WHERE organization_id = %L LIMIT 1), ''x'', ''x'', %L)', room2, stay_id, org, customer), '23514', 'Ticket phải đúng phòng của đợt thuê');
-  INSERT INTO ticket_events(ticket_id, event_type, old_status, new_status, actor_id) VALUES (ticket, 'status_changed', 'new', 'accepted', u);
-  PERFORM pg_temp.expect_failure(format('UPDATE ticket_events SET reason = ''sửa'' WHERE ticket_id = %L', ticket), '23514', 'Lịch sử ticket chỉ ghi thêm');
-
-  -- ---------------------------------------------------------------- Trả phòng khi tháng đã có hóa đơn: hóa đơn cuối chỉ tính điện nước
-  INSERT INTO handovers(id, tenancy_id, kind, occurred_at, landlord_confirmed_by, confirmed_at) VALUES (checkout_handover, stay_id, 'checkout', '2026-01-31 20:00+07', u, now());
-  INSERT INTO meter_readings(id, meter_id, observed_at, reading_value, tenancy_id, handover_id, reading_kind, recorded_by) VALUES
-    (e2, me, '2026-01-31 20:00+07', 203, stay_id, checkout_handover, 'checkout', u), (w2, mw, '2026-01-31 20:00+07', 14, stay_id, checkout_handover, 'checkout', u);
-  INSERT INTO invoices(id, tenancy_id, kind, service_from, service_to, idempotency_key, created_by)
-  VALUES (final_invoice, stay_id, 'final', '2026-01-31', '2026-02-01', gen_random_uuid(), u);
-  INSERT INTO invoice_lines(id, invoice_id, line_no, charge_type_id, source_rate_id, description_snapshot, unit_snapshot, quantity, unit_price) VALUES
-    (fl_e, final_invoice, 1, elec, relec, 'Điện', 'kWh', 3, 4000), (fl_w, final_invoice, 2, water, rwater, 'Nước', 'm³', 1, 25000);
-  INSERT INTO invoice_meter_segments(invoice_line_id, from_reading_id, to_reading_id) VALUES (fl_e, e1, e2), (fl_w, w1, w2);
-  UPDATE invoices SET status = 'issued', code = 'FIN-' || id, issued_on = '2026-02-01', due_on = '2026-02-08', issued_at = now(), issued_by = u WHERE id = final_invoice;
-  PERFORM pg_temp.assert_true((SELECT amount = 37000 FROM v_invoice_totals WHERE invoice_id = final_invoice), 'Hóa đơn cuối chỉ điện nước phát hành được dù trùng ngày hóa đơn tháng');
-  INSERT INTO invoices(id, tenancy_id, kind, service_from, service_to, idempotency_key, created_by)
-  VALUES (rent_final, stay_id, 'final', '2026-01-20', '2026-02-01', gen_random_uuid(), u);
-  INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, source_rate_id, description_snapshot, unit_snapshot, quantity, unit_price)
-  VALUES (rent_final, 1, rent, rrent, 'Thuê', 'tháng', 1, 3000000);
-  PERFORM pg_temp.expect_failure(format('UPDATE invoices SET status = ''issued'', code = ''FIN2'', issued_on = ''2026-02-01'', due_on = ''2026-02-08'', issued_at = now(), issued_by = %L WHERE id = %L', u, rent_final), '23514', 'Tiền thuê một ngày không thu hai lần');
-
-  INSERT INTO checkout_settlements(id, tenancy_id, checkout_handover_id, status, allow_remaining_debt, remaining_debt_reason, confirmed_by, confirmed_at)
-  VALUES (settlement, stay_id, checkout_handover, 'confirmed', true, 'Khách cam kết trả sau', u, now());
-  UPDATE tenancies SET status = 'ended', actual_move_out = '2026-02-01', end_reason = 'Trả còn nợ được duyệt', ended_by = u WHERE id = stay_id;
-  UPDATE contracts SET terminated_on = '2026-02-01', termination_reason = 'Khách trả phòng', terminated_by = u, terminated_at = now() WHERE id = contract;
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT outstanding_amount = 1642000 FROM v_tenant_debts WHERE tenant_id = tenant), 'Khách rời vẫn giữ nợ');
-  PERFORM pg_temp.assert_true((SELECT status = 'terminated' FROM v_contract_status WHERE contract_id = contract), 'Hợp đồng chuyển chấm dứt');
-  PERFORM pg_temp.assert_true((SELECT residence_status = 'former' FROM v_tenant_status WHERE tenant_id = tenant), 'Khách chuyển sang Đã trả phòng');
-  PERFORM pg_temp.assert_true((SELECT occupancy_status = 'available' FROM v_room_status WHERE id = room), 'Phòng trở lại còn trống');
-  PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM v_public_rooms WHERE slug = 'p101'), 'Phòng trống lại hiện ở trang Thuê phòng');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenancies(room_id, representative_tenant_id, planned_move_in) VALUES (%L, %L, ''2026-01-15'')', room, tenant2), '23P01', 'Không chèn chồng lịch sử đợt thuê đã kết thúc');
-  INSERT INTO tenancies(room_id, representative_tenant_id, planned_move_in) VALUES (room, tenant2, '2026-02-01');
-  PERFORM pg_temp.assert_true(true, 'Ngày trả là biên mở: khách sau vào cùng ngày không chồng');
-
-  -- ---------------------------------------------------------------- Khách đang ở nhập từ sổ cũ, chưa có hợp đồng (mục Đã thuê ở form phòng)
-  INSERT INTO tenancies(id, room_id, representative_tenant_id, status, planned_move_in, actual_move_in, onboarding_mode)
-  VALUES (import_stay, room2, resident, 'active', '2026-02-01', '2026-02-01', 'import');
-  SET CONSTRAINTS ALL IMMEDIATE; SET CONSTRAINTS ALL DEFERRED;
-  PERFORM pg_temp.assert_true((SELECT occupancy_status = 'occupied' FROM v_room_status WHERE id = room2), 'Khách nhập từ form phòng không cần hợp đồng giả');
-  INSERT INTO invoices(id, tenancy_id, kind, billing_period_id, service_from, service_to, idempotency_key, created_by)
-  VALUES (opening_invoice, import_stay, 'periodic', period_feb, '2026-02-01', '2026-03-01', gen_random_uuid(), u);
-  INSERT INTO invoice_lines(invoice_id, line_no, charge_type_id, source_rate_id, description_snapshot, unit_snapshot, quantity, unit_price)
-  VALUES (opening_invoice, 1, rent, rrent, 'Thuê', 'tháng', 1, 3000000);
-  PERFORM pg_temp.expect_failure(format('UPDATE invoices SET status = ''issued'', code = ''X2'', issued_on = ''2026-03-01'', due_on = ''2026-03-08'', issued_at = now(), issued_by = %L WHERE id = %L', u, opening_invoice), '23514', 'Chưa có hợp đồng ký thì không phát hành hóa đơn tháng');
-
-  -- Bổ sung hợp đồng thật đã hết hạn mà khách vẫn ở: hợp đồng không tự trả phòng.
-  INSERT INTO contracts(id, tenancy_id, code, created_by) VALUES (contract2, import_stay, 'HD-' || contract2, u);
-  INSERT INTO contract_versions(id, contract_id, version_no, effective_from, ends_on, required_deposit, invoice_day, due_after_days, proration_policy, terms_text)
-  VALUES (version2, contract2, 1, '2026-02-01', '2026-03-01', 0, 1, 7, 'actual_days', 'Điều khoản thử');
-  INSERT INTO contract_parties(contract_version_id, party_role, full_name_snapshot, address_snapshot) VALUES
-    (version2, 'landlord', 'Chủ trọ', 'Địa chỉ chủ'), (version2, 'representative', 'Khách', 'Địa chỉ khách');
-  INSERT INTO contract_files(contract_version_id, file_id, file_kind) VALUES (version2, file, 'signed');
-  UPDATE contract_versions SET signed_at = now(), confirmed_by = u, signature_method = 'paper' WHERE id = version2;
-  PERFORM pg_temp.assert_true((SELECT status = 'expired' AND still_occupied_after_expiry AND NOT expiring FROM v_contract_status WHERE contract_id = contract2), 'Hết hạn hợp đồng không tự trả phòng');
-  PERFORM pg_temp.assert_true((SELECT occupancy_status = 'occupied' FROM v_room_status WHERE id = room2), 'Khách vẫn ở sau khi hợp đồng hết hạn');
-
-  -- ---------------------------------------------------------------- Xóa phòng trống, nhật ký
-  INSERT INTO meters(room_id, meter_kind, serial_number, installed_at) VALUES (empty_room, 'electricity', 'E-EMPTY', now());
-  INSERT INTO charge_rates(room_id, charge_type_id, effective_from, unit_price, calculation_method) VALUES (empty_room, rent, '2026-01-01', 2000000, 'fixed');
-  INSERT INTO room_listings(room_id, slug, title) VALUES (empty_room, 'p104', 'Phòng 104');
-  INSERT INTO room_amenities(room_id, amenity_id) SELECT empty_room, id FROM amenities WHERE organization_id = org LIMIT 1;
-  INSERT INTO room_status_events(room_id, new_status, reason, changed_by) VALUES (empty_room, 'maintenance', 'Sơn lại', u);
-  DELETE FROM rooms WHERE id = empty_room;
-  PERFORM pg_temp.assert_true(NOT EXISTS (SELECT 1 FROM meters WHERE room_id = empty_room), 'Xóa phòng chưa có lịch sử xóa luôn dữ liệu đi kèm');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO tenant_identity_documents(tenant_id, document_type, number_ciphertext, number_fingerprint, number_last4, front_file_id) VALUES (%L, ''cccd'', ''x'', ''fp'', ''1234'', %L)', tenant, public_file), '23514', 'Ảnh giấy tờ bắt buộc riêng tư');
-  INSERT INTO email_outbox(organization_id, to_email, template_code, subject, body, dedupe_key) VALUES (org, 'a@example.com', 'invoice', 'Hóa đơn', 'Nội dung', 'invoice:1');
-  PERFORM pg_temp.expect_failure(format('INSERT INTO email_outbox(organization_id, to_email, template_code, subject, body, dedupe_key) VALUES (%L, ''a@example.com'', ''invoice'', ''x'', ''x'', ''invoice:1'')', org), '23505', 'Không gửi trùng email cùng sự kiện');
-  PERFORM pg_temp.assert_true((SELECT count(*) > 0 FROM audit_logs WHERE organization_id = org), 'Nhật ký tự động được ghi');
-  PERFORM pg_temp.assert_true(EXISTS (SELECT 1 FROM audit_logs WHERE table_name = 'rooms' AND action = 'DELETE' AND record_key->>'id' = empty_room::text AND organization_id = org), 'Xóa phòng vẫn ghi nhật ký đúng đơn vị');
-END $$;
+SELECT set_config('smartrent.user_id',(SELECT id::text FROM users WHERE code='KH-001'),true);
+SELECT pg_temp.ok('Customer sees own invoices',(SELECT count(*)=1 FROM v_user_invoices));
+SELECT pg_temp.ok('Ticket customer view removes internal notes',(SELECT jsonb_array_length(messages)=1 AND messages->0->>'body'='Tôi sẽ kiểm tra' FROM v_user_tickets));
+SELECT pg_temp.ok('Customer sees own requests',(SELECT count(*)=2 FROM v_user_bookings));
+SELECT pg_temp.ok('Customer sees own notification',(SELECT count(*)=1 FROM v_user_notifications));
+SELECT set_config('smartrent.user_id',(SELECT id::text FROM users WHERE code='KH-002'),true);
+SELECT pg_temp.ok('Roommate sees stay without finance',(SELECT count(*)=1 AND bool_and(NOT finance_visible) FROM v_user_contracts));
+SELECT pg_temp.ok('Roommate cannot read invoice',(SELECT count(*)=0 FROM v_user_invoices));
+SELECT pg_temp.ok('Roommate cannot read others ticket',(SELECT count(*)=0 FROM v_user_tickets));
+SELECT set_config('smartrent.user_id','',true);
+SELECT pg_temp.ok('No context reveals no invoice',(SELECT count(*)=0 FROM v_user_invoices));
+SELECT pg_temp.reject('Internal note author must admin',$q$UPDATE tickets SET messages=messages||jsonb_build_array(jsonb_build_object('id','bad','authorId',(SELECT id FROM users WHERE code='KH-001'),'body','Secret','createdAt',now(),'isInternal',true))$q$,'admin_required');
+SELECT pg_temp.reject('Existing messages cannot be edited',$q$UPDATE tickets SET messages=jsonb_set(messages,'{0,body}','"Edited"')$q$,'ticket_messages_are_append_only');
+SELECT pg_temp.reject('Assignee admin only',$q$UPDATE tickets SET assigned_to=(SELECT id FROM users WHERE code='KH-001')$q$,'admin_required');
+SELECT pg_temp.reject('Ticket category fixed',$q$UPDATE tickets SET category_code='UNKNOWN'$q$,'23514');
+SELECT pg_temp.reject('Reminder schedule coherent',$q$UPDATE settings SET meter_reading_day=28,invoice_create_day=2$q$,'23514');
+SELECT pg_temp.reject('One settings row',$q$INSERT INTO settings(id) VALUES(2)$q$,'23514');
+SELECT pg_temp.reject('Required rate field cannot be JSON null',$q$UPDATE rooms SET rates=jsonb_set(rates,'{0,category}','null') WHERE code='A101'$q$,'missing_json_field');
+SELECT pg_temp.reject('Appointment timestamp cannot be JSON null',$q$UPDATE bookings SET appointments=jsonb_set(appointments,'{0,startsAt}','null') WHERE code='LX-001'$q$,'missing_json_field');
+SELECT pg_temp.reject('Signed initial readings immutable',$q$UPDATE contracts SET initial_readings='{}' WHERE code='HDTH-001'$q$,'signed_initial_readings_are_immutable');
+SELECT pg_temp.reject('Signed contract cannot be deleted',$q$DELETE FROM contracts WHERE code='HDTH-001'$q$,'signed_contract_cannot_delete');
+SELECT pg_temp.reject('Receipt reversal must release allocated money',$q$INSERT INTO payments(code,user_id,contract_id,kind,reverses_id,status,amount,method,confirmed_by,confirmed_at,reason) SELECT 'REV-BAD',user_id,contract_id,'receipt_reversal',id,'confirmed',amount,'cash',confirmed_by,now(),'Undo without releasing allocation' FROM payments WHERE code='PT-001'$q$,'payment_overspent');
+SELECT pg_temp.reject('Ticket internal flag must be boolean',$q$UPDATE tickets SET messages=messages||jsonb_build_array(jsonb_build_object('id','bad-flag','authorId',(SELECT id FROM users WHERE role='admin'),'body','Message','createdAt',now(),'isInternal','false'))$q$,'invalid_ticket_message');
+UPDATE bookings SET status='approved',reviewed_by=(SELECT id FROM users WHERE role='admin'),reviewed_at=now() WHERE code='YC-001';
+SELECT pg_temp.reject('Approved request cannot reopen',$q$UPDATE bookings SET status='pending' WHERE code='YC-001'$q$,'closed_request_is_immutable');
+INSERT INTO payments(code,user_id,amount,method,idempotency_key,request_hash) SELECT 'IDEMP-1',id,1,'cash','same-key','hash1' FROM users WHERE code='KH-001';
+SELECT pg_temp.reject('Payment key prevents duplicate submission',$q$INSERT INTO payments(code,user_id,amount,method,idempotency_key,request_hash) SELECT 'IDEMP-2',id,1,'cash','same-key','hash1' FROM users WHERE code='KH-001'$q$,'23505');
+INSERT INTO invoices(code,contract_id,kind,metered_only,service_from,service_to,electricity_start,electricity_end,electricity_from_at,electricity_to_at,lines)
+ SELECT 'FINAL-CHECK',contract_id,'final',true,'2026-09-30','2026-10-01',electricity_start,electricity_end,electricity_from_at,electricity_to_at,jsonb_build_array(lines->1) FROM invoices WHERE code='HD-001';
+SELECT pg_temp.reject('One final invoice per contract',$q$INSERT INTO invoices(contract_id,kind,metered_only,service_from,service_to) SELECT contract_id,'final',true,service_from,service_to FROM invoices WHERE code='FINAL-CHECK'$q$,'23505');
+SELECT pg_temp.reject('Metered usage cannot be billed twice',$q$UPDATE invoices SET status='issued',issued_on='2026-10-01',due_on='2026-10-06',issued_at=now(),issued_by=(SELECT id FROM users WHERE role='admin') WHERE code='FINAL-CHECK'$q$,'consumption_already_billed');
+UPDATE invoices SET lines=jsonb_set(lines,'{0,quantity}','49') WHERE code='FINAL-CHECK';
+SELECT pg_temp.reject('Electricity line quantity matches readings',$q$UPDATE invoices SET status='issued',issued_on='2026-10-01',due_on='2026-10-06',issued_at=now(),issued_by=(SELECT id FROM users WHERE role='admin') WHERE code='FINAL-CHECK'$q$,'invoice_reading_quantity_mismatch');
+UPDATE invoices SET lines=jsonb_set(lines,'{0,quantity}','50')||jsonb_build_array((SELECT lines->0 FROM invoices WHERE code='HD-001')) WHERE code='FINAL-CHECK';
+SELECT pg_temp.reject('Final invoice after full month cannot repeat rent',$q$UPDATE invoices SET status='issued',issued_on='2026-10-01',due_on='2026-10-06',issued_at=now(),issued_by=(SELECT id FROM users WHERE role='admin') WHERE code='FINAL-CHECK'$q$,'metered_final_cannot_charge_rent');
+UPDATE invoices SET lines=jsonb_build_array(jsonb_set(lines->0,'{quantity}','10')),electricity_start=151,electricity_end=161,electricity_from_at='2026-09-30T11:00Z',electricity_to_at='2026-10-01T02:00Z',correction_reason='Check remaining segment' WHERE code='FINAL-CHECK';
+SELECT pg_temp.reject('Reading start must equal last issued reading',$q$UPDATE invoices SET status='issued',issued_on='2026-10-01',due_on='2026-10-06',issued_at=now(),issued_by=(SELECT id FROM users WHERE role='admin') WHERE code='FINAL-CHECK'$q$,'reading_start_mismatch');
+UPDATE invoices SET electricity_start=150,electricity_end=160 WHERE code='FINAL-CHECK';
+SELECT pg_temp.reject('Issue requires every metered charge reading',$q$UPDATE invoices SET status='issued',issued_on='2026-10-01',due_on='2026-10-06',issued_at=now(),issued_by=(SELECT id FROM users WHERE role='admin') WHERE code='FINAL-CHECK'$q$,'invoice_needs_all_readings');
+DELETE FROM invoices WHERE code='FINAL-CHECK';
 SET CONSTRAINTS ALL IMMEDIATE;
-SELECT count(*) AS passed_checks FROM test_results;
-SELECT name AS passed FROM test_results ORDER BY name;
+SELECT json_build_object('passed',count(*),'checks',json_agg(name ORDER BY name)) FROM test_results;
 ROLLBACK;

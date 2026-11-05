@@ -137,8 +137,7 @@ export default function register(r) {
     const { db } = ctx;
     return {
       organizations: db.organizations.filter((org) => org.isActive).map((org) => {
-        const ownerRole = db.businessRoles.find((x) => x.organizationId === org.id && x.code === 'owner');
-        const membership = db.memberships.find((m) => m.organizationId === org.id && m.status === 'active' && m.roleIds.includes(ownerRole?.id));
+        const membership = db.memberships.find((m) => m.organizationId === org.id && m.status === 'active' && db.users.some((u) => u.id === m.userId && u.role === 'admin'));
         const owner = membership ? find(db.users, membership.userId) : null;
         return {
           name: org.name, contactName: owner?.displayName || null, phone: owner?.phone || org.phone || null, email: owner?.email || org.email || null,

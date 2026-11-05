@@ -10,7 +10,8 @@ export default defineConfig(({ mode }) => {
   return {
     base: env.VITE_BASE_PATH || '/',
     server: {
-      port: 5173,
+      port: 5174,
+      strictPort: true,
       proxy: proxyTarget ? { '/api': { target: proxyTarget, changeOrigin: true } } : undefined,
     },
     preview: { port: 4173 },

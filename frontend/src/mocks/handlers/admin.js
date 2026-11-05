@@ -1,4 +1,4 @@
-// Nhân sự, vai trò, cấu hình, mẫu nhắc, tác vụ nền, gửi email (mô phỏng), xuất dữ liệu, tích hợp, nhật ký, chi phí, AI, tệp.
+// Cấu hình, mẫu nhắc, tác vụ nền, gửi email (mô phỏng), xuất dữ liệu, tích hợp, nhật ký, chi phí, AI, tệp.
 import { uuid } from '../../utils/ids.js';
 import { addDays, compareIso, formatDate, instantToIsoDate } from '../../utils/date.js';
 import { asBool, conflict, fail, listResponse, rule, validator } from '../respond.js';
@@ -11,32 +11,6 @@ import { fileContent, storeFileContent } from '../db.js';
 import { orgProperties, propertyFilter, propertyInScope } from '../scope.js';
 
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
-
-function memberDto(ctx, m) {
-  const { db } = ctx;
-  const user = find(db.users, m.userId);
-  return {
-    id: m.id, user: { id: user.id, displayName: user.displayName, email: user.email, phone: user.phone, lastLoginAt: user.lastLoginAt }, status: m.status,
-    roles: m.roleIds.map((id) => find(db.businessRoles, id)).filter(Boolean).map((r) => ({ id: r.id, code: r.code, name: r.name })),
-    propertyScope: m.propertyScope, properties: m.propertyIds.map((id) => propertyRef(find(db.properties, id))).filter(Boolean),
-    permissionCount: permissionsOf(db, m).size, joinedAt: m.joinedAt, invitedAt: m.invitedAt, isSelf: m.userId === ctx.user.id,
-  };
-}
-
-function assertGrantable(ctx, roleIds) {
-  const mine = ctx.permissions;
-  for (const roleId of roleIds) {
-    const role = find(ctx.db.businessRoles, roleId);
-    if (!role || role.organizationId !== ctx.organizationId) fail(422, 'validation_failed', 'Vai trò không hợp lệ.', { roleIds: ['Không thuộc đơn vị.'] });
-    const extra = role.permissions.filter((p) => !mine.has(p));
-    if (extra.length) fail(403, 'privilege_escalation', `Không cấp vai trò "${role.name}" vì có quyền bạn chưa có (${extra.slice(0, 3).join(', ')}${extra.length > 3 ? '…' : ''}).`);
-  }
-}
-
-function ownerCount(ctx) {
-  const ownerRole = ctx.db.businessRoles.find((r) => r.organizationId === ctx.organizationId && r.code === 'owner');
-  return ctx.db.memberships.filter((m) => m.organizationId === ctx.organizationId && m.status === 'active' && m.roleIds.includes(ownerRole.id)).length;
-}
 
 function placeholderSvg(title, subtitle) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400" viewBox="0 0 640 400"><rect width="640" height="400" fill="#eef2f0"/><rect x="24" y="24" width="592" height="352" rx="18" fill="#fff" stroke="#1f5662" stroke-width="3" stroke-dasharray="10 8"/><text x="320" y="185" text-anchor="middle" font-family="sans-serif" font-size="26" fill="#1f5662">${title}</text><text x="320" y="225" text-anchor="middle" font-family="sans-serif" font-size="16" fill="#5b6b70">${subtitle}</text></svg>`;
@@ -90,129 +64,6 @@ function tenantCanSee(ctx, file) {
 }
 
 export default function register(r) {
-  // ---------------------------------------------------------------- nhân sự
-  r.get('/api/v1/members', (ctx) => {
-    const all = ctx.db.memberships.filter((m) => m.organizationId === ctx.organizationId).map((m) => memberDto(ctx, m));
-    return listResponse(all, ctx.query, {
-      filter: (m) => !ctx.query.status || m.status === ctx.query.status,
-      search: (m) => [m.user.displayName, m.user.email],
-      sortable: ['user.displayName', 'status', 'joinedAt'],
-      defaultSort: 'user.displayName',
-    });
-  }, { perm: 'members.read' });
-
-  r.post('/api/v1/members/invitations', (ctx) => {
-    const b = ctx.body;
-    const v = validator();
-    v.email('email', b.email, { required: true });
-    v.required('displayName', b.displayName, 'Họ tên');
-    v.required('roleIds', b.roleIds, 'Vai trò');
-    v.oneOf('propertyScope', b.propertyScope, ['all', 'assigned'], 'Phạm vi cơ sở');
-    if (b.propertyScope === 'assigned' && !b.propertyIds?.length) v.add('propertyIds', 'Chọn ít nhất một cơ sở.');
-    v.check();
-    assertGrantable(ctx, b.roleIds);
-    if (b.propertyScope === 'all' && ctx.membership.propertyScope !== 'all') fail(403, 'privilege_escalation', 'Bạn chỉ quản lý một số cơ sở nên không cấp phạm vi "Tất cả cơ sở".');
-    (b.propertyIds || []).forEach((id) => propertyInScope(ctx, id));
-    let user = ctx.db.users.find((u) => u.email.toLowerCase() === b.email.toLowerCase());
-    if (user && ctx.db.memberships.some((m) => m.userId === user.id && m.organizationId === ctx.organizationId)) conflict('already_member', 'Tài khoản đã thuộc đơn vị.');
-    if (!user) {
-      user = { id: uuid(), key: null, email: b.email, displayName: b.displayName, phone: null, isActive: true, systemRoles: [], mockPassword: null, emailConfirmed: false, twoFactorEnabled: false, createdAt: ctx.now, lastLoginAt: null };
-      ctx.db.users.push(user);
-    }
-    const membership = { id: uuid(), organizationId: ctx.organizationId, userId: user.id, status: 'invited', propertyScope: b.propertyScope, roleIds: b.roleIds, propertyIds: b.propertyScope === 'all' ? [] : b.propertyIds, joinedAt: ctx.now, invitedAt: ctx.now };
-    ctx.db.memberships.push(membership);
-    queueEmail(ctx.db, { organizationId: ctx.organizationId, toEmail: b.email, templateCode: 'staff_invitation', eventKey: membership.id, subject: 'Lời mời tham gia SmartRent', at: ctx.now });
-    audit(ctx.db, ctx, { action: 'member.invite', tableName: 'organization_memberships', recordId: membership.id, after: { email: b.email, roles: b.roleIds } });
-    return memberDto(ctx, membership);
-  }, { perm: 'members.manage' });
-
-  r.put('/api/v1/members/:id', (ctx) => {
-    const m = ctx.db.memberships.find((x) => x.id === ctx.params.id && x.organizationId === ctx.organizationId);
-    if (!m) fail(404, 'not_found', 'Không tìm thấy nhân sự.');
-    const b = ctx.body;
-    const v = validator();
-    v.required('roleIds', b.roleIds, 'Vai trò');
-    v.oneOf('propertyScope', b.propertyScope, ['all', 'assigned'], 'Phạm vi cơ sở');
-    if (b.propertyScope === 'assigned' && !b.propertyIds?.length) v.add('propertyIds', 'Chọn ít nhất một cơ sở.');
-    v.check();
-    assertGrantable(ctx, b.roleIds);
-    const ownerRole = ctx.db.businessRoles.find((x) => x.organizationId === ctx.organizationId && x.code === 'owner');
-    if (m.roleIds.includes(ownerRole.id) && !b.roleIds.includes(ownerRole.id) && ownerCount(ctx) <= 1) rule('last_owner', 'Đơn vị cần ít nhất một chủ trọ. Gán vai trò chủ trọ cho người khác trước.');
-    if (m.userId === ctx.user.id && b.roleIds.join() !== m.roleIds.join()) rule('self_role_change', 'Không tự đổi vai trò của chính mình.');
-    const before = { roleIds: m.roleIds, propertyScope: m.propertyScope, propertyIds: m.propertyIds };
-    Object.assign(m, { roleIds: b.roleIds, propertyScope: b.propertyScope, propertyIds: b.propertyScope === 'all' ? [] : b.propertyIds });
-    audit(ctx.db, ctx, { action: 'member.update', tableName: 'organization_memberships', recordId: m.id, before, after: { roleIds: m.roleIds, propertyScope: m.propertyScope, propertyIds: m.propertyIds } });
-    return memberDto(ctx, m);
-  }, { perm: 'members.manage' });
-
-  r.post('/api/v1/members/:id/suspend', (ctx) => {
-    const m = ctx.db.memberships.find((x) => x.id === ctx.params.id && x.organizationId === ctx.organizationId);
-    if (!m) fail(404, 'not_found', 'Không tìm thấy nhân sự.');
-    const v = validator();
-    v.reason('reason', ctx.body.reason);
-    v.check();
-    if (m.userId === ctx.user.id) rule('self_suspend', 'Không tự khóa tài khoản của chính mình.');
-    const ownerRole = ctx.db.businessRoles.find((x) => x.organizationId === ctx.organizationId && x.code === 'owner');
-    if (m.roleIds.includes(ownerRole.id) && ownerCount(ctx) <= 1) rule('last_owner', 'Không khóa chủ trọ duy nhất.');
-    m.status = 'suspended';
-    // Thu hồi phiên đăng nhập khi khóa (mock: thu hồi mọi phiên của tài khoản).
-    ctx.db.sessions.filter((s) => s.userId === m.userId && !s.revokedAt).forEach((s) => { s.revokedAt = ctx.now; });
-    audit(ctx.db, ctx, { action: 'member.suspend', tableName: 'organization_memberships', recordId: m.id, after: { status: 'suspended' }, reason: ctx.body.reason });
-    return memberDto(ctx, m);
-  }, { perm: 'members.manage' });
-
-  r.post('/api/v1/members/:id/activate', (ctx) => {
-    const m = ctx.db.memberships.find((x) => x.id === ctx.params.id && x.organizationId === ctx.organizationId);
-    if (!m) fail(404, 'not_found', 'Không tìm thấy nhân sự.');
-    if (m.status === 'invited') rule('invitation_pending', 'Lời mời chưa được chấp nhận. Gửi lại lời mời nếu cần.');
-    m.status = 'active';
-    audit(ctx.db, ctx, { action: 'member.activate', tableName: 'organization_memberships', recordId: m.id, after: { status: 'active' } });
-    return memberDto(ctx, m);
-  }, { perm: 'members.manage' });
-
-  r.post('/api/v1/members/:id/resend-invitation', (ctx) => {
-    const m = ctx.db.memberships.find((x) => x.id === ctx.params.id && x.organizationId === ctx.organizationId);
-    if (!m || m.status !== 'invited') fail(404, 'not_found', 'Không có lời mời đang chờ.');
-    const user = find(ctx.db.users, m.userId);
-    queueEmail(ctx.db, { organizationId: ctx.organizationId, toEmail: user.email, templateCode: 'staff_invitation', eventKey: `${m.id}:${ctx.now}`, subject: 'Nhắc lời mời tham gia SmartRent', at: ctx.now });
-    return { simulated: true, toEmail: user.email };
-  }, { perm: 'members.manage' });
-
-  // ---------------------------------------------------------------- vai trò và quyền
-  r.get('/api/v1/permissions', (ctx) => ctx.db.permissions, { perm: 'members.read' });
-
-  r.get('/api/v1/roles', (ctx) => ctx.db.businessRoles.filter((x) => x.organizationId === ctx.organizationId).map((x) => ({
-    ...x, memberCount: ctx.db.memberships.filter((m) => m.organizationId === ctx.organizationId && m.roleIds.includes(x.id) && m.status !== 'left').length,
-  })), { perm: 'members.read' });
-
-  r.post('/api/v1/roles', (ctx) => {
-    const b = ctx.body;
-    const v = validator();
-    v.required('code', b.code, 'Mã vai trò');
-    v.required('name', b.name, 'Tên vai trò');
-    v.check();
-    if (ctx.db.businessRoles.some((x) => x.organizationId === ctx.organizationId && x.code === b.code)) conflict('role_code_taken', 'Mã vai trò đã tồn tại.', { code: ['Trùng mã.'] });
-    const extra = (b.permissions || []).filter((p) => !ctx.permissions.has(p));
-    if (extra.length) fail(403, 'privilege_escalation', 'Không tạo vai trò có quyền bạn chưa có.');
-    const role = { id: uuid(), organizationId: ctx.organizationId, code: b.code, name: b.name, permissions: b.permissions || [], isSystem: false };
-    ctx.db.businessRoles.push(role);
-    audit(ctx.db, ctx, { action: 'role.create', tableName: 'business_roles', recordId: role.id, after: { code: role.code, permissions: role.permissions } });
-    return role;
-  }, { perm: 'members.manage' });
-
-  r.put('/api/v1/roles/:id', (ctx) => {
-    const role = ctx.db.businessRoles.find((x) => x.id === ctx.params.id && x.organizationId === ctx.organizationId);
-    if (!role) fail(404, 'not_found', 'Không tìm thấy vai trò.');
-    if (role.code === 'owner') rule('owner_role_fixed', 'Vai trò Chủ trọ luôn có toàn bộ quyền và không chỉnh được.');
-    const b = ctx.body;
-    const extra = (b.permissions || []).filter((p) => !ctx.permissions.has(p));
-    if (extra.length) fail(403, 'privilege_escalation', 'Không cấp quyền bạn chưa có.');
-    const before = { permissions: role.permissions };
-    Object.assign(role, { name: b.name || role.name, permissions: b.permissions || role.permissions });
-    audit(ctx.db, ctx, { action: 'role.update', tableName: 'business_role_permissions', recordId: role.id, before, after: { permissions: role.permissions } });
-    return role;
-  }, { perm: 'members.manage' });
-
   // ---------------------------------------------------------------- cấu hình
   const scheduleOf = (ctx) => {
     const { meterReadingDay, invoiceCreateDay, reminderEnabled } = ctx.db.orgSettings.find((s) => s.organizationId === ctx.organizationId);
@@ -236,7 +87,7 @@ export default function register(r) {
   r.get('/api/v1/settings/organization', (ctx) => {
     const org = find(ctx.db.organizations, ctx.organizationId);
     return { ...org, settings: ctx.db.orgSettings.find((s) => s.organizationId === org.id) };
-  }, { perm: 'members.read' });
+  }, { perm: 'settings.manage' });
 
   r.put('/api/v1/settings/organization', (ctx) => {
     const org = find(ctx.db.organizations, ctx.organizationId);

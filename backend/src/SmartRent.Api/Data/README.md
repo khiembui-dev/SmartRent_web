@@ -1,12 +1,9 @@
 # Truy cập database
 
-Người 1 giữ thư mục này. Các file ở đây sinh từ database, cách chạy nằm ở `backend/HUONG_DAN_THEO_TRANG.md` mục 3.
+Nguồn chuẩn là [database/README.md](../../../../database/README.md), [từ điển](../../../../database/TU_DIEN_DU_LIEU.md) và [JSONB](../../../../database/JSON_DATA.md).
 
-| File | Chứa |
-|---|---|
-| `SmartRentDbContext.cs`, `Entities/` | Sinh bằng `dotnet ef dbcontext scaffold`. Không sửa tay, vì scaffold lại sẽ ghi đè |
-| `AuthDbContext.cs`, `ApplicationUser.cs` | Viết tay theo `database/EF_CORE_NPGSQL.md` mục 3 |
+Map đúng 13 bảng. users chứa tài khoản và hồ sơ khách; contracts chứa đợt thuê/bản ký/gia hạn/người ở cùng; invoices chứa chỉ số/dòng tiền; payments chứa thu/cọc/phân bổ; tickets chứa hội thoại.
 
-Phần mở rộng của entity đặt ở partial class, ngoài thư mục `Entities/`.
+Hiện chưa có DbContext nghiệp vụ kết nối SQL. Khi triển khai, map các cột JSONB và generated total_amount theo schema hiện hành. Không dùng EnsureCreated sinh schema khác; không thêm các bảng Identity mặc định. Có thể dùng password hasher cùng store users riêng.
 
-Cấu trúc bảng do các file SQL trong `database/` quản lý. Không dùng EF Core Migrations.
+Mọi sửa mảng JSONB cần khóa dòng trong transaction hoặc cập nhật nguyên tử. Kiểm tra cả lỗi Commit của deferred constraints. Xem [bàn giao backend](../../../../docs/BACKEND_HANDOFF.md).

@@ -6,7 +6,7 @@ import { session } from '../services/session.js';
 import { formatRelative } from '../utils/date.js';
 import { formatPhone, initials } from '../utils/format.js';
 import { html, setHtml } from '../utils/html.js';
-import { ADMIN_NAV, CUSTOMER_NAV, SYSTEM_NAV } from './nav-config.js';
+import { ADMIN_NAV, CUSTOMER_NAV } from './nav-config.js';
 import { icon } from './ui.js';
 
 // ------------------------------------------------------------ chủ đề sáng/tối
@@ -109,15 +109,14 @@ function userMenu(prefix) {
     <button type="button" class="btn btn-sm d-flex align-items-center gap-2 border-0" data-bs-toggle="dropdown" aria-expanded="false">
       ${user?.avatarUrl ? html`<img class="sr-avatar ad-avatar-img" src="${user.avatarUrl}" alt="">` : html`<span class="sr-avatar">${initials(user?.displayName)}</span>`}
       <span class="d-none d-md-inline text-start lh-tight"><span class="d-block small fw-semibold">${user?.displayName}</span>
-        <span class="d-block small text-muted-sr">${session.organization?.roles.map((r) => r.name).join(', ') || (session.isSystemAdmin ? 'Quản trị hệ thống' : 'Khách thuê')}</span></span>
+        <span class="d-block small text-muted-sr">${session.isAdmin ? 'Admin · Chủ trọ' : 'Khách hàng'}</span></span>
       ${icon('chevron-down', 'small text-muted-sr')}
     </button>
     <ul class="dropdown-menu dropdown-menu-end">
       <li><h6 class="dropdown-header">${user?.email}</h6></li>
       <li><a class="dropdown-item" href="${href(prefix === '/admin' ? '/admin/settings' : `${prefix}/account`)}">${icon('person-gear')} Tài khoản và cài đặt</a></li>
-      ${session.isStaff && prefix !== '/admin' ? html`<li><a class="dropdown-item" href="${href('/admin')}">${icon('building')} Khu quản trị</a></li>` : ''}
-      ${session.isTenant ? html`<li><a class="dropdown-item" href="${href('/invoices')}">${icon('house-door')} Trang khách thuê</a></li>` : ''}
-      ${session.isSystemAdmin && prefix !== '/system' ? html`<li><a class="dropdown-item" href="${href('/system')}">${icon('hdd-stack')} Quản trị hệ thống</a></li>` : ''}
+      ${session.isAdmin && prefix !== '/admin' ? html`<li><a class="dropdown-item" href="${href('/admin')}">${icon('building')} Khu quản trị</a></li>` : ''}
+      ${session.isCustomer ? html`<li><a class="dropdown-item" href="${href('/invoices')}">${icon('house-door')} Trang khách thuê</a></li>` : ''}
       <li><a class="dropdown-item" href="${href('/')}">${icon('globe2')} Trang tìm phòng</a></li>
       <li><hr class="dropdown-divider"></li>
       <li><button type="button" class="dropdown-item" data-logout>${icon('box-arrow-right')} Đăng xuất</button></li>
@@ -129,7 +128,7 @@ function wireCommon(root) {
   root.querySelectorAll('[data-theme-toggle]').forEach((btn) => btn.addEventListener('click', toggleTheme));
   root.querySelectorAll('[data-logout]').forEach((btn) => btn.addEventListener('click', async () => {
     await session.logout();
-    navigate('/login', { force: true });
+    navigate('/admin', { force: true });
   }));
 }
 
@@ -144,9 +143,9 @@ function setActiveLinks(root, path) {
 }
 
 // ------------------------------------------------------------ quản trị / hệ thống
-export function mountAdminShell(root, { area = 'admin' } = {}) {
-  const nav = area === 'system' ? SYSTEM_NAV : ADMIN_NAV;
-  const prefix = area === 'system' ? '/system' : '/admin';
+export function mountAdminShell(root) {
+  const nav = ADMIN_NAV;
+  const prefix = '/admin';
   const org = session.organization;
   const groups = nav.map((g) => ({ ...g, items: g.items.filter((i) => !i.perm || session.can(i.perm)) })).filter((g) => g.items.length);
   const navLink = (i) => html`<a class="sr-nav-link" href="${href(i.path)}" data-nav-path="${i.path}" data-exact="${String(Boolean(i.exact))}">
@@ -154,7 +153,7 @@ export function mountAdminShell(root, { area = 'admin' } = {}) {
   setHtml(root, html`<div class="sr-app sr-admin">
     <aside class="sr-sidebar offcanvas-lg offcanvas-start" tabindex="-1" id="sr-sidebar" aria-label="Điều hướng chính">
       <div class="d-flex align-items-start justify-content-between">
-        ${brand(prefix, area === 'system' ? 'Quản trị hệ thống' : org?.name)}
+        ${brand(prefix, org?.name)}
         <button type="button" class="btn-close btn-close-white d-lg-none m-3" data-bs-dismiss="offcanvas" data-bs-target="#sr-sidebar" aria-label="Đóng menu"></button>
       </div>
       <div class="offcanvas-body">
@@ -167,8 +166,6 @@ export function mountAdminShell(root, { area = 'admin' } = {}) {
     <div class="min-w-0">
       <header class="sr-topbar sr-no-print">
         <button type="button" class="sr-icon-btn d-lg-none" data-bs-toggle="offcanvas" data-bs-target="#sr-sidebar" aria-controls="sr-sidebar" title="Mở menu">${icon('list')}<span class="visually-hidden">Mở menu</span></button>
-        ${area === 'admin' && session.organizations.length > 1 ? html`<label class="visually-hidden" for="sr-org-switch">Đơn vị</label>
-          <select id="sr-org-switch" class="form-select form-select-sm">${session.organizations.map((o) => html`<option value="${o.id}" ${o.id === org?.id ? 'selected' : ''}>${o.name}</option>`)}</select>` : ''}
         <div class="sr-topbar-spacer"></div>
         ${themeButton()}
         ${notificationsMenu(prefix)}
@@ -183,14 +180,10 @@ export function mountAdminShell(root, { area = 'admin' } = {}) {
   sidebar.addEventListener('click', (event) => {
     if (event.target.closest('a.sr-nav-link') && window.innerWidth < 992) Offcanvas.getInstance(sidebar)?.hide();
   });
-  root.querySelector('#sr-org-switch')?.addEventListener('change', (event) => {
-    session.setOrganization(event.target.value);
-    navigate('/admin', { force: true }).then(() => window.location.reload());
-  });
 
   let countsAt = 0;
   const refreshCounts = async () => {
-    if (area !== 'admin' || Date.now() - countsAt < 20000 || !session.can('properties.read')) return;
+    if (Date.now() - countsAt < 20000 || !session.can('properties.read')) return;
     countsAt = Date.now();
     try {
       const data = await dashboardApi.get({});
@@ -223,16 +216,15 @@ function customerAccount() {
     return html`<a class="sr-site-login" href="${href('/login')}">Đăng nhập</a><a class="btn btn-primary btn-sm d-none d-sm-inline-block" href="${href('/register')}">Tạo tài khoản</a>`;
   }
   const user = session.user;
-  return html`${session.isTenant ? notificationsMenu('') : ''}
+  return html`${session.isCustomer ? notificationsMenu('') : ''}
     <div class="dropdown">
       <button type="button" class="sr-site-user" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Tài khoản">
         <span class="sr-avatar">${initials(user?.displayName)}</span><span class="d-none d-md-inline">${user?.displayName}</span>${icon('chevron-down', 'small')}
       </button>
       <ul class="dropdown-menu dropdown-menu-end">
         <li><h6 class="dropdown-header">${user?.email}</h6></li>
-        ${session.isTenant ? html`<li><a class="dropdown-item" href="${href('/account')}">${icon('person')} Tài khoản của tôi</a></li>` : ''}
-        ${session.isStaff ? html`<li><a class="dropdown-item" href="${href('/admin')}">${icon('building')} Vào trang quản lý</a></li>` : ''}
-        ${session.isSystemAdmin ? html`<li><a class="dropdown-item" href="${href('/system')}">${icon('hdd-stack')} Quản trị hệ thống</a></li>` : ''}
+        ${session.isCustomer ? html`<li><a class="dropdown-item" href="${href('/account')}">${icon('person')} Tài khoản của tôi</a></li>` : ''}
+        ${session.isAdmin ? html`<li><a class="dropdown-item" href="${href('/admin')}">${icon('building')} Vào trang quản lý</a></li>` : ''}
         <li><hr class="dropdown-divider"></li>
         <li><button type="button" class="dropdown-item" data-site-logout>${icon('box-arrow-right')} Đăng xuất</button></li>
       </ul>
@@ -284,7 +276,7 @@ async function fillFooter(root) {
 }
 
 export function mountCustomerShell(root) {
-  const items = CUSTOMER_NAV.filter((i) => (!i.member || session.isTenant) && !(i.finance && session.isResidentOnly));
+  const items = CUSTOMER_NAV.filter((i) => (!i.member || session.isCustomer));
   const navLink = (i, className) => html`<a class="${className}" href="${href(i.path)}" data-nav-path="${i.path}">${icon(i.icon)}<span>${i.label}</span></a>`;
   setHtml(root, html`<div class="sr-site">
     <header class="sr-site-head sr-no-print">
@@ -302,7 +294,7 @@ export function mountCustomerShell(root) {
     navigate('/', { force: true });
   });
   fillFooter(root);
-  const refreshNotifications = session.isTenant ? wireNotifications(root, '') : () => {};
+  const refreshNotifications = session.isCustomer ? wireNotifications(root, '') : () => {};
   return { outlet: root.querySelector('#main'), setActive: (path) => setActiveLinks(root, path), refresh: refreshNotifications, invalidateCounts() {} };
 }
 

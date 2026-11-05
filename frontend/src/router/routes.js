@@ -1,9 +1,8 @@
 // Bảng route. layout quyết định khung; auth quyết định ai được vào khu vực; perm là quyền tối thiểu (kiểm tra thật ở máy chủ).
-const admin = (path, load, perm, extra = {}) => ({ path, layout: 'admin', auth: 'staff', perm, load, ...extra });
+const admin = (path, load, perm, extra = {}) => ({ path, layout: 'admin', auth: 'admin', perm, load, ...extra });
 // Khu khách hàng: site là trang ai cũng xem được, member cần đăng nhập bằng tài khoản khách.
 const site = (path, load) => ({ path, layout: 'customer', auth: 'none', load });
-const member = (path, load) => ({ path, layout: 'customer', auth: 'tenant', load });
-const system = (path, load) => ({ path, layout: 'system', auth: 'system', load });
+const member = (path, load) => ({ path, layout: 'customer', auth: 'customer', load });
 
 export const ROUTES = [
   // Khu khách hàng
@@ -19,9 +18,11 @@ export const ROUTES = [
   member('/contract', () => import('../pages/customer/contract.js')),
   member('/account', () => import('../pages/customer/account.js')),
   member('/notifications', () => import('../pages/shared/notifications.js')),
-  { path: '/portal', layout: 'customer', auth: 'none', redirect: '/invoices' },
 
-  // Xác thực
+  // Xác thực: cửa đăng nhập riêng cho admin, không cho đăng ký admin.
+  { path: '/admin/login', layout: 'auth', auth: 'guest', load: () => import('../pages/auth/login.js') },
+  { path: '/admin/forgot-password', layout: 'auth', auth: 'none', load: () => import('../pages/auth/forgot.js') },
+  { path: '/admin/reset-password', layout: 'auth', auth: 'none', load: () => import('../pages/auth/reset.js') },
   { path: '/login', layout: 'auth', auth: 'guest', load: () => import('../pages/auth/login.js') },
   { path: '/register', layout: 'auth', auth: 'guest', load: () => import('../pages/auth/register.js') },
   { path: '/forgot-password', layout: 'auth', auth: 'none', load: () => import('../pages/auth/forgot.js') },
@@ -50,12 +51,6 @@ export const ROUTES = [
   admin('/admin/tickets/:id', () => import('../pages/admin/tickets.js'), 'tickets.read'),
   admin('/admin/settings', () => import('../pages/admin/settings.js')),
 
-  // Quản trị hệ thống
-  system('/system', () => import('../pages/system/organizations.js')),
-  system('/system/users', () => import('../pages/system/users.js')),
-  system('/system/operations', () => import('../pages/system/operations.js')),
-  system('/system/notifications', () => import('../pages/shared/notifications.js')),
-  system('/system/account', () => import('../pages/shared/account.js')),
 ];
 
 export const NOT_FOUND = { path: '*', layout: 'customer', auth: 'none', load: () => import('../pages/customer/not-found.js') };

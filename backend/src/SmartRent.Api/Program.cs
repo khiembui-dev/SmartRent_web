@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SmartRent.Api.Data;
+using SmartRent.Api.Common;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +32,8 @@ builder.Services.AddScoped<SmartRent.Api.Features.Invoices.PortalInvoicesService
 
 builder.Services.AddScoped<SmartRent.Api.Features.Invoices.PortalOverviewService>();
 
+builder.Services.AddLeasingInfrastructure(builder.Configuration);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -38,6 +41,8 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.Run();

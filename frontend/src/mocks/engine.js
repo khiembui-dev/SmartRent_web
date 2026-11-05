@@ -19,12 +19,8 @@ export const find = (rows, id) => rows.find((row) => row.id === id) || null;
 export const must = (rows, id, what) => find(rows, id) || notFound(what);
 
 export function permissionsOf(db, membership) {
-  const set = new Set();
-  for (const roleId of membership.roleIds || []) {
-    const role = find(db.businessRoles, roleId);
-    role?.permissions.forEach((p) => set.add(p));
-  }
-  return set;
+  const admin = db.users.some((u) => u.id === membership?.userId && u.role === 'admin' && u.isActive);
+  return new Set(admin && membership.status === 'active' ? db.permissions.map((p) => p.code) : []);
 }
 
 export function tenancyContext(db, tenancyOrId) {

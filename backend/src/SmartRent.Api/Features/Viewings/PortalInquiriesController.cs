@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
-
+using Npgsql;
+using SmartRent.Api.Common;
 namespace SmartRent.Api.Features.Viewings;
 
-// Lịch hẹn xem phòng, phần khách thuê. Người 3 phụ trách.
-// Danh sách API cần viết: backend/HUONG_DAN_THEO_TRANG.md.
-[ApiController]
-[Route("api/v1/portal/inquiries")]
-public sealed class PortalInquiriesController : ControllerBase
+[ApiController, Route("api/v1/portal/inquiries")]
+public sealed class PortalInquiriesController(NpgsqlDataSource db) : LeasingController(db)
 {
+    [HttpGet] public async Task<IActionResult> List(CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var rows = await JsonRowsAsync(c, t, $"select {ViewingSql.InquiryJson("b", true)} from bookings b join rooms r on r.id=b.room_id where b.kind='viewing' and b.user_id=@user order by b.created_at desc", ct, P("user", actor)); await t.RollbackAsync(ct); return Ok(rows); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpPost] public async Task<IActionResult> Create([FromBody] InquiryInput input, CancellationToken ct) { if (input.RoomId is null) return BadRequest(new { code = "room_required", message = "Cần chọn phòng." }); try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { await ScalarStringAsync(c, t, "select expire_holds()", ct); var profile = await ScalarStringAsync(c, t, "select display_name from users where id=@id", ct, P("id", actor)); var row = await ScalarStringAsync(c, t, $"""insert into bookings(code,user_id,room_id,kind,status,contact_name,phone,email,occupants,preferred_viewing_at,desired_on,message) select next_code('INQ'),u.id,@room,'viewing','new',coalesce(nullif(@name,''),u.display_name),coalesce(nullif(@phone,''),u.phone),coalesce(nullif(@email,''),u.email),@occupants,@preferred,@desired,@message from users u where u.id=@user returning {ViewingSql.InquiryJson("bookings", true)}""", ct, P("user", actor), P("room", input.RoomId), P("name", input.ContactName ?? ""), P("phone", input.Phone ?? ""), P("email", input.Email ?? ""), P("occupants", Math.Clamp(input.Occupants ?? 1, (short)1, (short)20)), P("preferred", input.PreferredViewingAt), P("desired", input.DesiredOn), P("message", input.Message)); await CommitAsync(t, ct); return Content(row!, "application/json"); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
 }
+public sealed record InquiryInput(Guid? RoomId, string? Slug, string? ContactName, string? Phone, string? Email, short? Occupants, DateTimeOffset? PreferredViewingAt, DateOnly? DesiredOn, string? Message);

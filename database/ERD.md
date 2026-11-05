@@ -1,153 +1,119 @@
-# Sơ đồ quan hệ SmartRent
+# Sơ đồ database — 13 bảng
 
-74 bảng, 168 khóa ngoại. Sơ đồ chia theo phân hệ, chỉ ghi cột khóa và cột đặc trưng; cột đầy đủ xem [từ điển dữ liệu](TU_DIEN_DU_LIEU.md).
+Một admin và các user. Dữ liệu lặp đã gộp thành JSONB trong bảng chính; xem JSON_DATA.md để biết cấu trúc. Đường nối dưới đây là khóa ngoại cột; các ID bên trong JSONB được trigger kiểm tra, không phải khóa ngoại tự động của PostgreSQL.
 
-## Tổng thể
+## Tài khoản và dùng chung
+
+| Bảng | Dùng cho |
+|---|---|
+| `users` | Tài khoản và toàn bộ hồ sơ khách, kể cả khách chưa kích hoạt đăng nhập. |
+| `auth_tokens` | Phiên đăng nhập, đặt lại mật khẩu và lời mời; chỉ lưu hash token. |
+| `files` | Metadata tệp dùng chung; nội dung nhị phân ở storage. |
+| `settings` | Cấu hình thương hiệu, lịch nhắc và ngân hàng mặc định. |
+| `notifications` | Thông báo và trạng thái đọc theo tài khoản. |
 
 ```mermaid
 flowchart LR
-  ORG[organizations] --> PROP[properties] --> ROOM[rooms]
-  ORG --> TENANT[tenants]
-  ROOM --> STAY[tenancies]
-  TENANT --> STAY
-  ROOM --> INQ[rental_inquiries] --> VIEW[room_viewings]
-  STAY --> CONTRACT[contracts] --> VER[contract_versions]
-  ROOM --> METER[meters] --> READ[meter_readings]
-  STAY --> INV[invoices] --> LINE[invoice_lines]
-  TENANT --> PAY[payments] --> ALLOC[payment_allocations]
-  ALLOC --> INV
-  STAY --> DEP[deposit_entries]
-  PAY --> DEP
-  ROOM --> TICKET[tickets]
-  USER[users] --> MEMBER[organization_memberships] --> ORG
-  USER --> TENANT
+  users["users"]
+  auth_tokens["auth_tokens"]
+  files["files"]
+  settings["settings"]
+  notifications["notifications"]
+  settings -->|updated_by| users
+  auth_tokens -->|user_id| users
+  files -->|uploaded_by| users
+  notifications -->|recipient_id| users
+  users -->|avatar_file_id| files
 ```
 
-## Tài khoản, đơn vị, phân quyền
+## Cơ sở, phòng và giá
+
+| Bảng | Dùng cho |
+|---|---|
+| `properties` | Cơ sở, danh mục tiện ích và bảng giá mặc định dạng JSONB. |
+| `rooms` | Phòng cùng tin đăng, tiện ích, ảnh, giá riêng và lịch sử trạng thái. |
 
 ```mermaid
-erDiagram
-  users ||--o{ user_sessions : "phiên"
-  users ||--o{ user_roles : ""
-  roles ||--o{ user_roles : ""
-  organizations ||--|| organization_settings : "lịch nhắc"
-  organizations ||--o{ organization_memberships : ""
-  users ||--o{ organization_memberships : ""
-  organizations ||--o{ business_roles : ""
-  business_roles ||--o{ business_role_permissions : ""
-  permissions ||--o{ business_role_permissions : ""
-  organization_memberships ||--o{ membership_roles : ""
-  business_roles ||--o{ membership_roles : ""
-  organization_memberships ||--o{ membership_properties : ""
-  properties ||--o{ membership_properties : ""
-  organizations ||--o{ support_access_grants : ""
+flowchart LR
+  properties["properties"]
+  rooms["rooms"]
+  rooms -->|property_id| properties
 ```
 
-## Cơ sở, phòng, tin đăng
+## Lịch xem và đề nghị
+
+| Bảng | Dùng cho |
+|---|---|
+| `bookings` | Yêu cầu, lịch xem, giữ chỗ và đề nghị của khách, phân biệt bằng kind. |
 
 ```mermaid
-erDiagram
-  organizations ||--o{ properties : ""
-  properties ||--o{ rooms : ""
-  room_types ||--o{ rooms : ""
-  rooms ||--o{ room_images : ""
-  stored_files ||--o{ room_images : ""
-  rooms ||--o{ room_amenities : ""
-  amenities ||--o{ room_amenities : ""
-  rooms ||--o| room_listings : "tin đăng"
-  rooms ||--o{ room_status_events : ""
-  rooms ||--o{ meters : ""
-  properties ||--o{ charge_rates : "giá cơ sở"
-  rooms ||--o{ charge_rates : "giá riêng"
-  contract_versions ||--o{ charge_rates : "giá chốt"
-  charge_types ||--o{ charge_rates : ""
+flowchart LR
+  bookings["bookings"]
+  bookings -->|user_id| users
+  bookings -->|room_id| rooms
+  bookings -->|reviewed_by| users
+  bookings -->|contract_id| contracts
 ```
 
-## Khách, xem phòng, đợt thuê, hợp đồng
+## Thuê và hợp đồng
+
+| Bảng | Dùng cho |
+|---|---|
+| `contracts` | Một hồ sơ thuê và hợp đồng; chứa gia hạn, bản ký, người ở cùng, bàn giao. |
 
 ```mermaid
-erDiagram
-  organizations ||--o{ tenants : ""
-  users |o--o{ tenants : "tài khoản"
-  tenants ||--o{ tenant_identity_documents : ""
-  tenants ||--o{ tenant_profile_change_requests : ""
-  rooms ||--o{ rental_inquiries : ""
-  tenants |o--o{ rental_inquiries : ""
-  rental_inquiries ||--o{ room_viewings : ""
-  rooms ||--o{ tenancies : "lịch sử thuê"
-  tenants ||--o{ tenancies : "đại diện"
-  rental_inquiries |o--o{ tenancies : ""
-  tenancies ||--o{ tenancy_residents : "người ở cùng"
-  tenancies ||--o{ tenancy_requests : "gia hạn, trả phòng"
-  tenancies ||--o{ handovers : "nhận, trả"
-  handovers ||--o{ handover_items : ""
-  handovers ||--o{ handover_files : ""
-  tenancies ||--o{ contracts : ""
-  contracts ||--o{ contract_versions : "phiên bản"
-  contracts |o--o{ contracts : "tiền nhiệm"
-  contract_versions ||--o{ contract_parties : ""
-  contract_versions ||--o{ contract_files : ""
-  contracts ||--o{ contract_attachments : ""
-  tenancies ||--o| checkout_settlements : "quyết toán"
+flowchart LR
+  contracts["contracts"]
+  contracts -->|room_id| rooms
+  contracts -->|user_id| users
+  contracts -->|booking_id| bookings
 ```
 
-## Tính tiền và hóa đơn
+## Điện nước và hóa đơn
+
+| Bảng | Dùng cho |
+|---|---|
+| `billing_periods` | Kỳ tháng theo cơ sở và trạng thái khóa, kể cả tháng chưa có hóa đơn. |
+| `invoices` | Hóa đơn cùng chỉ số điện nước, lịch sử sửa số và toàn bộ dòng tính tiền. |
 
 ```mermaid
-erDiagram
-  properties ||--o{ billing_periods : "tháng"
-  billing_periods ||--o{ billing_period_events : "khóa, mở"
-  meters ||--o{ meter_readings : ""
-  tenancies ||--o{ meter_readings : ""
-  billing_periods ||--o{ meter_readings : ""
-  handovers ||--o{ meter_readings : ""
-  tenancies ||--o{ invoices : ""
-  billing_periods ||--o{ invoices : ""
-  invoices |o--o{ invoices : "gốc của điều chỉnh, thay thế"
-  invoices ||--o{ invoice_lines : ""
-  charge_types ||--o{ invoice_lines : ""
-  charge_rates |o--o{ invoice_lines : "nguồn giá"
-  charge_instances |o--o{ invoice_lines : ""
-  charge_instances ||--o| invoice_charge_claims : "chống thu trùng"
-  invoice_lines ||--o{ invoice_meter_segments : ""
-  meter_readings ||--o{ invoice_meter_segments : ""
+flowchart LR
+  billing_periods["billing_periods"]
+  invoices["invoices"]
+  billing_periods -->|property_id| properties
+  billing_periods -->|locked_by| users
+  invoices -->|contract_id| contracts
+  invoices -->|period_id| billing_periods
+  invoices -->|issued_by| users
 ```
 
-## Thu tiền và cọc
+## Thanh toán và tiền cọc
+
+| Bảng | Dùng cho |
+|---|---|
+| `payments` | Sổ thanh toán và cọc; phân bổ vào hóa đơn nằm trong JSONB. |
 
 ```mermaid
-erDiagram
-  tenants ||--o{ payments : ""
-  bank_accounts |o--o{ payments : ""
-  payment_methods ||--o{ payments : ""
-  payments ||--o{ payment_files : ""
-  payments ||--o{ payment_intended_invoices : "gợi ý"
-  invoices ||--o{ payment_intended_invoices : ""
-  payments ||--o{ payment_reversals : "đảo, hoàn"
-  invoices ||--o{ payment_allocations : ""
-  payments |o--o{ payment_allocations : ""
-  deposit_entries |o--o{ payment_allocations : "bù trừ cọc"
-  payment_allocations |o--o{ payment_allocations : "dòng đảo"
-  tenancies ||--o{ deposit_entries : ""
-  payments ||--o{ deposit_entries : "nguồn tiền"
-  payment_reversals |o--o{ deposit_entries : "hoàn cọc"
-  checkout_settlements |o--o{ deposit_entries : ""
+flowchart LR
+  payments["payments"]
+  payments -->|user_id| users
+  payments -->|contract_id| contracts
+  payments -->|intended_invoice_id| invoices
+  payments -->|submitted_by| users
+  payments -->|confirmed_by| users
 ```
 
-## Ticket, thông báo, vận hành
+## Hỗ trợ
+
+| Bảng | Dùng cho |
+|---|---|
+| `tickets` | Sự cố cùng loại, tệp, hội thoại và tiến độ trong một bảng. |
 
 ```mermaid
-erDiagram
-  rooms ||--o{ tickets : ""
-  tenancies |o--o{ tickets : ""
-  ticket_categories ||--o{ tickets : ""
-  sla_policies |o--o{ tickets : ""
-  tickets ||--o{ ticket_messages : ""
-  tickets ||--o{ ticket_files : ""
-  tickets ||--o{ ticket_events : ""
-  users ||--o{ notifications : ""
-  users |o--o{ email_outbox : ""
-  users ||--o{ api_idempotency_keys : ""
-  organizations ||--o{ document_counters : ""
-  organizations |o--o{ audit_logs : ""
+flowchart LR
+  tickets["tickets"]
+  tickets -->|room_id| rooms
+  tickets -->|contract_id| contracts
+  tickets -->|reported_by| users
+  tickets -->|assigned_to| users
 ```

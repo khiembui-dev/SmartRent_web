@@ -1,18 +1,10 @@
-Kiểm thử nghiệp vụ đạt: 98
-Mẫu dữ liệu thật: {"phong" : 3, "dang_o" : 1, "phong_cong_khai" : 2, "coc_dang_giu" : 3000000, "cong_no" : 500000, "hop_dong" : "active", "gia_thue_101" : 3000000.0000, "nguon_gia_thue" : "contract"}
-Giấy tờ mã hóa (4 số cuối, giải mã đúng, không lộ số rõ): 0123 true true
-PASS: không có khóa thì từ chối lưu số giấy tờ
-PASS đồng thời: hai kết nối không thể nhận cùng một phòng
-PASS đồng thời: hai kết nối không thể dùng vượt cùng một khoản thu
-{"postgres" : "PostgreSQL 16.13, compiled by Visual C++ build 1944, 64-bit", "tables" : 74, "views" : 12, "primary_keys" : 74, "foreign_keys" : 168, "checks" : 129, "unique" : 42, "exclusions" : 5, "triggers" : 133, "tables_without_pk" : 0, "tables_without_comment" : 0}
-Dữ liệu website qua hết ràng buộc: 06_du_lieu_mau.sql
-  so_dong|{"hoa_don" : 38, "tien_phai_thu" : 134583586, "da_thu" : 115069666, "dot_thue" : 19, "khach" : 22, "phong" : 34, "hop_dong" : 18, "gia" : 93}
-  hoa_don_lech|0
-  coc_lech|0
-  cong_no_lech|0
-  trang_thai_phong_lech|0
-  hop_dong_lech|0
-  gia_hieu_luc_lech|0
-  vi_du_dac_ta|HD-BT2609-001: tong 3655000, da thu 2000000, con 1655000
-PASS: mọi số liệu của database khớp engine của website
-PASS: cài đặt, nghiệp vụ, mẫu dữ liệu thật, đồng thời và đối chiếu website
+PostgreSQL 16.13
+13 tables
+96 SQL checks passed
+10 business workflow scenarios passed
+3 two-connection races passed
+4 runtime privilege checks passed
+Fresh schema, rules, default settings and demo loaded successfully.
+Two checkins cannot occupy same room
+Two confirmations cannot overpay invoice
+Reservation and checkin cannot take same room

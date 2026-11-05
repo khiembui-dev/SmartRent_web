@@ -1,13 +1,13 @@
 # Phần nền dùng chung
 
-Người 1 giữ thư mục này. Người khác dùng lại, không tự viết bản riêng. Cần thêm gì thì báo Người 1.
-
-| Thư mục | Chứa |
+| Phần | Trách nhiệm hiện tại |
 |---|---|
-| `Auth/` | Người dùng hiện tại, đọc `X-Organization-Id`, kiểm tra thành viên, quyền, phạm vi cơ sở |
-| `Errors/` | Trả lỗi dạng Problem Details, đổi mã SQLSTATE thành lỗi API |
-| `Idempotency/` | Xử lý header `Idempotency-Key` |
-| `Paging/` | Tham số `page`, `pageSize`, `sort`, `q` và response danh sách |
-| `Transactions/` | Mở transaction, đặt `smartrent.actor_id`, `smartrent.reason`, `smartrent.correlation_id` |
+| Auth | Đúng cửa admin/user, phiên, login_enabled/is_active và ownership |
+| Errors | Problem Details, đổi SQLSTATE/lỗi nghiệp vụ thành lỗi API |
+| Idempotency | Key/hash trên invoices và payments; trả kết quả cũ hoặc 409 |
+| Paging | page/pageSize/sort/q và dữ liệu danh sách |
+| Transactions | Khóa dòng, cập nhật JSONB, SET LOCAL smartrent.user_id, xử lý lỗi Commit |
 
-Yêu cầu chi tiết: `docs/BACKEND_HANDOFF.md` mục 2 đến 6, `database/EF_CORE_NPGSQL.md` mục 4.
+Hệ thống chỉ có một admin và các user. Cơ sở là dữ liệu của chủ trọ, không phải phạm vi tổ chức/phân quyền riêng. Header organization còn trong adapter frontend nếu cần chỉ là tương thích DTO; không dùng để quyết định quyền.
+
+Không đưa toàn bộ JSONB chứa bản ký, ghi chú hoặc tin nhắn nội bộ vào DTO khách. Xem [bàn giao](../../../../docs/BACKEND_HANDOFF.md) và [quy tắc dữ liệu](../../../../database/THIET_KE_DATABASE.md).

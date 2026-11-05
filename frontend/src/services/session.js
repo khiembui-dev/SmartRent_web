@@ -2,6 +2,7 @@
 import { config } from '../config.js';
 import { authApi } from './api.js';
 import { authState } from './auth-state.js';
+import { isAdmin, isCustomer } from './access.js';
 
 const PROPERTY_KEY = 'smartrent.propertyFilter';
 const listeners = new Set();
@@ -32,16 +33,10 @@ export const session = {
   get user() { return state.me?.user || null; },
   get ready() { return state.ready; },
   get isAuthenticated() { return Boolean(state.me); },
-  get isStaff() { return Boolean(state.me?.organizations.length); },
-  get isTenant() { return Boolean(state.me?.tenantProfiles.length); },
-  get isSystemAdmin() { return Boolean(state.me?.isSystemAdmin); },
+  get isAdmin() { return isAdmin(this.user); },
+  get isCustomer() { return isCustomer(this.user); },
   /** Đã có phòng (đang ở, sắp vào ở hoặc từng ở). Trang khách vẫn hỏi lại máy chủ, giá trị này chỉ để chọn trang mở đầu. */
   get hasRoom() { return Boolean(state.me?.tenantProfiles.some((p) => p.tenancies.length)); },
-  get isResidentOnly() {
-    const profiles = state.me?.tenantProfiles || [];
-    const current = profiles.flatMap((p) => p.tenancies).filter((t) => ['active', 'planned'].includes(t.status));
-    return current.length > 0 && current.every((t) => t.role === 'resident');
-  },
 
   get organization() {
     const orgs = state.me?.organizations || [];
@@ -64,18 +59,14 @@ export const session = {
   },
 
   can(permission) {
-    return Boolean(this.organization?.permissions.includes(permission));
+    return this.isAdmin;
   },
   canAny(permissions) {
     return permissions.some((p) => this.can(p));
   },
 
   homePath() {
-    if (!state.me) return '/login';
-    if (this.isStaff) return '/admin';
-    if (this.isTenant) return this.hasRoom ? '/invoices' : '/rooms';
-    if (this.isSystemAdmin) return '/system';
-    return '/';
+    return this.isAdmin ? '/admin' : '/';
   },
 
   async init() {
@@ -110,8 +101,8 @@ export const session = {
     return state.me;
   },
 
-  async login(email, password) {
-    const result = await authApi.login(email, password);
+  async login(email, password, audience = 'customer') {
+    const result = await authApi.login(email, password, audience);
     authState.setToken(result.accessToken, result.expiresAt);
     await this.reload();
     return state.me;

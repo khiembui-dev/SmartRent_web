@@ -1,0 +1,4510 @@
+{
+  "scope": "Current routed pages and their UI helpers; legacy mock handlers do not define the database scope.",
+  "sourceFiles": [
+    {
+      "path": "frontend/src/app.js",
+      "lines": 128,
+      "sha256": "e4c5c6d9b03f07b5562333f48ecae4477c928075a68b12ac75f0f4d048e9a4e8"
+    },
+    {
+      "path": "frontend/src/components/admin-kit.js",
+      "lines": 66,
+      "sha256": "04059d7209362216a477e3ac7df8af27ddac4fdf73f350088c9bf3afed8aa2b2"
+    },
+    {
+      "path": "frontend/src/components/badges.js",
+      "lines": 80,
+      "sha256": "519b004ac98cc25b3068b0941b8d59650a1dfe0239635b0b213213d3af2584ce"
+    },
+    {
+      "path": "frontend/src/components/charts.js",
+      "lines": 115,
+      "sha256": "406abcfbc5306d69213284bac8dfd2253a18faef6c740440915e6c5a19403142"
+    },
+    {
+      "path": "frontend/src/components/data-table.js",
+      "lines": 129,
+      "sha256": "965f5241b0648412e53c0a567759ef443415c2de5aac6b9ada00f5f77b2c69e4"
+    },
+    {
+      "path": "frontend/src/components/datepicker.js",
+      "lines": 47,
+      "sha256": "4a77e35490fd7d09e5ad08e90375b2114dae2c0a0e46faa03dee752d94990d37"
+    },
+    {
+      "path": "frontend/src/components/dialogs.js",
+      "lines": 99,
+      "sha256": "b4ad0cf3a340a0899aca6634ae1d5c79191173b89005538cec291e28d843d5ab"
+    },
+    {
+      "path": "frontend/src/components/export.js",
+      "lines": 26,
+      "sha256": "fd260bde7555b3a0b85baf2d4443aef511d23d3f00cd60106a14a228b96295df"
+    },
+    {
+      "path": "frontend/src/components/form.js",
+      "lines": 358,
+      "sha256": "445c19b5e7ddb158319bd578c374a38f6487cbf348710bbe925ae1844fd6a292"
+    },
+    {
+      "path": "frontend/src/components/list-page.js",
+      "lines": 167,
+      "sha256": "f3d544a71d17862326a0bb3bedc6d5f538d68ec7979118354a6b1fe2147d6c8a"
+    },
+    {
+      "path": "frontend/src/components/modal.js",
+      "lines": 79,
+      "sha256": "dd01ddbcb354244cb856475cefadb37faf9821244e954dc4451023be81ca0021"
+    },
+    {
+      "path": "frontend/src/components/nav-config.js",
+      "lines": 47,
+      "sha256": "8923e4dbdc20254419cde799069490bf3c7bf7a577fb6f08c9912375856c63d3"
+    },
+    {
+      "path": "frontend/src/components/select.js",
+      "lines": 53,
+      "sha256": "13ea393a8bebf476de6054f15c0c94cbde057cf6c5b16781502a00405102011e"
+    },
+    {
+      "path": "frontend/src/components/shells.js",
+      "lines": 321,
+      "sha256": "91f697263263f6eb5aec4801c5b90fa330bd9527f1b8b5d57e2ed9376ee0ac3a"
+    },
+    {
+      "path": "frontend/src/components/ui.js",
+      "lines": 115,
+      "sha256": "9e769dfb11f057fa48565ca92a08461060c05729171158fae2f4d5d63f8ba274"
+    },
+    {
+      "path": "frontend/src/components/uploader.js",
+      "lines": 96,
+      "sha256": "a1fc26691c390dac70868dd018bf786f11e01bc2cef12d5d410ca7d3c58203d5"
+    },
+    {
+      "path": "frontend/src/config.js",
+      "lines": 24,
+      "sha256": "dd6e7afe688a6a069b909cc9ce8b0321dbb2f2150d19a63c32e15c8062c17db4"
+    },
+    {
+      "path": "frontend/src/main.js",
+      "lines": 17,
+      "sha256": "01694017940610f237c37f2ec67d3f55bb7da7654df78c5f64742b742bf29ffa"
+    },
+    {
+      "path": "frontend/src/mocks/accounts.js",
+      "lines": 36,
+      "sha256": "fa47d38530e313714bde1556819632a002ee1a2a7e9e29b841174b64f804bc2f"
+    },
+    {
+      "path": "frontend/src/mocks/db.js",
+      "lines": 76,
+      "sha256": "bad8907faa7cb60e47bd3f76847847fd9cbc72cc66fc5a01011bc9c3581a1276"
+    },
+    {
+      "path": "frontend/src/mocks/dto.js",
+      "lines": 315,
+      "sha256": "81e81bc7dfecca91ad2aadf0577405de0a993af28e04709560bdac3bccc12fc6"
+    },
+    {
+      "path": "frontend/src/mocks/engine.js",
+      "lines": 948,
+      "sha256": "03525058cc98b80fbf39ce64cab2474c9db4a4a4ca6e1650b22bf2542e706045"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/admin.js",
+      "lines": 409,
+      "sha256": "a74eca362d60f31a1ad0774aa3d8be8183891a4ca4d8b25c61190ae11dd5875c"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/auth.js",
+      "lines": 182,
+      "sha256": "96af5556ebb066c5e3bf7b70789cc1bc31022196ce2d5ebd67017c3ba1c4d2f9"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/contracts.js",
+      "lines": 289,
+      "sha256": "aa3fc67399ce980337cabac4260f4ba56ab515d7d27c1f9c6d5ac21ff3a8d97c"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/invoices.js",
+      "lines": 294,
+      "sha256": "f034b906633ddddbad93b57d1d83d290823fa969cae27ac98e79f55fcd99e385"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/leasing.js",
+      "lines": 303,
+      "sha256": "a8234997919d2b4e2e648d84815311a4a0fe3950519b10c697d0c59e4113a289"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/metering.js",
+      "lines": 304,
+      "sha256": "daaebbb4ee5f8c4fcfdc5bfb05edf2c24d1cfd49f7362e54f18ef7feb35c78c5"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/payments.js",
+      "lines": 348,
+      "sha256": "72628dd9886d0b7f53e7d3ed26a62abe5277a99ace4ccb465f829cbea560c9b9"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/portal.js",
+      "lines": 358,
+      "sha256": "890b68979460c0b72ce4f9a17aee881ce02b6eadfff5b414100b6740be76e950"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/properties.js",
+      "lines": 573,
+      "sha256": "c3c3893b095723d98e628c992a524429e24ac8309b6e9e03e5b9733838a8e91c"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/public.js",
+      "lines": 149,
+      "sha256": "53ba81cd1e7fe878ffa59ed3edb0cc716e01b99da42ce74a1ba56a0943ffdc12"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/reports.js",
+      "lines": 370,
+      "sha256": "41c1b8b33ba2c055d6ec9b0b6823ea96c15a83ab37c9dde0af1fa960c1df26e0"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/support.js",
+      "lines": 170,
+      "sha256": "76c697756a4d40620ca08d1429237ad489cc19f0f6510f5bbb6012397a3df117"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/tenancies.js",
+      "lines": 709,
+      "sha256": "4ba9802d9ea397ded97841f574565016003dc23ef8e5211bd792872d73837ea2"
+    },
+    {
+      "path": "frontend/src/mocks/handlers/tenants.js",
+      "lines": 210,
+      "sha256": "1ba428c45d791fe4de3cc7434948da48f8c627ed7fc7e91f44a2f7b6fd5eb205"
+    },
+    {
+      "path": "frontend/src/mocks/respond.js",
+      "lines": 165,
+      "sha256": "5a4e81941ae63dfb2bf17472284083ed56a3ab4f1a124853a4ca06f88d0995eb"
+    },
+    {
+      "path": "frontend/src/mocks/scope.js",
+      "lines": 104,
+      "sha256": "07f0e47cec9dc7da1f4cec184b813b1e180fa7b3bf27c084f616572a624e32d5"
+    },
+    {
+      "path": "frontend/src/mocks/seed.js",
+      "lines": 789,
+      "sha256": "1c9d5e4ed0fddaf54a372d0d92a9a3e966ea48a53a8ac18d120a92c391cd8987"
+    },
+    {
+      "path": "frontend/src/mocks/server.js",
+      "lines": 242,
+      "sha256": "e2e4cbee0f28b4e539b0cec601f745941db5f45a4a21db0f62c8ac2e35b76129"
+    },
+    {
+      "path": "frontend/src/mocks/single-business.js",
+      "lines": 50,
+      "sha256": "0dffe0340e9a32a1019d5e7b9f590ab742c9d1048140947e98e28a1a989442a4"
+    },
+    {
+      "path": "frontend/src/pages/admin/billing.js",
+      "lines": 498,
+      "sha256": "e9a28550f49eda4d0c06f45dcd14fdfa47cecb3023db1b81523617ae331b5d74"
+    },
+    {
+      "path": "frontend/src/pages/admin/common.js",
+      "lines": 52,
+      "sha256": "7c0f01d407117c3073493d5fee0801749c28a38b73d9b614125b65d490cd2b77"
+    },
+    {
+      "path": "frontend/src/pages/admin/contract-detail.js",
+      "lines": 256,
+      "sha256": "b8774486abd4f03f40cc7709f3186d16cb94cebc065526f88af1cf53e479a639"
+    },
+    {
+      "path": "frontend/src/pages/admin/contract-new.js",
+      "lines": 259,
+      "sha256": "dc4f4e69cd16202e7c03d43075fcd287a9841afc1e7d05c54df775413154963f"
+    },
+    {
+      "path": "frontend/src/pages/admin/contracts.js",
+      "lines": 47,
+      "sha256": "55d23edd17d54071f0bfbc1010e6b94c7bf6fed258d04de0c1cb23980b529249"
+    },
+    {
+      "path": "frontend/src/pages/admin/dashboard.js",
+      "lines": 195,
+      "sha256": "e96febc9ec3aa79d66fbffadf12779eaaf6e8efe6ddbe0d36395cc5009f17e9c"
+    },
+    {
+      "path": "frontend/src/pages/admin/invoice-detail.js",
+      "lines": 179,
+      "sha256": "c534c4d8d7f9a5366e9b46e176330b3a048d2256c545c45a5e6d1f82efccedbc"
+    },
+    {
+      "path": "frontend/src/pages/admin/invoice-view.js",
+      "lines": 46,
+      "sha256": "1154f7bb909641bf36b963239b2d600b9216c7b0904c07f18e3d0fc1d7b769ae"
+    },
+    {
+      "path": "frontend/src/pages/admin/invoices.js",
+      "lines": 66,
+      "sha256": "2d803208a09442c970a40ae890dc8b6630fa0e4f348386756cf50f2a38d2d761"
+    },
+    {
+      "path": "frontend/src/pages/admin/properties.js",
+      "lines": 84,
+      "sha256": "4260de49c9e372228a77480f50cff75c02575c0a691b4cb46833e0598dbb7c45"
+    },
+    {
+      "path": "frontend/src/pages/admin/property-detail.js",
+      "lines": 80,
+      "sha256": "6efd9f1c498a729d995f9d7de2934e6496a72a65ec2239c9af9e8b0f0fc7989e"
+    },
+    {
+      "path": "frontend/src/pages/admin/property-form.js",
+      "lines": 72,
+      "sha256": "ac502ada17b01c888f6d225db216170f65077c6666872a91db1ec25b50cd8faa"
+    },
+    {
+      "path": "frontend/src/pages/admin/room-detail.js",
+      "lines": 132,
+      "sha256": "e56ff37feac0a50714150a12780ef542dc473d544b70ca839c875501a1a4c52c"
+    },
+    {
+      "path": "frontend/src/pages/admin/room-form.js",
+      "lines": 271,
+      "sha256": "49663fa5d9f04470c5311c9c7784b848efd0bdb1059d25546b899590829e843e"
+    },
+    {
+      "path": "frontend/src/pages/admin/rooms.js",
+      "lines": 73,
+      "sha256": "a1c1e04bb6509d860f68278194e801ebce980928857a65449f20cfed649daf31"
+    },
+    {
+      "path": "frontend/src/pages/admin/settings.js",
+      "lines": 154,
+      "sha256": "ddfa53ce29eb2b33b7a1fcd128886f17d584aa7ae4397e448a9d507e7209c67e"
+    },
+    {
+      "path": "frontend/src/pages/admin/tenant-detail.js",
+      "lines": 134,
+      "sha256": "c066d66e5e71e791b97ae3bd49b034420931c6b97c8e12b24680c0f894025ff3"
+    },
+    {
+      "path": "frontend/src/pages/admin/tenant-dialogs.js",
+      "lines": 47,
+      "sha256": "8fdb9aebd198e0a3efd6f379c0fd6011213efdfcf875eb89b49079dea94f07a9"
+    },
+    {
+      "path": "frontend/src/pages/admin/tenants.js",
+      "lines": 64,
+      "sha256": "9b94a9e3f0f04a9b0588bb007e6e3dd3fb87922faea0d8ec2509fd9eba7a5f1a"
+    },
+    {
+      "path": "frontend/src/pages/admin/tickets.js",
+      "lines": 222,
+      "sha256": "721d6348ab57655d77eab6dbd0a9cc328c89ba5cf2127abd6db5dbab04462992"
+    },
+    {
+      "path": "frontend/src/pages/admin/viewings.js",
+      "lines": 180,
+      "sha256": "d67e1441217c0bf58bef0da5f0b464ef2cbebff9117c9aa9d553c7240b3f1a3f"
+    },
+    {
+      "path": "frontend/src/pages/auth/forgot.js",
+      "lines": 27,
+      "sha256": "c7c5b44e436308e9c2878e91d6fa633c592fafcc6c1d43b2c1b86df617142712"
+    },
+    {
+      "path": "frontend/src/pages/auth/login.js",
+      "lines": 43,
+      "sha256": "0e9f11cb6e94b445ff9457f9d757d9b04470fea6d7c4002ce92ae24961fadb1a"
+    },
+    {
+      "path": "frontend/src/pages/auth/register.js",
+      "lines": 43,
+      "sha256": "f9f82a6a9c3b2a32500e958c03f573c4afa30f112f7d35d02db74ec20fa19fa8"
+    },
+    {
+      "path": "frontend/src/pages/auth/reset.js",
+      "lines": 28,
+      "sha256": "e83ea55b987f854d61a3bbe0d82c8d7b8ff94b354e4a88b50d126ed30e0cf962"
+    },
+    {
+      "path": "frontend/src/pages/auth/shared.js",
+      "lines": 14,
+      "sha256": "ab67ace59d750b554ff6bcaa2e7f4e4fdd0f3bce67382d1aae0cc72800c9f548"
+    },
+    {
+      "path": "frontend/src/pages/customer/account.js",
+      "lines": 95,
+      "sha256": "faf340ef04cdc2b998879fb82fc1d94944ce21b5a52f97ed37d7f4bd38f776d9"
+    },
+    {
+      "path": "frontend/src/pages/customer/common.js",
+      "lines": 115,
+      "sha256": "ee8a6eacc704ea779297231a90a2cabde8bb49b7c23e5eb12df4b7e0259d6a59"
+    },
+    {
+      "path": "frontend/src/pages/customer/contact.js",
+      "lines": 38,
+      "sha256": "706c64391e515c7563e32a4009bbf9d5855c145c313fa8ec08bf049aa65d33f3"
+    },
+    {
+      "path": "frontend/src/pages/customer/contract.js",
+      "lines": 169,
+      "sha256": "19ef9c9b97025e2daf372cd7c3c5310f8d74be10b51054ca7eeb851326bb3650"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/home.html",
+      "lines": 244,
+      "sha256": "a6e746717067dfac06a09e0a8e6b107037388b6f3c5e99fb2c332118239995ed"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/home.scss",
+      "lines": 854,
+      "sha256": "b143016e1f1438f6703b0fb80b41bf3591e4b3009185b4bddf0311df013200f8"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/index.js",
+      "lines": 134,
+      "sha256": "b65c824fbaf44367fa23d1709476859f1b09f2aee71cad62db49c768fa3fc568"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/facade.js",
+      "lines": 265,
+      "sha256": "ce0a253d47ccce0cfebd1d1ef2614631fa88695ed9b3857fbffaa1a7587bc441"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/foliage.js",
+      "lines": 199,
+      "sha256": "cebcd17262c0780b9ddaa65732ba69ffac8c454fa199bd1dae3705ab288c130f"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/index.js",
+      "lines": 342,
+      "sha256": "93d12435c18964bea594b348b1fd22d8382935cff967967a24a22703ad32f36d"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/interior.js",
+      "lines": 286,
+      "sha256": "a7dcaeeda7cfdddc4acc1ca6d5b7ecc272f150d6adc8174f5d670075db74b45a"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/kit.js",
+      "lines": 100,
+      "sha256": "6ab447c1bd8dc6f3287f2219506a18783fb545af56c640a79aadf44c227b361c"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/materials.js",
+      "lines": 65,
+      "sha256": "18e7b381e37decc382f6e9f28e583ed6aa402f02e223e7994eb60d8db6634591"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/path.js",
+      "lines": 157,
+      "sha256": "784d1ebde43eaebfc9f345a4c030fe637766c6341e575dd895e01ff887e672d0"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/plan.js",
+      "lines": 38,
+      "sha256": "105be3dee3bb1ba737ee4f3fb9bde925f17b6b519aa0605b257c644d6e38b11a"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/post.js",
+      "lines": 71,
+      "sha256": "1ea230c5da3aa03a7b186f4edc6d3bc11b989d10c1887c6d2084013e254ff0b3"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/quality.js",
+      "lines": 52,
+      "sha256": "e575872d5193af6ee1e88e353d67b017b9cd5ca6183e9695b6fd8e719374feb2"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/roof.js",
+      "lines": 83,
+      "sha256": "d6f1d85df781231ad93562a8308e57a585d62f884f4c9c7b3db17708ece8f23a"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/site.js",
+      "lines": 146,
+      "sha256": "9754c8ecb69e6b09a6c20022b0b22ac8fed6fc972ddfcda82e9a835b382f7f41"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/sky.js",
+      "lines": 99,
+      "sha256": "378289cbd05cfd566456cc90ea7db2fb142cd328aec174d9c6deeaaf848df90f"
+    },
+    {
+      "path": "frontend/src/pages/customer/home/tour/textures.js",
+      "lines": 357,
+      "sha256": "8d6d96bca2f6f944ec541c5ad6e0050fba147025b3516dc1f5fb890b510c462d"
+    },
+    {
+      "path": "frontend/src/pages/customer/invoices/detail.js",
+      "lines": 157,
+      "sha256": "e9031479e53fd43d5f604019a388d33341575a89032d91cf6c40053ef12b94a1"
+    },
+    {
+      "path": "frontend/src/pages/customer/invoices/list.js",
+      "lines": 129,
+      "sha256": "7867b641ef182e85e27d2acdb3aea514ce8d2bcd551a4b89d84b2f3d1b030d45"
+    },
+    {
+      "path": "frontend/src/pages/customer/not-found.js",
+      "lines": 18,
+      "sha256": "410da35529aa30bf3a44aea1ec83d2e6ea5ae0dbf991851d74332417d795019e"
+    },
+    {
+      "path": "frontend/src/pages/customer/rooms/detail.js",
+      "lines": 175,
+      "sha256": "4b38745dd72438f13b4d8837bd2cbfb4c269c7f7987c4c53f4d11770eca060c5"
+    },
+    {
+      "path": "frontend/src/pages/customer/rooms/list.js",
+      "lines": 121,
+      "sha256": "91a1200a8cd784e1607943d9ce80abe6179a8322ac3d5ca372e0a6e8a6fd6d76"
+    },
+    {
+      "path": "frontend/src/pages/customer/tickets/detail.js",
+      "lines": 100,
+      "sha256": "a7159191c7a380d7037bd7ffa02603644472030ba1b0c2dfb7aa86b843cc8cd0"
+    },
+    {
+      "path": "frontend/src/pages/customer/tickets/list.js",
+      "lines": 98,
+      "sha256": "3f5b486ad82b166664cfbfaea15df3126eccf122aa85e9d64826913eae111e4d"
+    },
+    {
+      "path": "frontend/src/pages/customer/tickets/new.js",
+      "lines": 76,
+      "sha256": "0e5dbfa1cb804f4e13d8c9e9e8dc837f9b003ba6f471da0de829bea87a64dccd"
+    },
+    {
+      "path": "frontend/src/pages/shared/notifications.js",
+      "lines": 79,
+      "sha256": "deb451b13c536ddc3154ebde82b4f7b0abec5c50b057c7699dc27cafac5f23f0"
+    },
+    {
+      "path": "frontend/src/pages/shared/ticket-thread.js",
+      "lines": 33,
+      "sha256": "dd1c076504870e2577eb4bb511cf08c24d0894d947b34e94b4e036f965b5575d"
+    },
+    {
+      "path": "frontend/src/router/router.js",
+      "lines": 122,
+      "sha256": "6e9741f1ff89fc92663bd3686064c01e435429d1529a4acd0cccbe8ad9f94db8"
+    },
+    {
+      "path": "frontend/src/router/routes.js",
+      "lines": 56,
+      "sha256": "448bffa3138860cb08cc9ed5f8c65d547f1e24f7a3991e5cd594548e773691ec"
+    },
+    {
+      "path": "frontend/src/services/access.js",
+      "lines": 18,
+      "sha256": "6e5b133d3a7d714e9bdcc2d834dd34cbbeb37a3328f262410c02656597da14b1"
+    },
+    {
+      "path": "frontend/src/services/api.js",
+      "lines": 276,
+      "sha256": "1cf6f9b74a09bcea51d48b57c107b285762768e702893f0309e4511929d6a370"
+    },
+    {
+      "path": "frontend/src/services/auth-state.js",
+      "lines": 68,
+      "sha256": "8ca09e4ce0f817f9eda5b0ab8a7ad37c32c5c36bd55d24b9b70e2823ffb759f2"
+    },
+    {
+      "path": "frontend/src/services/client.js",
+      "lines": 65,
+      "sha256": "96b32b3564b7b8d51bc8aaf25101c1a191c4c34ea58fe72091705f9820c8eb5b"
+    },
+    {
+      "path": "frontend/src/services/errors.js",
+      "lines": 66,
+      "sha256": "37f467bbcf15a767662e3f2a1eeeefe7c98e57fd42c3df038a27e6d4b98bef02"
+    },
+    {
+      "path": "frontend/src/services/http-transport.js",
+      "lines": 63,
+      "sha256": "d2d8d4730bc5ba0ea1f235fc5b442970e1ae47ba68720f3b8e6d461093d9874c"
+    },
+    {
+      "path": "frontend/src/services/session.js",
+      "lines": 142,
+      "sha256": "2edb0548ab6c5ba665cae7580b618a5dde6bb06a5dc29687502d5c8b73d05d99"
+    },
+    {
+      "path": "frontend/src/styles/_admin.scss",
+      "lines": 730,
+      "sha256": "ae1710ff532f6f1c2931c56ae3182e40a6e01b5e3804997685995ce908fc4fd0"
+    },
+    {
+      "path": "frontend/src/styles/_base.scss",
+      "lines": 96,
+      "sha256": "c61aacb56e58f01812553472f9c3837cd560a9486b1a2cbf608d95e04143c42e"
+    },
+    {
+      "path": "frontend/src/styles/_components.scss",
+      "lines": 474,
+      "sha256": "d1fb3b1f49e1471d54ef4ad944493ea82867c27708d08df98efb2c1b3ed5ee8a"
+    },
+    {
+      "path": "frontend/src/styles/_customer.scss",
+      "lines": 849,
+      "sha256": "1c539322e715d23e1ba74e860eeda510e89e6803b11952a950b7149bd6ebff5e"
+    },
+    {
+      "path": "frontend/src/styles/_layout.scss",
+      "lines": 190,
+      "sha256": "6a7a9c0bf97872a0cd943a42437622bb73d8f11d1df3f41a385af4f5150e71c3"
+    },
+    {
+      "path": "frontend/src/styles/_print.scss",
+      "lines": 19,
+      "sha256": "34d0ab19448ed75cb73d0941038578b4e9b5bf19db44090f9681b4dfc3ef4ce7"
+    },
+    {
+      "path": "frontend/src/styles/_tokens.scss",
+      "lines": 103,
+      "sha256": "11c2b0b1b32a92088a53530f3a3f1bcbe92347e3da55cc4ed0f59555576fd8ee"
+    },
+    {
+      "path": "frontend/src/styles/_variables.scss",
+      "lines": 90,
+      "sha256": "ff26c05b906e02060a36697b1c34584abfc77a68444e1edc1628a725b2aa0c99"
+    },
+    {
+      "path": "frontend/src/styles/_vendors.scss",
+      "lines": 109,
+      "sha256": "302c7d40e8fbcb23638c36f6198ff383986faa10927964ff695f16d631d89c62"
+    },
+    {
+      "path": "frontend/src/styles/main.scss",
+      "lines": 11,
+      "sha256": "1d08ef7d4ae99bce62cbd8d26ef6c05f0d1403caaf5664984c34b7d2c7865e56"
+    },
+    {
+      "path": "frontend/src/utils/csv.js",
+      "lines": 29,
+      "sha256": "629b730f6c85de10a88c9562d0b6e912363b21a6eabbc6b57a79e289203fe701"
+    },
+    {
+      "path": "frontend/src/utils/date.js",
+      "lines": 207,
+      "sha256": "02c2893a02a91513c316ec101fbe7018f4e21143dd0c812e04fede64fd2f5a5f"
+    },
+    {
+      "path": "frontend/src/utils/dom.js",
+      "lines": 33,
+      "sha256": "336ce01a49dc7e647f3b1f12e69e0eb396317b52a6804d438dcf407e8c131d2b"
+    },
+    {
+      "path": "frontend/src/utils/format.js",
+      "lines": 39,
+      "sha256": "d959850d00df66811fbeb21538fa46d9add8befbdb116ea5b73140bdccde6037"
+    },
+    {
+      "path": "frontend/src/utils/html.js",
+      "lines": 67,
+      "sha256": "44ed6aa744003ece476aec6fbd43ece83e01fbe9b4cfc76f8d70e5b6e7fd700c"
+    },
+    {
+      "path": "frontend/src/utils/ids.js",
+      "lines": 35,
+      "sha256": "59e0d17a7b0761e04a3b3870f4482fc2705ec5af4bb44e95e8911a82c92b06b3"
+    },
+    {
+      "path": "frontend/src/utils/money.js",
+      "lines": 78,
+      "sha256": "393b6478be3660fcaa5af48e2a98e2fa082f446407b917a7996a6bc16fe4e6da"
+    },
+    {
+      "path": "frontend/src/utils/query.js",
+      "lines": 28,
+      "sha256": "4804b0603d7f74282aa766b4cb0664d99c3c1615b0b8ef5ac3d6fc5063f0c753"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/appsettings.json",
+      "lines": 9,
+      "sha256": "2d8bb40059df22089b94c025be8baad5a869b72d4d755d199c872f03bfe6f225"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Auth/AuthController.cs",
+      "lines": 11,
+      "sha256": "65730f4ace7fec880fd7f0d8600e90d4b7559e8937b7d29b70db1edd89ca0e29"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Auth/MeController.cs",
+      "lines": 11,
+      "sha256": "cba7922208633c6abb42f99132c672136a1299b3e612e4220675166d05b05b2d"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Billing/BillingPeriodsController.cs",
+      "lines": 11,
+      "sha256": "2c3f5e8ce7b42a4cca31b3bf4b0647bd124e4d23789ffedc46f0d4d05a0e6ac1"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Billing/MeterReadingsController.cs",
+      "lines": 11,
+      "sha256": "f6113b1d8d37cb472cb515c35e089f83ed313a674fe047d7fd8e578db400b6e8"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Catalog/CatalogController.cs",
+      "lines": 11,
+      "sha256": "90d0408915ae71d267ff40c41da1c009f56108b9de2ba204c1886431e39cde16"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Catalog/PortalCatalogController.cs",
+      "lines": 11,
+      "sha256": "645e7f638618a384be8244aded09cb1fffe7aa73358e11b7a4a5b1cca2443f60"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Contracts/ContractsController.cs",
+      "lines": 11,
+      "sha256": "d4b912f4ea1f70544a3e86d5972362800fc01b018784a1cb4c27c4cfe5e289f6"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Contracts/PortalRequestsController.cs",
+      "lines": 11,
+      "sha256": "5d9d54ab53834232d681a4d053850e80922191174938b9fe15257ef65128dcbd"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Contracts/PortalTenanciesController.cs",
+      "lines": 11,
+      "sha256": "c199d8b1053e98a9fcf599f6537c7627f4d00226b3d3596fe90790d6a9bc7279"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Contracts/TenanciesController.cs",
+      "lines": 11,
+      "sha256": "5480130f13a6ad27e9ff9b8f3a59376943349fb3174eeeb3a6b7d19c91c4d59e"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Contracts/TenancyRequestsController.cs",
+      "lines": 11,
+      "sha256": "ab5637c81637050cab6529a698ff8fe7ed81f80dcc9cca846054411804b30b7a"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Dashboard/DashboardController.cs",
+      "lines": 11,
+      "sha256": "db8bda2b6d39eae38ae90518c237064870d15e9e5223002d746401a8175e6825"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Exports/ExportsController.cs",
+      "lines": 11,
+      "sha256": "71b3cb5b1164641e96192877158de082903890cf1e9c7d91d48d532b6534f41d"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Files/FilesController.cs",
+      "lines": 11,
+      "sha256": "7b582229b9c10c25a1d5be56a102fb0e84ad00d16f1531b38a5dab5f27d776b4"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Invoices/InvoiceBatchesController.cs",
+      "lines": 11,
+      "sha256": "8eb9c7b066b7f9a97f8bfb98a257f0ee5b774f2cf2485bae8489416749f2efb4"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Invoices/InvoicesController.cs",
+      "lines": 11,
+      "sha256": "dbaa8d6326148c91b3e87549948e2b3f8b48a5c838cb3ee3fee7de89f8df315c"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Invoices/PortalInvoicesController.cs",
+      "lines": 11,
+      "sha256": "0539e8057f6a687672f953b109a20916fdbbeba3c6bbfde9dccbe76ee7b1200d"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Invoices/PortalOverviewController.cs",
+      "lines": 11,
+      "sha256": "3133ac9aaea0db6d3269e81268619f2f60f199035c76a5c337675cf31aa2dcdf"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Notifications/NotificationsController.cs",
+      "lines": 11,
+      "sha256": "928e80eca85efb547e3a134a475c46e3baa39c0a49b8747756e5a1a9fd9ba6d1"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Payments/PaymentAllocationsController.cs",
+      "lines": 11,
+      "sha256": "f6548374875f6d409e42b6c377e1869039de6d81ad152826cd4344b54b0c8933"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Payments/PaymentsController.cs",
+      "lines": 11,
+      "sha256": "bcad2ef6d925eb7ce25fa8e883c3ec03d0f39b8502b7c4118e8d79bcc947b95e"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Payments/PortalPaymentsController.cs",
+      "lines": 11,
+      "sha256": "f0c806c9959fdf16a184460e1b33aa88eb7dd98c2e723322621c50a77e57874e"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Properties/PropertiesController.cs",
+      "lines": 11,
+      "sha256": "5ca50f0cc283ce5997bc189dd0db7955a47279fda03bf9d3a7f285a25e9f5882"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/PublicSite/PublicController.cs",
+      "lines": 11,
+      "sha256": "52025e7d0ad0e43abb2345914e95d423108bd1af1c3273c469d6cbbf85bd0aea"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Rooms/RoomsController.cs",
+      "lines": 11,
+      "sha256": "58cb1a4de13f6fca75372385fcf9fffdc9646dfa02de34be3c65e99d11d88348"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Settings/SettingsController.cs",
+      "lines": 11,
+      "sha256": "a997a971574ab880b0b8da28863a3566f04abdc2f89a831982b9ea5a2442f9e7"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Tenants/PortalProfileController.cs",
+      "lines": 11,
+      "sha256": "4983696ae24cd4ac079e657ea0d226c982636e2b104a60b2628a415800f0aff6"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Tenants/ProfileChangeRequestsController.cs",
+      "lines": 11,
+      "sha256": "d2accc7b24b52043ae8bed9801f23a81bff7a9650da10ad3a345d7aa017351cd"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Tenants/TenantsController.cs",
+      "lines": 11,
+      "sha256": "b5a07838bbf6b17087f5cb4f24eee6ef6d9e39aaad415d155d03338e79bc37fc"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Tickets/PortalTicketsController.cs",
+      "lines": 11,
+      "sha256": "d403230584998e7956ecf234b910369f8321358bbfc95ce6505ee86f03a657d2"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Tickets/TicketsController.cs",
+      "lines": 11,
+      "sha256": "4fb21157cb5ded0493a67c282831098d8a934d3f14490cca2b3016d61a8aa7c0"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Viewings/InquiriesController.cs",
+      "lines": 11,
+      "sha256": "fbc7235d6fe4683bf742a4a6a26a9f9aca16fb30abc3909a6ee99eb63b2ba3f7"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Viewings/PortalInquiriesController.cs",
+      "lines": 11,
+      "sha256": "76acc3e3de637b321ea87c9f8667ac2c147ef5753811ccbcb21148707d0e77c3"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Features/Viewings/ViewingsController.cs",
+      "lines": 11,
+      "sha256": "cb64bea6e6776d3cb865f7215f96de4e09e63b6ccce9c4598c4eb5dd801a1c0d"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/packages.lock.json",
+      "lines": 236,
+      "sha256": "d1c74890137e966ed45547d9332a791dbe5e05787db152f3273aa1e5647020a2"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Program.cs",
+      "lines": 18,
+      "sha256": "c96e82042864318e196999fdde5bfdb32a10ea946f57e7a4115c2a8fcf44829c"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/Properties/launchSettings.json",
+      "lines": 14,
+      "sha256": "44be66e6f09892581dd19357bf4bcf19f2e2938375902f951711e806da4f9a45"
+    },
+    {
+      "path": "backend/src/SmartRent.Api/SmartRent.Api.csproj",
+      "lines": 20,
+      "sha256": "b983da2d091985812773720c7a66aec62a1888d9091ac7a12f856eca074b21fd"
+    }
+  ],
+  "tableCount": 13,
+  "routeCount": 40,
+  "featureCount": 63,
+  "routes": [
+    {
+      "path": "/",
+      "module": "customer/home/index.js",
+      "groups": [
+        "public"
+      ],
+      "directCalls": [
+        "publicApi.filters",
+        "publicApi.rooms"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/home/home.html",
+        "frontend/src/pages/customer/home/home.scss",
+        "frontend/src/pages/customer/home/index.js",
+        "frontend/src/pages/customer/home/tour/facade.js",
+        "frontend/src/pages/customer/home/tour/foliage.js",
+        "frontend/src/pages/customer/home/tour/index.js",
+        "frontend/src/pages/customer/home/tour/interior.js",
+        "frontend/src/pages/customer/home/tour/kit.js",
+        "frontend/src/pages/customer/home/tour/materials.js",
+        "frontend/src/pages/customer/home/tour/path.js",
+        "frontend/src/pages/customer/home/tour/plan.js",
+        "frontend/src/pages/customer/home/tour/post.js",
+        "frontend/src/pages/customer/home/tour/quality.js",
+        "frontend/src/pages/customer/home/tour/roof.js",
+        "frontend/src/pages/customer/home/tour/site.js",
+        "frontend/src/pages/customer/home/tour/sky.js",
+        "frontend/src/pages/customer/home/tour/textures.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "portalApi.tenancies"
+      ],
+      "fields": [
+        "Dịch Vụ & Internet",
+        "Giá Nước Sinh Hoạt",
+        "Giá Điện Sinh Hoạt",
+        "Tiền Cọc"
+      ],
+      "columns": [
+        "files.storage_key",
+        "properties.address_line",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.images",
+        "rooms.listing_description",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.room_type_code",
+        "rooms.rules_text",
+        "rooms.video_url",
+        "settings.business_name",
+        "users.display_name",
+        "users.email",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/rooms",
+      "module": "customer/rooms/list.js",
+      "groups": [
+        "public",
+        "viewings"
+      ],
+      "directCalls": [
+        "portalApi.inquiries",
+        "publicApi.filters",
+        "publicApi.rooms"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/rooms/list.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "portalApi.tenancies"
+      ],
+      "fields": [],
+      "columns": [
+        "bookings.appointments",
+        "bookings.contact_name",
+        "bookings.decision_notes",
+        "bookings.email",
+        "bookings.message",
+        "bookings.occupants",
+        "bookings.phone",
+        "bookings.preferred_viewing_at",
+        "bookings.room_id",
+        "bookings.status",
+        "bookings.user_id",
+        "contracts.booking_id",
+        "contracts.id",
+        "files.storage_key",
+        "properties.address_line",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.images",
+        "rooms.listing_description",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.room_type_code",
+        "rooms.rules_text",
+        "rooms.video_url",
+        "settings.business_name",
+        "users.display_name",
+        "users.email",
+        "users.id",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/rooms/:slug",
+      "module": "customer/rooms/detail.js",
+      "groups": [
+        "public",
+        "viewings"
+      ],
+      "directCalls": [
+        "portalApi.createInquiry",
+        "portalApi.inquiries",
+        "publicApi.room"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/rooms/detail.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "message",
+        "occupants",
+        "preferredViewingAt"
+      ],
+      "columns": [
+        "bookings.appointments",
+        "bookings.contact_name",
+        "bookings.decision_notes",
+        "bookings.email",
+        "bookings.message",
+        "bookings.occupants",
+        "bookings.phone",
+        "bookings.preferred_viewing_at",
+        "bookings.room_id",
+        "bookings.status",
+        "bookings.user_id",
+        "contracts.booking_id",
+        "contracts.id",
+        "files.storage_key",
+        "properties.address_line",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.images",
+        "rooms.listing_description",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.room_type_code",
+        "rooms.rules_text",
+        "rooms.video_url",
+        "settings.business_name",
+        "users.display_name",
+        "users.email",
+        "users.id",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/contact",
+      "module": "customer/contact.js",
+      "groups": [
+        "public"
+      ],
+      "directCalls": [
+        "publicApi.contactInfo"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/contact.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "portalApi.tenancies"
+      ],
+      "fields": [],
+      "columns": [
+        "files.storage_key",
+        "properties.address_line",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.images",
+        "rooms.listing_description",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.room_type_code",
+        "rooms.rules_text",
+        "rooms.video_url",
+        "settings.business_name",
+        "users.display_name",
+        "users.email",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/invoices",
+      "module": "customer/invoices/list.js",
+      "groups": [
+        "auth",
+        "invoices"
+      ],
+      "directCalls": [
+        "portalApi.invoices",
+        "portalApi.overview"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/invoice-view.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/invoices/list.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "portalApi.tenancies"
+      ],
+      "fields": [],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.external_reference",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/invoices/:id",
+      "module": "customer/invoices/detail.js",
+      "groups": [
+        "auth",
+        "invoices"
+      ],
+      "directCalls": [
+        "portalApi.catalog",
+        "portalApi.invoice",
+        "portalApi.reportPayment"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/invoice-view.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/invoices/detail.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "filesApi.upload",
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "amount",
+        "externalReference",
+        "notes",
+        "receivedAt"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.external_reference",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/tickets",
+      "module": "customer/tickets/list.js",
+      "groups": [
+        "auth",
+        "tickets"
+      ],
+      "directCalls": [
+        "portalApi.tickets"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/tickets/list.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "portalApi.tenancies"
+      ],
+      "fields": [],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/tickets/new",
+      "module": "customer/tickets/new.js",
+      "groups": [
+        "auth",
+        "tickets"
+      ],
+      "directCalls": [
+        "portalApi.catalog",
+        "portalApi.createTicket"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/tickets/new.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "filesApi.upload",
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "categoryId",
+        "description",
+        "priority",
+        "tenancyId",
+        "title"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/tickets/:id",
+      "module": "customer/tickets/detail.js",
+      "groups": [
+        "auth",
+        "tickets"
+      ],
+      "directCalls": [
+        "filesApi.downloadUrl",
+        "portalApi.confirmTicket",
+        "portalApi.messageTicket",
+        "portalApi.reopenTicket",
+        "portalApi.ticket"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/tickets/detail.js",
+        "frontend/src/pages/shared/ticket-thread.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/contract",
+      "module": "customer/contract.js",
+      "groups": [
+        "auth",
+        "contracts"
+      ],
+      "directCalls": [
+        "filesApi.downloadUrl",
+        "portalApi.cancelRequest",
+        "portalApi.createRequest",
+        "portalApi.requests",
+        "portalApi.tenancy"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/pages/customer/contract.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "desiredOn",
+        "message"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.storage_key",
+        "invoices.kind",
+        "invoices.metered_only",
+        "payments.allocations",
+        "payments.amount",
+        "payments.id",
+        "payments.kind",
+        "payments.method",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/account",
+      "module": "customer/account.js",
+      "groups": [
+        "auth",
+        "account"
+      ],
+      "directCalls": [
+        "authApi.changePassword",
+        "portalApi.cancelProfileChange",
+        "portalApi.profile",
+        "portalApi.requestProfileChange"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/customer/account.js",
+        "frontend/src/pages/customer/common.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "portalApi.tenancies",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "changes.email",
+        "changes.phone",
+        "confirmPassword",
+        "currentPassword",
+        "newPassword",
+        "reason"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "bookings.changes",
+        "bookings.status",
+        "files.purpose",
+        "settings.invoice_create_day",
+        "settings.meter_reading_day",
+        "settings.reminder_enabled",
+        "users.avatar_file_id",
+        "users.display_name",
+        "users.email",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.phone",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/notifications",
+      "module": "shared/notifications.js",
+      "groups": [
+        "notifications"
+      ],
+      "directCalls": [
+        "notificationsApi.list",
+        "notificationsApi.read",
+        "notificationsApi.readAll"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/shared/notifications.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [],
+      "fields": [],
+      "columns": [
+        "notifications.body",
+        "notifications.event_key",
+        "notifications.read_at",
+        "notifications.recipient_id",
+        "notifications.title",
+        "notifications.url"
+      ]
+    },
+    {
+      "path": "/admin/login",
+      "module": "auth/login.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/login.js",
+        "frontend/src/pages/auth/shared.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "email",
+        "password"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/admin/forgot-password",
+      "module": "auth/forgot.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [
+        "authApi.forgotPassword"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/forgot.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "email"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/admin/reset-password",
+      "module": "auth/reset.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [
+        "authApi.resetPassword"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/reset.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "confirm",
+        "newPassword"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/login",
+      "module": "auth/login.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/login.js",
+        "frontend/src/pages/auth/shared.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "email",
+        "password"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/register",
+      "module": "auth/register.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/register.js",
+        "frontend/src/pages/auth/shared.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "acceptedTerms",
+        "confirmPassword",
+        "email",
+        "fullName",
+        "password",
+        "phone"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/forgot-password",
+      "module": "auth/forgot.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [
+        "authApi.forgotPassword"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/forgot.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "email"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/reset-password",
+      "module": "auth/reset.js",
+      "groups": [
+        "auth"
+      ],
+      "directCalls": [
+        "authApi.resetPassword"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/auth/reset.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "confirm",
+        "newPassword"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "users.email",
+        "users.id",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.role",
+        "users.security_stamp"
+      ]
+    },
+    {
+      "path": "/admin",
+      "module": "admin/dashboard.js",
+      "groups": [
+        "dashboard",
+        "notifications"
+      ],
+      "directCalls": [
+        "dashboardApi.get"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/charts.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/dashboard.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register"
+      ],
+      "fields": [],
+      "columns": [
+        "bookings.appointments",
+        "bookings.hold_expires_at",
+        "bookings.status",
+        "contracts.ends_on",
+        "contracts.status",
+        "invoices.status",
+        "notifications.body",
+        "notifications.event_key",
+        "notifications.read_at",
+        "notifications.recipient_id",
+        "notifications.title",
+        "notifications.url",
+        "payments.allocations",
+        "payments.kind",
+        "rooms.id",
+        "settings.reminder_enabled",
+        "tickets.status"
+      ]
+    },
+    {
+      "path": "/admin/properties",
+      "module": "admin/properties.js",
+      "groups": [
+        "properties"
+      ],
+      "directCalls": [
+        "propertiesApi.list",
+        "propertiesApi.remove"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/properties.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get"
+      ],
+      "fields": [],
+      "columns": [
+        "properties.address_line",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.property_id",
+        "rooms.rates"
+      ]
+    },
+    {
+      "path": "/admin/properties/new",
+      "module": "admin/property-form.js",
+      "groups": [
+        "properties"
+      ],
+      "directCalls": [
+        "propertiesApi.create",
+        "propertiesApi.get",
+        "propertiesApi.update"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/property-form.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "address.line",
+        "address.locality",
+        "address.province",
+        "name"
+      ],
+      "columns": [
+        "properties.address_line",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.property_id",
+        "rooms.rates"
+      ]
+    },
+    {
+      "path": "/admin/properties/:id",
+      "module": "admin/property-detail.js",
+      "groups": [
+        "properties",
+        "rooms"
+      ],
+      "directCalls": [
+        "propertiesApi.activate",
+        "propertiesApi.deactivate",
+        "propertiesApi.get",
+        "propertiesApi.remove",
+        "roomsApi.list"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/property-detail.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get"
+      ],
+      "fields": [],
+      "columns": [
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.room_id",
+        "contracts.booking_id",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.status",
+        "contracts.user_id",
+        "files.purpose",
+        "files.visibility",
+        "properties.address_line",
+        "properties.amenity_options",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.room_id"
+      ]
+    },
+    {
+      "path": "/admin/properties/:id/edit",
+      "module": "admin/property-form.js",
+      "groups": [
+        "properties"
+      ],
+      "directCalls": [
+        "propertiesApi.create",
+        "propertiesApi.get",
+        "propertiesApi.update"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/property-form.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "address.line",
+        "address.locality",
+        "address.province",
+        "name"
+      ],
+      "columns": [
+        "properties.address_line",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.property_id",
+        "rooms.rates"
+      ]
+    },
+    {
+      "path": "/admin/rooms",
+      "module": "admin/rooms.js",
+      "groups": [
+        "rooms"
+      ],
+      "directCalls": [
+        "roomsApi.list",
+        "roomsApi.remove",
+        "roomsApi.setStatus"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/data-table.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/export.js",
+        "frontend/src/components/list-page.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/rooms.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/csv.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "exportsApi.create"
+      ],
+      "fields": [
+        "propertyId",
+        "q",
+        "status"
+      ],
+      "columns": [
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.room_id",
+        "contracts.booking_id",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.status",
+        "contracts.user_id",
+        "files.purpose",
+        "files.visibility",
+        "properties.amenity_options",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.room_id"
+      ]
+    },
+    {
+      "path": "/admin/rooms/new",
+      "module": "admin/room-form.js",
+      "groups": [
+        "rooms",
+        "properties",
+        "tenants"
+      ],
+      "directCalls": [
+        "catalogApi.create",
+        "propertiesApi.get",
+        "roomsApi.arrangeImages",
+        "roomsApi.create",
+        "roomsApi.get",
+        "roomsApi.removeImage",
+        "roomsApi.setStatus",
+        "roomsApi.update"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/room-form.js",
+        "frontend/src/pages/admin/tenant-dialogs.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "filesApi.upload",
+        "roomsApi.list",
+        "tenantsApi.create",
+        "tenantsApi.list",
+        "tenantsApi.setPassword",
+        "tenantsApi.update"
+      ],
+      "fields": [
+        "areaM2",
+        "capacity",
+        "code",
+        "description",
+        "floorLabel",
+        "name",
+        "occupant.moveInOn",
+        "occupant.readings.electricity",
+        "occupant.readings.water",
+        "occupant.tenantId",
+        "operatingStatus",
+        "propertyId",
+        "rent",
+        "requiredDeposit"
+      ],
+      "columns": [
+        "auth_tokens.kind",
+        "bookings.changes",
+        "bookings.decision_notes",
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.kind",
+        "bookings.reviewed_by",
+        "bookings.room_id",
+        "bookings.status",
+        "contracts.booking_id",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.status",
+        "contracts.user_id",
+        "files.purpose",
+        "files.visibility",
+        "invoices.contract_id",
+        "payments.contract_id",
+        "properties.address_line",
+        "properties.amenity_options",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.contract_id",
+        "tickets.room_id",
+        "users.address_line",
+        "users.date_of_birth",
+        "users.display_name",
+        "users.email",
+        "users.emergency_contact_name",
+        "users.emergency_contact_phone",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.last_login_at",
+        "users.login_enabled",
+        "users.notes",
+        "users.password_hash",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/admin/rooms/:id",
+      "module": "admin/room-detail.js",
+      "groups": [
+        "rooms",
+        "contracts",
+        "tickets"
+      ],
+      "directCalls": [
+        "contractsApi.list",
+        "reservationsApi.cancel",
+        "roomsApi.get",
+        "roomsApi.remove",
+        "roomsApi.saveListing",
+        "roomsApi.setStatus",
+        "tenanciesApi.cancelImport"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/room-detail.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get"
+      ],
+      "fields": [],
+      "columns": [
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.room_id",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.booking_id",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.purpose",
+        "files.storage_key",
+        "files.visibility",
+        "invoices.kind",
+        "invoices.metered_only",
+        "payments.allocations",
+        "payments.amount",
+        "payments.id",
+        "payments.kind",
+        "payments.method",
+        "properties.amenity_options",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.room_id",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason"
+      ]
+    },
+    {
+      "path": "/admin/rooms/:id/edit",
+      "module": "admin/room-form.js",
+      "groups": [
+        "rooms",
+        "properties",
+        "tenants"
+      ],
+      "directCalls": [
+        "catalogApi.create",
+        "propertiesApi.get",
+        "roomsApi.arrangeImages",
+        "roomsApi.create",
+        "roomsApi.get",
+        "roomsApi.removeImage",
+        "roomsApi.setStatus",
+        "roomsApi.update"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/room-form.js",
+        "frontend/src/pages/admin/tenant-dialogs.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "filesApi.upload",
+        "roomsApi.list",
+        "tenantsApi.create",
+        "tenantsApi.list",
+        "tenantsApi.setPassword",
+        "tenantsApi.update"
+      ],
+      "fields": [
+        "areaM2",
+        "capacity",
+        "code",
+        "description",
+        "floorLabel",
+        "name",
+        "occupant.moveInOn",
+        "occupant.readings.electricity",
+        "occupant.readings.water",
+        "occupant.tenantId",
+        "operatingStatus",
+        "propertyId",
+        "rent",
+        "requiredDeposit"
+      ],
+      "columns": [
+        "auth_tokens.kind",
+        "bookings.changes",
+        "bookings.decision_notes",
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.kind",
+        "bookings.reviewed_by",
+        "bookings.room_id",
+        "bookings.status",
+        "contracts.booking_id",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.status",
+        "contracts.user_id",
+        "files.purpose",
+        "files.visibility",
+        "invoices.contract_id",
+        "payments.contract_id",
+        "properties.address_line",
+        "properties.amenity_options",
+        "properties.code",
+        "properties.inactive_reason",
+        "properties.is_active",
+        "properties.locality",
+        "properties.name",
+        "properties.province",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.contract_id",
+        "tickets.room_id",
+        "users.address_line",
+        "users.date_of_birth",
+        "users.display_name",
+        "users.email",
+        "users.emergency_contact_name",
+        "users.emergency_contact_phone",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.last_login_at",
+        "users.login_enabled",
+        "users.notes",
+        "users.password_hash",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/admin/viewings",
+      "module": "admin/viewings.js",
+      "groups": [
+        "viewings"
+      ],
+      "directCalls": [
+        "inquiriesApi.list",
+        "inquiriesApi.scheduleViewing",
+        "inquiriesApi.transition",
+        "viewingsApi.list",
+        "viewingsApi.result"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/viewings.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "minutes",
+        "resultNotes",
+        "startsAt"
+      ],
+      "columns": [
+        "bookings.appointments",
+        "bookings.contact_name",
+        "bookings.decision_notes",
+        "bookings.email",
+        "bookings.message",
+        "bookings.occupants",
+        "bookings.phone",
+        "bookings.preferred_viewing_at",
+        "bookings.room_id",
+        "bookings.status",
+        "bookings.user_id",
+        "contracts.booking_id",
+        "contracts.id",
+        "users.id"
+      ]
+    },
+    {
+      "path": "/admin/billing",
+      "module": "admin/billing.js",
+      "groups": [
+        "billing"
+      ],
+      "directCalls": [
+        "invoicesApi.createBatch",
+        "metersApi.correct",
+        "metersApi.recordBatch",
+        "periodsApi.create",
+        "periodsApi.list",
+        "periodsApi.lock",
+        "periodsApi.unlock",
+        "periodsApi.worksheet",
+        "settingsApi.billingSchedule"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/billing.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "nước",
+        "readingValue",
+        "reason",
+        "điện"
+      ],
+      "columns": [
+        "billing_periods.history",
+        "billing_periods.locked_by",
+        "billing_periods.month_start",
+        "billing_periods.property_id",
+        "billing_periods.status",
+        "billing_periods.unlock_reason",
+        "contracts.initial_readings",
+        "contracts.status",
+        "contracts.versions",
+        "invoices.electricity_end",
+        "invoices.electricity_start",
+        "invoices.idempotency_key",
+        "invoices.lines",
+        "invoices.period_id",
+        "invoices.readings_history",
+        "invoices.request_hash",
+        "invoices.status",
+        "invoices.total_amount",
+        "invoices.water_end",
+        "invoices.water_start",
+        "properties.rates",
+        "rooms.rates"
+      ]
+    },
+    {
+      "path": "/admin/tenants",
+      "module": "admin/tenants.js",
+      "groups": [
+        "tenants",
+        "exports"
+      ],
+      "directCalls": [
+        "tenantsApi.list"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/data-table.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/export.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/list-page.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/tenant-dialogs.js",
+        "frontend/src/pages/admin/tenants.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/csv.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "exportsApi.create",
+        "roomsApi.list",
+        "tenantsApi.create",
+        "tenantsApi.setPassword",
+        "tenantsApi.update"
+      ],
+      "fields": [
+        "khach-thue",
+        "portal",
+        "propertyId",
+        "q",
+        "residenceStatus"
+      ],
+      "columns": [
+        "auth_tokens.kind",
+        "bookings.changes",
+        "bookings.decision_notes",
+        "bookings.kind",
+        "bookings.reviewed_by",
+        "bookings.status",
+        "contracts.id",
+        "contracts.status",
+        "contracts.user_id",
+        "invoices.contract_id",
+        "invoices.id",
+        "invoices.lines",
+        "payments.allocations",
+        "payments.contract_id",
+        "tickets.contract_id",
+        "users.address_line",
+        "users.date_of_birth",
+        "users.display_name",
+        "users.email",
+        "users.emergency_contact_name",
+        "users.emergency_contact_phone",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.last_login_at",
+        "users.login_enabled",
+        "users.notes",
+        "users.password_hash",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/admin/tenants/:id",
+      "module": "admin/tenant-detail.js",
+      "groups": [
+        "tenants",
+        "contracts",
+        "invoices",
+        "tickets"
+      ],
+      "directCalls": [
+        "contractsApi.list",
+        "profileRequestsApi.approve",
+        "profileRequestsApi.reject",
+        "tenantsApi.get",
+        "tenantsApi.invitePortal"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/tenant-detail.js",
+        "frontend/src/pages/admin/tenant-dialogs.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.create",
+        "tenantsApi.list",
+        "tenantsApi.setPassword",
+        "tenantsApi.update"
+      ],
+      "fields": [
+        "reviewNotes"
+      ],
+      "columns": [
+        "auth_tokens.kind",
+        "bookings.changes",
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.reviewed_by",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.storage_key",
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.metered_only",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.amount",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.contract_id",
+        "payments.external_reference",
+        "payments.id",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.kind",
+        "payments.method",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name",
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason",
+        "users.address_line",
+        "users.date_of_birth",
+        "users.display_name",
+        "users.email",
+        "users.emergency_contact_name",
+        "users.emergency_contact_phone",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.last_login_at",
+        "users.login_enabled",
+        "users.notes",
+        "users.password_hash",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/admin/contracts",
+      "module": "admin/contracts.js",
+      "groups": [
+        "contracts"
+      ],
+      "directCalls": [
+        "contractsApi.list"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/data-table.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/export.js",
+        "frontend/src/components/list-page.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/contracts.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/csv.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "exportsApi.create"
+      ],
+      "fields": [
+        "propertyId",
+        "q",
+        "status"
+      ],
+      "columns": [
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.storage_key",
+        "invoices.kind",
+        "invoices.metered_only",
+        "payments.allocations",
+        "payments.amount",
+        "payments.id",
+        "payments.kind",
+        "payments.method"
+      ]
+    },
+    {
+      "path": "/admin/contracts/new",
+      "module": "admin/contract-new.js",
+      "groups": [
+        "contracts",
+        "tenants",
+        "rooms"
+      ],
+      "directCalls": [
+        "contractsApi.addAttachment",
+        "inquiriesApi.get",
+        "inquiriesApi.linkTenant",
+        "propertiesApi.get",
+        "roomsApi.get",
+        "roomsApi.list",
+        "tenanciesApi.checkIn",
+        "tenanciesApi.get",
+        "tenanciesApi.importContract",
+        "tenantsApi.get"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/contract-new.js",
+        "frontend/src/pages/admin/tenant-dialogs.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "filesApi.upload",
+        "tenantsApi.create",
+        "tenantsApi.list",
+        "tenantsApi.setPassword",
+        "tenantsApi.update"
+      ],
+      "fields": [
+        "deposit.amount",
+        "deposit.methodCode",
+        "lastDay",
+        "moveInOn",
+        "propertyId",
+        "rent",
+        "requiredDeposit",
+        "roomId",
+        "tenantId",
+        "termsText"
+      ],
+      "columns": [
+        "auth_tokens.kind",
+        "bookings.changes",
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.hold_expires_at",
+        "bookings.hold_from",
+        "bookings.hold_reason",
+        "bookings.hold_to",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.reviewed_by",
+        "bookings.room_id",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.booking_id",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_in_on",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_gaps",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.purpose",
+        "files.storage_key",
+        "files.visibility",
+        "invoices.contract_id",
+        "invoices.kind",
+        "invoices.metered_only",
+        "payments.allocations",
+        "payments.amount",
+        "payments.contract_id",
+        "payments.id",
+        "payments.kind",
+        "payments.method",
+        "properties.amenity_options",
+        "properties.rates",
+        "rooms.amenities",
+        "rooms.area_m2",
+        "rooms.capacity",
+        "rooms.code",
+        "rooms.floor_label",
+        "rooms.images",
+        "rooms.listing_slug",
+        "rooms.listing_status",
+        "rooms.name",
+        "rooms.operating_status",
+        "rooms.property_id",
+        "rooms.published_at",
+        "rooms.rates",
+        "rooms.required_deposit",
+        "rooms.status_history",
+        "rooms.status_reason",
+        "tickets.contract_id",
+        "tickets.room_id",
+        "users.address_line",
+        "users.date_of_birth",
+        "users.display_name",
+        "users.email",
+        "users.emergency_contact_name",
+        "users.emergency_contact_phone",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.last_login_at",
+        "users.login_enabled",
+        "users.notes",
+        "users.password_hash",
+        "users.phone"
+      ]
+    },
+    {
+      "path": "/admin/contracts/:id",
+      "module": "admin/contract-detail.js",
+      "groups": [
+        "contracts",
+        "invoices"
+      ],
+      "directCalls": [
+        "contractsApi.addAttachment",
+        "contractsApi.archive",
+        "contractsApi.createVersion",
+        "contractsApi.get",
+        "contractsApi.removeAttachment",
+        "contractsApi.signVersion",
+        "contractsApi.updateVersion",
+        "filesApi.downloadUrl",
+        "tenanciesApi.checkout",
+        "tenanciesApi.checkoutPreview",
+        "tenanciesApi.depositReceipt",
+        "tenancyRequestsApi.approve",
+        "tenancyRequestsApi.reject"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/components/uploader.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/contract-detail.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "filesApi.upload",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "amount",
+        "changeReason",
+        "externalReference",
+        "lastDay",
+        "methodCode",
+        "moveOutOn",
+        "note",
+        "refundMethod",
+        "remainingDebtReason",
+        "rent",
+        "roomStatusAfter",
+        "terminationReason"
+      ],
+      "columns": [
+        "bookings.decision_notes",
+        "bookings.desired_on",
+        "bookings.kind",
+        "bookings.message",
+        "bookings.status",
+        "contracts.archived_at",
+        "contracts.attachments",
+        "contracts.checkin_handover",
+        "contracts.checkout_summary",
+        "contracts.ended_reason",
+        "contracts.ends_on",
+        "contracts.final_readings",
+        "contracts.id",
+        "contracts.initial_readings",
+        "contracts.move_out_on",
+        "contracts.occupants",
+        "contracts.onboarding_mode",
+        "contracts.remaining_debt_reason",
+        "contracts.required_deposit",
+        "contracts.status",
+        "contracts.user_id",
+        "contracts.versions",
+        "files.storage_key",
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.metered_only",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.amount",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.external_reference",
+        "payments.id",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.kind",
+        "payments.method",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name"
+      ]
+    },
+    {
+      "path": "/admin/invoices",
+      "module": "admin/invoices.js",
+      "groups": [
+        "invoices",
+        "exports"
+      ],
+      "directCalls": [
+        "invoicesApi.list"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/data-table.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/export.js",
+        "frontend/src/components/list-page.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/invoices.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/csv.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "exportsApi.create"
+      ],
+      "fields": [
+        "hoa-don",
+        "paymentStatus",
+        "periodMonth",
+        "propertyId",
+        "q"
+      ],
+      "columns": [
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.id",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.external_reference",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name",
+        "users.id"
+      ]
+    },
+    {
+      "path": "/admin/invoices/:id",
+      "module": "admin/invoice-detail.js",
+      "groups": [
+        "invoices"
+      ],
+      "directCalls": [
+        "invoicesApi.get",
+        "invoicesApi.issue",
+        "invoicesApi.recompute",
+        "invoicesApi.removeDraft",
+        "invoicesApi.void",
+        "paymentsApi.confirm",
+        "paymentsApi.create",
+        "paymentsApi.reject",
+        "paymentsApi.reverseAllocation"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/admin-kit.js",
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/invoice-detail.js",
+        "frontend/src/pages/admin/invoice-view.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/csv.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "amount",
+        "externalReference",
+        "methodCode",
+        "notes"
+      ],
+      "columns": [
+        "invoices.adjusts_invoice_id",
+        "invoices.code",
+        "invoices.contract_id",
+        "invoices.customer_snapshot",
+        "invoices.due_on",
+        "invoices.issued_by",
+        "invoices.kind",
+        "invoices.lines",
+        "invoices.period_id",
+        "invoices.status",
+        "invoices.void_reason",
+        "invoices.voided_at",
+        "payments.allocations",
+        "payments.confirmed_at",
+        "payments.confirmed_by",
+        "payments.external_reference",
+        "payments.idempotency_key",
+        "payments.intended_invoice_id",
+        "payments.proof_file_ids",
+        "payments.reason",
+        "payments.received_at",
+        "payments.request_hash",
+        "payments.reverses_id",
+        "payments.status",
+        "settings.bank_account_name",
+        "settings.bank_account_number",
+        "settings.bank_name"
+      ]
+    },
+    {
+      "path": "/admin/tickets",
+      "module": "admin/tickets.js",
+      "groups": [
+        "tickets"
+      ],
+      "directCalls": [
+        "filesApi.downloadUrl",
+        "ticketsApi.assign",
+        "ticketsApi.get",
+        "ticketsApi.list",
+        "ticketsApi.message",
+        "ticketsApi.transition"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/tickets.js",
+        "frontend/src/pages/shared/ticket-thread.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "note",
+        "resolutionNotes",
+        "userId"
+      ],
+      "columns": [
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason"
+      ]
+    },
+    {
+      "path": "/admin/tickets/:id",
+      "module": "admin/tickets.js",
+      "groups": [
+        "tickets"
+      ],
+      "directCalls": [
+        "filesApi.downloadUrl",
+        "ticketsApi.assign",
+        "ticketsApi.get",
+        "ticketsApi.list",
+        "ticketsApi.message",
+        "ticketsApi.transition"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/badges.js",
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/modal.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/tickets.js",
+        "frontend/src/pages/shared/ticket-thread.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/dom.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "note",
+        "resolutionNotes",
+        "userId"
+      ],
+      "columns": [
+        "tickets.assigned_to",
+        "tickets.attachment_file_ids",
+        "tickets.category_code",
+        "tickets.closed_at",
+        "tickets.contract_id",
+        "tickets.description",
+        "tickets.due_at",
+        "tickets.history",
+        "tickets.messages",
+        "tickets.priority",
+        "tickets.resolution_notes",
+        "tickets.resolved_at",
+        "tickets.status",
+        "tickets.title",
+        "tickets.waiting_reason"
+      ]
+    },
+    {
+      "path": "/admin/settings",
+      "module": "admin/settings.js",
+      "groups": [
+        "account",
+        "auth"
+      ],
+      "directCalls": [
+        "authApi.changePassword",
+        "authApi.updateProfile",
+        "filesApi.upload",
+        "settingsApi.billingSchedule",
+        "settingsApi.saveBillingSchedule"
+      ],
+      "reachableFiles": [
+        "frontend/src/components/datepicker.js",
+        "frontend/src/components/dialogs.js",
+        "frontend/src/components/form.js",
+        "frontend/src/components/select.js",
+        "frontend/src/components/ui.js",
+        "frontend/src/config.js",
+        "frontend/src/pages/admin/common.js",
+        "frontend/src/pages/admin/settings.js",
+        "frontend/src/router/router.js",
+        "frontend/src/services/access.js",
+        "frontend/src/services/auth-state.js",
+        "frontend/src/services/client.js",
+        "frontend/src/services/errors.js",
+        "frontend/src/services/http-transport.js",
+        "frontend/src/services/session.js",
+        "frontend/src/utils/date.js",
+        "frontend/src/utils/format.js",
+        "frontend/src/utils/html.js",
+        "frontend/src/utils/ids.js",
+        "frontend/src/utils/money.js",
+        "frontend/src/utils/query.js"
+      ],
+      "sharedCalls": [
+        "authApi.login",
+        "authApi.logout",
+        "authApi.me",
+        "authApi.register",
+        "catalogApi.get",
+        "roomsApi.list",
+        "tenantsApi.list"
+      ],
+      "fields": [
+        "confirm",
+        "currentPassword",
+        "displayName",
+        "email",
+        "invoiceCreateDay",
+        "meterReadingDay",
+        "newPassword",
+        "phone",
+        "reminderEnabled"
+      ],
+      "columns": [
+        "auth_tokens.consumed_at",
+        "auth_tokens.expires_at",
+        "auth_tokens.kind",
+        "auth_tokens.revoked_at",
+        "auth_tokens.token_hash",
+        "bookings.changes",
+        "bookings.status",
+        "files.purpose",
+        "settings.invoice_create_day",
+        "settings.meter_reading_day",
+        "settings.reminder_enabled",
+        "users.avatar_file_id",
+        "users.display_name",
+        "users.email",
+        "users.id",
+        "users.identity_documents",
+        "users.is_active",
+        "users.login_enabled",
+        "users.password_hash",
+        "users.phone",
+        "users.role",
+        "users.security_stamp"
+      ]
+    }
+  ],
+  "usedServiceMethods": [
+    "authApi.changePassword",
+    "authApi.forgotPassword",
+    "authApi.login",
+    "authApi.logout",
+    "authApi.me",
+    "authApi.register",
+    "authApi.resetPassword",
+    "authApi.updateProfile",
+    "catalogApi.create",
+    "catalogApi.get",
+    "contractsApi.addAttachment",
+    "contractsApi.archive",
+    "contractsApi.createVersion",
+    "contractsApi.get",
+    "contractsApi.list",
+    "contractsApi.removeAttachment",
+    "contractsApi.signVersion",
+    "contractsApi.updateVersion",
+    "dashboardApi.get",
+    "exportsApi.create",
+    "filesApi.downloadUrl",
+    "filesApi.upload",
+    "inquiriesApi.get",
+    "inquiriesApi.linkTenant",
+    "inquiriesApi.list",
+    "inquiriesApi.scheduleViewing",
+    "inquiriesApi.transition",
+    "invoicesApi.createBatch",
+    "invoicesApi.get",
+    "invoicesApi.issue",
+    "invoicesApi.list",
+    "invoicesApi.recompute",
+    "invoicesApi.removeDraft",
+    "invoicesApi.void",
+    "metersApi.correct",
+    "metersApi.recordBatch",
+    "notificationsApi.list",
+    "notificationsApi.read",
+    "notificationsApi.readAll",
+    "notificationsApi.unreadCount",
+    "paymentsApi.confirm",
+    "paymentsApi.create",
+    "paymentsApi.reject",
+    "paymentsApi.reverseAllocation",
+    "periodsApi.create",
+    "periodsApi.list",
+    "periodsApi.lock",
+    "periodsApi.unlock",
+    "periodsApi.worksheet",
+    "portalApi.cancelProfileChange",
+    "portalApi.cancelRequest",
+    "portalApi.catalog",
+    "portalApi.confirmTicket",
+    "portalApi.createInquiry",
+    "portalApi.createRequest",
+    "portalApi.createTicket",
+    "portalApi.inquiries",
+    "portalApi.invoice",
+    "portalApi.invoices",
+    "portalApi.messageTicket",
+    "portalApi.overview",
+    "portalApi.profile",
+    "portalApi.reopenTicket",
+    "portalApi.reportPayment",
+    "portalApi.requestProfileChange",
+    "portalApi.requests",
+    "portalApi.tenancies",
+    "portalApi.tenancy",
+    "portalApi.ticket",
+    "portalApi.tickets",
+    "profileRequestsApi.approve",
+    "profileRequestsApi.reject",
+    "propertiesApi.activate",
+    "propertiesApi.create",
+    "propertiesApi.deactivate",
+    "propertiesApi.get",
+    "propertiesApi.list",
+    "propertiesApi.remove",
+    "propertiesApi.update",
+    "publicApi.contactInfo",
+    "publicApi.filters",
+    "publicApi.room",
+    "publicApi.rooms",
+    "reservationsApi.cancel",
+    "roomsApi.arrangeImages",
+    "roomsApi.create",
+    "roomsApi.get",
+    "roomsApi.list",
+    "roomsApi.remove",
+    "roomsApi.removeImage",
+    "roomsApi.saveListing",
+    "roomsApi.setStatus",
+    "roomsApi.update",
+    "settingsApi.billingSchedule",
+    "settingsApi.saveBillingSchedule",
+    "tenanciesApi.cancelImport",
+    "tenanciesApi.checkIn",
+    "tenanciesApi.checkout",
+    "tenanciesApi.checkoutPreview",
+    "tenanciesApi.depositReceipt",
+    "tenanciesApi.get",
+    "tenanciesApi.importContract",
+    "tenancyRequestsApi.approve",
+    "tenancyRequestsApi.reject",
+    "tenantsApi.create",
+    "tenantsApi.get",
+    "tenantsApi.invitePortal",
+    "tenantsApi.list",
+    "tenantsApi.setPassword",
+    "tenantsApi.update",
+    "ticketsApi.assign",
+    "ticketsApi.get",
+    "ticketsApi.list",
+    "ticketsApi.message",
+    "ticketsApi.transition",
+    "viewingsApi.list",
+    "viewingsApi.result"
+  ],
+  "unusedServiceMethods": [
+    "authApi.revokeSession",
+    "authApi.sessions",
+    "catalogApi.update",
+    "contractsApi.addVersionFile",
+    "contractsApi.deleteVersion",
+    "contractsApi.remove",
+    "contractsApi.successor",
+    "contractsApi.terminate",
+    "exportsApi.list",
+    "inquiriesApi.addEvent",
+    "inquiriesApi.assign",
+    "inquiriesApi.create",
+    "invoicesApi.adjust",
+    "invoicesApi.createDraft",
+    "invoicesApi.getBatch",
+    "invoicesApi.replacement",
+    "invoicesApi.retryBatch",
+    "invoicesApi.send",
+    "invoicesApi.updateDraft",
+    "metersApi.list",
+    "metersApi.readings",
+    "metersApi.record",
+    "metersApi.replace",
+    "paymentsApi.allocate",
+    "paymentsApi.get",
+    "paymentsApi.list",
+    "paymentsApi.reverse",
+    "periodsApi.get",
+    "portalApi.payments",
+    "profileRequestsApi.list",
+    "propertiesApi.changeRate",
+    "propertiesApi.previewRate",
+    "reservationsApi.create",
+    "reservationsApi.extend",
+    "reservationsApi.get",
+    "reservationsApi.list",
+    "roomsApi.addAsset",
+    "roomsApi.addImage",
+    "roomsApi.availability",
+    "roomsApi.changeRate",
+    "roomsApi.endRate",
+    "roomsApi.updateAsset",
+    "settingsApi.createReminderRule",
+    "settingsApi.deliveries",
+    "settingsApi.email",
+    "settingsApi.integrations",
+    "settingsApi.jobs",
+    "settingsApi.organization",
+    "settingsApi.reminderRules",
+    "settingsApi.retryDelivery",
+    "settingsApi.runJob",
+    "settingsApi.saveEmail",
+    "settingsApi.saveIntegration",
+    "settingsApi.saveOrganization",
+    "settingsApi.saveTemplate",
+    "settingsApi.templates",
+    "settingsApi.testEmail",
+    "settingsApi.testIntegration",
+    "settingsApi.updateReminderRule",
+    "tenanciesApi.addResident",
+    "tenanciesApi.deposit",
+    "tenanciesApi.depositOffset",
+    "tenanciesApi.depositRefund",
+    "tenanciesApi.depositTransfer",
+    "tenanciesApi.list",
+    "tenanciesApi.residentLeave",
+    "tenanciesApi.resolveGap",
+    "tenanciesApi.transfer",
+    "tenancyRequestsApi.list",
+    "tenantsApi.addIdentityDocument",
+    "tenantsApi.duplicates",
+    "tenantsApi.sendPasswordReset",
+    "tenantsApi.verifyIdentityDocument",
+    "ticketsApi.create"
+  ],
+  "features": {
+    "auth": [
+      [
+        "Đăng nhập riêng admin/khách; chỉ 1 admin; đăng ký luôn là user",
+        "users.role users.email users.password_hash users.is_active users.id users.login_enabled"
+      ],
+      [
+        "Đăng xuất, đổi mật khẩu và hủy phiên cũ",
+        "users.security_stamp auth_tokens.kind auth_tokens.token_hash auth_tokens.revoked_at"
+      ],
+      [
+        "Quên/đặt lại mật khẩu, lời mời khách tạo tài khoản",
+        "auth_tokens.kind auth_tokens.expires_at auth_tokens.consumed_at"
+      ]
+    ],
+    "public": [
+      [
+        "Trang chủ, lọc phòng theo cơ sở/giá/diện tích/tiện nghi/trạng thái",
+        "properties.province rooms.area_m2 rooms.room_type_code rooms.listing_status rooms.rates properties.rates rooms.amenities"
+      ],
+      [
+        "Chi tiết phòng, bộ ảnh, ảnh bìa, video, nội quy, địa chỉ/bản đồ",
+        "rooms.listing_slug rooms.listing_description rooms.video_url rooms.rules_text rooms.images files.storage_key properties.address_line"
+      ],
+      [
+        "Giá thuê/điện/nước/phí dịch vụ/cọc trên phòng và trang chủ",
+        "rooms.rates properties.rates rooms.required_deposit"
+      ],
+      [
+        "Liên hệ và chân trang lấy điện thoại/email mới của admin",
+        "users.display_name users.phone users.email settings.business_name properties.name"
+      ]
+    ],
+    "properties": [
+      [
+        "Thêm/sửa cơ sở, địa chỉ, tìm kiếm",
+        "properties.code properties.name properties.address_line properties.locality properties.province"
+      ],
+      [
+        "Giá cơ sở có lịch sử, lưu JSONB, phòng kế thừa; giá 0 khác chưa đặt",
+        "rooms.rates properties.rates"
+      ],
+      [
+        "Ngừng/kích hoạt, xóa khi chưa có phòng",
+        "properties.is_active properties.inactive_reason rooms.property_id"
+      ]
+    ],
+    "rooms": [
+      [
+        "Thêm/sửa phòng, diện tích, sức chứa, tầng, giá và cọc",
+        "rooms.property_id rooms.code rooms.name rooms.area_m2 rooms.capacity rooms.floor_label rooms.required_deposit rooms.rates properties.rates"
+      ],
+      [
+        "Tiện ích: chọn/bỏ chọn và thêm tiện ích mới",
+        "properties.amenity_options rooms.amenities"
+      ],
+      [
+        "Tải/xóa ảnh, chọn ảnh bìa, thứ tự ảnh",
+        "files.visibility files.purpose rooms.images"
+      ],
+      [
+        "Đăng/ẩn tin và URL công khai",
+        "rooms.listing_status rooms.listing_slug rooms.published_at"
+      ],
+      [
+        "Trạng thái khai thác; lịch sử lý do; không đặt occupied bằng tay",
+        "rooms.operating_status rooms.status_reason contracts.status rooms.status_history"
+      ],
+      [
+        "Nhập phòng đã có khách, thiếu hợp đồng; bổ sung hợp đồng/gỡ nhập nhầm",
+        "contracts.onboarding_mode contracts.onboarding_gaps contracts.move_in_on contracts.status contracts.id contracts.initial_readings"
+      ],
+      [
+        "Hiển thị/hủy giữ chỗ; không tạo đợt thuê trùng thời gian",
+        "bookings.room_id bookings.hold_from bookings.hold_to bookings.hold_expires_at bookings.hold_reason contracts.booking_id"
+      ],
+      [
+        "Xem khách hiện tại, hợp đồng, ticket của phòng",
+        "contracts.user_id contracts.id tickets.room_id"
+      ]
+    ],
+    "viewings": [
+      [
+        "Khách đăng nhập gửi giờ muốn xem, số người và ghi chú; chưa giữ phòng",
+        "bookings.user_id bookings.room_id bookings.preferred_viewing_at bookings.occupants bookings.message"
+      ],
+      [
+        "Xem lịch khách đã gửi, danh sách yêu cầu chờ, từ chối",
+        "bookings.status bookings.contact_name bookings.phone bookings.email bookings.decision_notes"
+      ],
+      [
+        "Xếp lịch; thời lượng; đã xem/không đến/hủy; ghi kết quả",
+        "bookings.appointments"
+      ],
+      [
+        "Tạo hồ sơ và hợp đồng từ yêu cầu đã xem",
+        "bookings.user_id users.id contracts.booking_id contracts.id"
+      ]
+    ],
+    "tenants": [
+      [
+        "Thêm/sửa hồ sơ, ngày sinh, địa chỉ, liên hệ khẩn cấp, ghi chú",
+        "users.display_name users.date_of_birth users.address_line users.emergency_contact_name users.emergency_contact_phone users.notes"
+      ],
+      [
+        "Tìm/lọc users theo phòng, tình trạng ở và login_enabled; cảnh báo trùng",
+        "users.phone users.email users.id contracts.user_id contracts.status"
+      ],
+      [
+        "Xem giấy tờ đã che và trạng thái xác minh (không có form quản lý giấy tờ)",
+        "users.identity_documents"
+      ],
+      [
+        "Tài khoản khách, lần đăng nhập, đặt mật khẩu, mời đăng ký",
+        "users.last_login_at users.is_active users.password_hash auth_tokens.kind users.id users.login_enabled"
+      ],
+      [
+        "Duyệt/từ chối đề nghị sửa hồ sơ, lý do phản hồi",
+        "bookings.kind bookings.changes bookings.status bookings.reviewed_by bookings.decision_notes"
+      ],
+      [
+        "Hồ sơ liên kết phòng/hợp đồng/hóa đơn/cọc/ticket",
+        "contracts.user_id contracts.id invoices.contract_id payments.contract_id tickets.contract_id"
+      ]
+    ],
+    "contracts": [
+      [
+        "Tạo hợp đồng hoặc bổ sung cho khách đang ở, ngày bắt đầu/kết thúc",
+        "contracts.id contracts.versions contracts.ends_on contracts.onboarding_mode"
+      ],
+      [
+        "Chốt tiền thuê, phí, mức cọc, ngày lập và hạn thanh toán",
+        "contracts.versions contracts.required_deposit"
+      ],
+      [
+        "Bản đã ký, điều khoản, bên ký; thêm/xóa tệp bổ sung",
+        "contracts.versions contracts.attachments files.storage_key"
+      ],
+      [
+        "Gia hạn tạo phiên bản mới, giữ nguyên bản cũ",
+        "contracts.versions contracts.ends_on"
+      ],
+      [
+        "Người đại diện/người ở cùng là quan hệ thuê, không thêm role đăng nhập",
+        "contracts.user_id contracts.occupants"
+      ],
+      [
+        "Bàn giao hiển thị chỉ số đầu vào và hiện trạng tài sản",
+        "contracts.checkin_handover contracts.initial_readings"
+      ],
+      [
+        "Thu cọc lúc ký hoặc thu thêm, xem đã thu/giữ/hoàn/bù trừ",
+        "payments.amount payments.kind payments.id"
+      ],
+      [
+        "Khách gửi/hủy đề nghị gia hạn/trả phòng; admin duyệt/từ chối",
+        "bookings.kind bookings.desired_on bookings.message bookings.status bookings.decision_notes"
+      ],
+      [
+        "Trả phòng: số cuối, hóa đơn cuối (kể cả tháng đã thu), bù cọc, hoàn cọc, lý do còn nợ",
+        "contracts.initial_readings contracts.final_readings invoices.kind invoices.metered_only payments.allocations payments.method contracts.checkout_summary contracts.remaining_debt_reason contracts.move_out_on"
+      ],
+      [
+        "Kết thúc/lưu trữ; hết hạn vẫn đang ở; danh sách sắp hết hạn",
+        "contracts.move_out_on contracts.ended_reason contracts.archived_at contracts.ends_on contracts.status"
+      ]
+    ],
+    "billing": [
+      [
+        "Mở/chọn tháng theo cơ sở, bảng tiến độ tính tiền",
+        "billing_periods.property_id billing_periods.month_start contracts.status invoices.period_id"
+      ],
+      [
+        "Số điện/nước đầu-cuối trên hóa đơn nháp, lịch sử sửa số; nhập hàng loạt",
+        "contracts.initial_readings invoices.electricity_start invoices.water_start invoices.electricity_end invoices.water_end invoices.readings_history invoices.period_id"
+      ],
+      [
+        "Sửa chỉ số trên nháp và thêm readings_history; bất biến khi phát hành",
+        "invoices.electricity_start invoices.electricity_end invoices.water_start invoices.water_end invoices.readings_history invoices.lines"
+      ],
+      [
+        "Khóa/mở khóa tháng có lý do",
+        "billing_periods.status billing_periods.locked_by billing_periods.unlock_reason billing_periods.history"
+      ],
+      [
+        "Tạo/phát hành một hoặc nhiều hóa đơn; kết quả lỗi theo phòng",
+        "invoices.idempotency_key invoices.request_hash invoices.status invoices.total_amount"
+      ],
+      [
+        "Tính lẻ tháng, phí một lần, giá theo hợp đồng > phòng > cơ sở",
+        "invoices.lines contracts.versions rooms.rates properties.rates"
+      ]
+    ],
+    "invoices": [
+      [
+        "Tìm/lọc theo tháng, phòng, khách, nợ, quá hạn, nháp/hủy",
+        "invoices.period_id invoices.contract_id invoices.due_on invoices.status payments.allocations"
+      ],
+      [
+        "Dòng hóa đơn, số điện nước, giá đã chốt và bản in",
+        "invoices.lines invoices.customer_snapshot"
+      ],
+      [
+        "Phát hành nháp/xóa nháp/hủy có lý do, giữ lịch sử",
+        "invoices.status invoices.issued_by invoices.void_reason invoices.voided_at"
+      ],
+      [
+        "Khách báo chuyển khoản, thời điểm, mã giao dịch, ảnh biên lai",
+        "payments.intended_invoice_id payments.received_at payments.external_reference payments.status payments.proof_file_ids"
+      ],
+      [
+        "Admin xác nhận/từ chối, nhận toàn bộ hoặc một phần",
+        "payments.confirmed_by payments.confirmed_at payments.reason payments.allocations"
+      ],
+      [
+        "Hoàn tác khoản thu bằng dòng đảo, trả lại nợ",
+        "payments.reverses_id payments.idempotency_key payments.request_hash"
+      ],
+      [
+        "Thông tin ngân hàng mặc định và nội dung chuyển khoản; chưa tích hợp ngân hàng",
+        "settings.bank_name settings.bank_account_number settings.bank_account_name invoices.code"
+      ],
+      [
+        "Hiển thị điều chỉnh có trong chứng từ; giao diện không có form tạo điều chỉnh",
+        "invoices.adjusts_invoice_id invoices.kind invoices.lines"
+      ]
+    ],
+    "tickets": [
+      [
+        "Khách gửi hỗ trợ, loại, mức độ, tiêu đề, nội dung và ảnh",
+        "tickets.category_code tickets.priority tickets.title tickets.description tickets.contract_id tickets.attachment_file_ids"
+      ],
+      [
+        "Hộp thư, tìm/lọc, người xử lý admin, thời hạn",
+        "tickets.status tickets.assigned_to tickets.due_at tickets.priority"
+      ],
+      [
+        "Tiếp nhận/xử lý/chờ/giải quyết/đóng/mở lại; khách xác nhận",
+        "tickets.status tickets.waiting_reason tickets.resolution_notes tickets.resolved_at tickets.closed_at"
+      ],
+      [
+        "Trao đổi và ghi chú nội bộ; không trả ghi chú nội bộ cho khách",
+        "tickets.messages"
+      ],
+      [
+        "Tiến độ ticket của khách và lịch sử đổi trạng thái",
+        "tickets.history"
+      ]
+    ],
+    "account": [
+      [
+        "Khách xem hồ sơ/giấy tờ che, đề nghị sửa phone/email và hủy",
+        "users.id users.identity_documents bookings.changes bookings.status"
+      ],
+      [
+        "Admin sửa tên/email/phone/avatar; đổi mật khẩu",
+        "users.display_name users.email users.phone users.avatar_file_id users.password_hash files.purpose"
+      ],
+      [
+        "Lịch nhắc nhập số/tạo hóa đơn, ngày 1–28, bật/tắt",
+        "settings.meter_reading_day settings.invoice_create_day settings.reminder_enabled"
+      ]
+    ],
+    "notifications": [
+      [
+        "Thông báo trong chuông và trang khách; số chưa đọc, đánh dấu một/tất cả",
+        "notifications.recipient_id notifications.event_key notifications.title notifications.body notifications.url notifications.read_at"
+      ]
+    ],
+    "exports": [
+      [
+        "Xuất CSV khách/hóa đơn và in trực tiếp; không lưu tác vụ xuất",
+        "users.id invoices.id invoices.lines payments.allocations"
+      ]
+    ],
+    "dashboard": [
+      [
+        "Tổng quan, sơ đồ phòng, tiến độ tháng, 6 tháng thu/nợ và các việc cần làm; dùng truy vấn tổng hợp",
+        "rooms.id contracts.status bookings.hold_expires_at invoices.status payments.allocations payments.kind tickets.status bookings.status bookings.appointments contracts.ends_on settings.reminder_enabled"
+      ]
+    ]
+  }
+}

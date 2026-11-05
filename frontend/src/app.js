@@ -2,6 +2,7 @@
 import { config } from './config.js';
 import { currentLocation, defineRoutes, match, navigate, rememberCurrent, startRouter } from './router/router.js';
 import { NOT_FOUND, ROUTES } from './router/routes.js';
+import { isAdminPath, loginRedirect } from './services/access.js';
 import { authState } from './services/auth-state.js';
 import { session } from './services/session.js';
 import { applyLayoutTheme, mountAdminShell, mountAuthShell, mountCustomerShell } from './components/shells.js';
@@ -22,8 +23,7 @@ function mountShell(layout) {
   const key = `${layout}:${session.user?.id || 'guest'}:${session.organization?.id || ''}`;
   if (shell && shellKey === key) return shell;
   applyLayoutTheme(layout);
-  if (layout === 'admin') shell = mountAdminShell(appRoot, { area: 'admin' });
-  else if (layout === 'system') shell = mountAdminShell(appRoot, { area: 'system' });
+  if (layout === 'admin') shell = mountAdminShell(appRoot);
   else if (layout === 'auth') shell = mountAuthShell(appRoot);
   else shell = mountCustomerShell(appRoot);
   shellKey = key;
@@ -43,12 +43,7 @@ function runCleanups() {
 
 function guard(route, location) {
   const next = `${location.path}${toQueryString(location.query)}`;
-  if (route.auth === 'guest' && session.isAuthenticated) return session.homePath();
-  if (['staff', 'tenant', 'system'].includes(route.auth) && !session.isAuthenticated) return `/login?next=${encodeURIComponent(next)}`;
-  if (route.auth === 'staff' && !session.isStaff) return session.homePath();
-  if (route.auth === 'tenant' && !session.isTenant) return session.homePath();
-  if (route.auth === 'system' && !session.isSystemAdmin) return session.homePath();
-  return null;
+  return loginRedirect(route.auth, session.user, next);
 }
 
 async function render() {
@@ -124,7 +119,7 @@ export async function startApp() {
     if (!session.isAuthenticated) return;
     session.clearLocal();
     const loc = currentLocation();
-    await navigate(`/login?expired=1&next=${encodeURIComponent(loc.path)}`, { replace: true, force: true });
+    await navigate(`${isAdminPath(loc.path) ? '/admin/login' : '/login'}?expired=1&next=${encodeURIComponent(loc.path)}`, { replace: true, force: true });
   });
   document.addEventListener('sr:data-changed', () => shell?.invalidateCounts());
   await session.init();

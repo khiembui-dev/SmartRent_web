@@ -2,6 +2,7 @@
 // Dữ liệu được lưu trong localStorage để thao tác giữ nguyên khi tải lại; resetData() xóa và tạo lại từ seed.
 
 import { buildSeed, SEED_VERSION } from './seed.js';
+import { migrateAccounts } from './accounts.js';
 
 const STORAGE_KEY = 'smartrent.mock.db';
 const MAX_PERSISTED_FILE_BYTES = 180 * 1024;
@@ -16,6 +17,7 @@ function load() {
     if (text) {
       const parsed = JSON.parse(text);
       if (parsed?.meta?.seedVersion === SEED_VERSION) return parsed;
+      if (['v7-2026-11-01', 'v8-two-roles-2026-11-04'].includes(parsed?.meta?.seedVersion)) return migrateAccounts(parsed, SEED_VERSION);
     }
   } catch {
     // dữ liệu hỏng hoặc localStorage bị chặn: tạo lại

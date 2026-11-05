@@ -41,7 +41,7 @@ function bookingBox(room, myRequest) {
       <a class="btn btn-outline-primary w-100" href="${link(`/register?next=${next}`)}">Tạo tài khoản</a>
     </div>`;
   }
-  if (!session.isTenant) return html`<div class="cu-book-state"><p>Tài khoản quản lý không đặt lịch ở đây. Đăng nhập bằng tài khoản khách để đặt lịch.</p></div>`;
+  if (!session.isCustomer) return html`<div class="cu-book-state"><p>Tài khoản quản lý không đặt lịch ở đây. Đăng nhập bằng tài khoản khách để đặt lịch.</p></div>`;
   if (myRequest) return bookedState(myRequest);
   return html`<form novalidate data-booking>${formAlert()}<div data-booking-fields></div>
     <button type="submit" class="btn btn-primary w-100 mt-3">${icon('calendar-check')} Đặt lịch xem phòng</button>
@@ -63,7 +63,7 @@ export default async function RoomDetailPage(ctx) {
   let room;
   let requests = [];
   try {
-    [room, requests] = await Promise.all([publicApi.room(ctx.params.slug), session.isTenant ? portalApi.inquiries() : []]);
+    [room, requests] = await Promise.all([publicApi.room(ctx.params.slug), session.isCustomer ? portalApi.inquiries() : []]);
   } catch (error) {
     if (ctx.signal.aborted) return;
     ctx.setTitle('Không tìm thấy phòng');

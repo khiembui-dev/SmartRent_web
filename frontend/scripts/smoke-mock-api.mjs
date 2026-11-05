@@ -2,6 +2,9 @@
 // và đối chiếu số liệu với đặc tả. Chạy: npm run test:mock
 // Mock dùng localStorage → script tạo bộ nhớ tạm trong RAM, không đụng dữ liệu trình duyệt.
 
+// Bỏ độ trễ mạng giả khi chạy kiểm thử; không thay đổi đồng hồ nghiệp vụ.
+const schedule = globalThis.setTimeout;
+globalThis.setTimeout = (fn, _ms, ...args) => schedule(fn, 0, ...args);
 const memory = new Map();
 globalThis.localStorage = {
   getItem: (k) => (memory.has(k) ? memory.get(k) : null),
@@ -71,7 +74,7 @@ async function expectError(promise, status, code, label) {
 }
 
 async function login(email) {
-  const res = await client().post('/api/v1/auth/login', { email, password: DEMO_PASSWORD });
+  const res = await client().post('/api/v1/auth/login', { email, password: DEMO_PASSWORD, audience: email === 'ha.chutro@example.com' ? 'admin' : 'customer' });
   const me = await client(res.accessToken).get('/api/v1/me');
   return { token: res.accessToken, me, api: client(res.accessToken, me.organizations[0]?.id) };
 }
@@ -121,7 +124,7 @@ const myInquiries = await newApi.get('/api/v1/portal/inquiries');
 check(myInquiries.length === 1 && myInquiries[0].status === 'new' && myInquiries[0].slug === slugA204, 'Khách xem lại được lịch đã đặt', myInquiries);
 const hoaBinhRoom = rooms.items.find((r) => r.roomCode === 'H101');
 await newApi.post('/api/v1/portal/inquiries', { slug: hoaBinhRoom.slug, preferredViewingAt: viewingAt, occupants: 1 });
-check((await newApi.get('/api/v1/me')).tenantProfiles.length === 2, 'Đặt phòng đơn vị khác tạo thêm hồ sơ ở đơn vị đó');
+check((await newApi.get('/api/v1/me')).tenantProfiles.length === 1, 'Đặt phòng cơ sở khác dùng cùng hồ sơ khách');
 const contactInfo = await pub.get('/api/v1/public/contact-info');
 check(contactInfo.organizations[0].phone === '0900000001' && contactInfo.organizations[0].email === 'ha.chutro@example.com', 'Liên hệ lấy từ tài khoản chủ trọ', contactInfo.organizations[0]);
 
@@ -129,7 +132,7 @@ check(contactInfo.organizations[0].phone === '0900000001' && contactInfo.organiz
 const owner = await login('ha.chutro@example.com');
 const api = owner.api;
 const dash = await api.get('/api/v1/dashboard');
-check(dash.rooms.total === 30, 'Dashboard đếm đúng 30 phòng của đơn vị An Cư', dash.rooms.total);
+check(dash.rooms.total === 34, 'Dashboard đếm đủ 34 phòng trong hệ thống', dash.rooms.total);
 check(dash.tasks.find((t) => t.key === 'pending_payments').count >= 1, 'Dashboard có việc "chờ xác minh"');
 
 const invoices = await api.get('/api/v1/invoices', { q: 'HD-BT2609-001' });
@@ -279,14 +282,6 @@ check(tClosed.status === 'closed', 'Khách xác nhận đóng ticket');
 const tReopen = await api.post(`/api/v1/tickets/${ticket.id}/transitions`, { action: 'reopen', reason: 'Khách báo vẫn rỉ nước' });
 check(tReopen.status === 'accepted' && tReopen.events.some((e) => e.kind === 'reopen'), 'Mở lại ticket có lịch sử');
 
-// ---------------------------------------------------------------- nhân viên (phạm vi 1 cơ sở, không có quyền xác nhận tiền)
-const staff = await login('lan.nhanvien@example.com');
-const staffRooms = await staff.api.get('/api/v1/rooms', { pageSize: 100 });
-check(staffRooms.items.every((r) => r.property.code === 'BT'), 'Nhân viên chỉ thấy phòng cơ sở được giao', staffRooms.items.map((r) => r.property.code));
-const tdRoom = (await api.get('/api/v1/rooms', { q: 'B104' })).items[0];
-await expectError(staff.api.get(`/api/v1/rooms/${tdRoom.id}`), 404, 'not_found', 'Đổi ID trên URL sang cơ sở khác bị chặn');
-await expectError(staff.api.post(`/api/v1/payments/${hungUnapplied.id}/reversals`, { kind: 'correction', amount: 1, reason: 'Thử quyền' }), 403, 'forbidden', 'Nhân viên không có quyền đảo tiền');
-
 // ---------------------------------------------------------------- khách thuê và người ở cùng
 const tenant = await login('an.khachthue@example.com');
 const tApi = client(tenant.token);
@@ -342,34 +337,23 @@ check(renewalReq.status === 'pending', 'Đề nghị gia hạn ở trạng thái
 await expectError(tApi.post('/api/v1/portal/requests', { tenancyId: anTenancy.id, requestType: 'renewal', desiredOn: '2027-12-31' }), 409, 'request_pending', 'Không gửi trùng đề nghị cùng loại đang chờ');
 await expectError(rApi.post('/api/v1/portal/requests', { tenancyId: anTenancy.id, requestType: 'checkout', desiredOn: '2027-01-31' }), 403, 'forbidden', 'Người ở cùng không gửi đề nghị trả phòng');
 
-// ---------------------------------------------------------------- phân quyền: không cấp quyền cao hơn mình
-const manager = await login('quan.quanly@example.com');
-const ownerRole = (await api.get('/api/v1/roles')).find((x) => x.code === 'owner');
-await expectError(manager.api.post('/api/v1/members/invitations', { displayName: 'Thử', email: 'thu.leo.quyen@example.com', roleIds: [ownerRole.id], propertyScope: 'all' }), 403, null, 'Quản lý không mời được người với vai trò chủ trọ');
-
-// ---------------------------------------------------------------- quản trị hệ thống
-const admin = await login('admin@smartrent.example.com');
-const orgs = await client(admin.token).get('/api/v1/system/organizations');
-check(orgs.items.length === 2, 'Quản trị hệ thống thấy 2 đơn vị', orgs.items.length);
-
 // ================================================================ phủ toàn bộ route mock
 // Mỗi thao tác dưới đây chạy trên dữ liệu đã thay đổi bởi các bước trên; mục tiêu là mọi route trả kết quả thành công
 // ít nhất một lần với dữ liệu hợp lệ (lỗi nghiệp vụ đã kiểm ở phần trước).
 const plusDays = (iso, n) => new Date(Date.parse(`${iso}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const inHours = (h) => new Date(Date.now() + h * 3600000).toISOString();
-const adminApi = client(admin.token);
 const pngData = 'data:image/png;base64,iVBORw0KGgo=';
 
 // Công khai và xác thực
 await pub.post('/api/v1/auth/forgot-password', { email: 'bich.oghep@example.com' });
 await pub.post('/api/v1/auth/reset-password', { token: 'demo-reset-token', newPassword: DEMO_PASSWORD });
-const techA = await login('minh.kythuat@example.com');
-const techB = await login('minh.kythuat@example.com');
+const techA = await login('bich.oghep@example.com');
+const techB = await login('bich.oghep@example.com');
 const techAUser = client(techA.token);
 await techAUser.post('/api/v1/auth/refresh', {});
 await techAUser.post('/api/v1/me/change-password', { currentPassword: DEMO_PASSWORD, newPassword: 'demo12345' });
 await techAUser.post('/api/v1/me/change-password', { currentPassword: 'demo12345', newPassword: DEMO_PASSWORD });
-const techC = await login('minh.kythuat@example.com');
+const techC = await login('bich.oghep@example.com');
 const sessions = await techAUser.get('/api/v1/me/sessions');
 check(sessions.length === 2, 'Đổi mật khẩu thu hồi các phiên khác', sessions.length);
 await techAUser.del(`/api/v1/me/sessions/${sessions.find((x) => !x.isCurrent).id}`);
@@ -530,24 +514,11 @@ await api.post(`/api/v1/tenancies/${transfer.newTenancy.id}/deposit/transfers`, 
 // Ticket, thông báo
 const ticketCat = catalog.ticketCategories[0];
 const staffTicket = await api.post('/api/v1/tickets', { roomId: k01.id, categoryId: ticketCat.id, title: 'Kiểm tra ổ điện trước khi cho thuê', description: 'Ổ điện tường phía bắc', priority: 'low' }, 'smoke-ticket-k01');
-const membersList = await api.get('/api/v1/members', { pageSize: 50 });
-const techMember = membersList.items.find((m) => m.user.email === 'minh.kythuat@example.com');
-await api.post(`/api/v1/tickets/${staffTicket.id}/assign`, { userId: techMember.user.id, note: 'Nhờ kiểm tra trong tuần' });
+await api.post(`/api/v1/tickets/${staffTicket.id}/assign`, { userId: owner.me.user.id, note: 'Chủ trọ xử lý' });
 const myNotifications = await api.get('/api/v1/notifications', { unread: 'true' });
 if (myNotifications.items[0]) await api.post(`/api/v1/notifications/${myNotifications.items[0].id}/read`, {});
 await api.post('/api/v1/notifications/read-all', {});
 check((await api.get('/api/v1/notifications/unread-count')).unreadCount === 0, 'Đánh dấu đã đọc tất cả');
-
-// Nhân sự, vai trò
-const roles = await api.get('/api/v1/roles');
-const staffRole = roles.find((x) => x.code === 'staff');
-const invited = await api.post('/api/v1/members/invitations', { displayName: 'Nhân sự mới', email: 'nhansu.moi@example.com', roleIds: [staffRole.id], propertyScope: 'assigned', propertyIds: [kt.id] });
-await api.put(`/api/v1/members/${invited.id}`, { roleIds: [staffRole.id], propertyScope: 'all' });
-await api.post(`/api/v1/members/${invited.id}/resend-invitation`, {});
-await api.post(`/api/v1/members/${techMember.id}/suspend`, { reason: 'Nghỉ phép dài hạn' });
-await api.post(`/api/v1/members/${techMember.id}/activate`, {});
-const accountant = await api.post('/api/v1/roles', { code: 'ke-toan', name: 'Kế toán', permissions: ['invoices.read', 'payments.read'] });
-await api.put(`/api/v1/roles/${accountant.id}`, { name: 'Kế toán', permissions: ['invoices.read', 'payments.read', 'reports.read'] });
 
 // Cấu hình, tác vụ nền, xuất, tích hợp
 const orgSettings = await api.get('/api/v1/settings/organization');
@@ -582,20 +553,8 @@ await api.get(`/api/v1/ai/conversations/${conv.id}`);
 await tApi.post(`/api/v1/portal/tickets/${pTicket.id}/reopen`, { reason: 'Ổ cắm lại lỏng sau hai ngày' });
 await tApi.post(`/api/v1/portal/tickets/${pTicket.id}/messages`, { body: 'Tối nay em có nhà' });
 
-// Quản trị hệ thống, quyền hỗ trợ
-const newOrg = await adminApi.post('/api/v1/system/organizations', { code: 'KTHU', name: 'Đơn vị kiểm thử', ownerName: 'Chủ Thử', ownerEmail: 'chu.thu@example.com' });
-check(newOrg.propertyCount === 0 && newOrg.memberCount === 0, 'Đơn vị mới không có dữ liệu mẫu', newOrg);
-await adminApi.post(`/api/v1/system/organizations/${newOrg.id}/suspend`, { reason: 'Tạm ngừng để kiểm thử' });
-await adminApi.post(`/api/v1/system/organizations/${newOrg.id}/activate`, {});
-const sysUsers = await adminApi.get('/api/v1/system/users', { q: 'chu.thu' });
-await adminApi.post(`/api/v1/system/users/${sysUsers.items[0].id}/lock`, { reason: 'Khóa để kiểm thử' });
-await adminApi.post(`/api/v1/system/users/${sysUsers.items[0].id}/unlock`, {});
-await adminApi.post('/api/v1/system/backups', { kind: 'backup' });
-const grant = await api.post('/api/v1/support-access', { reason: 'Nhờ hỗ trợ kiểm tra báo cáo', hours: 2 });
-await api.post(`/api/v1/support-access/${grant.id}/revoke`, {});
-
 // GET còn lại: danh sách không tham số theo đúng đối tượng gọi, rồi chi tiết theo ID thật.
-const byAuth = { public: pub, tenant: tApi, system: adminApi, user: api, staff: api };
+const byAuth = { public: pub, customer: tApi, user: api, admin: api };
 for (const route of ROUTES.filter((x) => x.method === 'GET' && !x.path.includes(':') && !hit.has(x.key))) await byAuth[route.auth].get(route.path, { pageSize: 5 });
 const firstId = async (listPath, field = 'id', who = api) => {
   const res = await who.get(listPath, { pageSize: 1 });
@@ -701,7 +660,7 @@ check(Boolean(anLogin.accessToken), 'Khách đăng nhập bằng mật khẩu m�
 const me2 = await a2.put('/api/v1/me/profile', { displayName: 'Trần Thu Hà', email: 'ha.chutro@example.com', phone: '0912345678' });
 check(me2.user.phone === '0912345678', 'Admin cập nhật thông tin tài khoản', me2.user.phone);
 check((await pub.get('/api/v1/public/contact-info')).organizations[0].phone === '0912345678', 'Đổi điện thoại ở Cài đặt admin hiện ngay ở trang Liên hệ');
-await expectError(a2.put('/api/v1/me/profile', { displayName: 'Trần Thu Hà', email: 'quan.quanly@example.com' }), 409, 'email_taken', 'Email đã thuộc tài khoản khác bị chặn');
+await expectError(a2.put('/api/v1/me/profile', { displayName: 'Trần Thu Hà', email: 'an.khachthue@example.com' }), 409, 'email_taken', 'Email đã thuộc tài khoản khác bị chặn');
 
 const sched = await a2.get('/api/v1/settings/billing-schedule');
 check(sched.meterReadingDay === 25 && sched.invoiceCreateDay === 28, 'Đọc lịch nhắc tính tiền', sched);

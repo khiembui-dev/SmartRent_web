@@ -1,1103 +1,385 @@
--- SmartRent | PostgreSQL 16+ | UTF-8 | chuẩn 3NF
--- Thiết kế theo đúng tính năng website: 4 trang công khai, trang khách, 10 khu quản trị, khu quản trị hệ thống.
--- Cài một lần vào database mới. Lỗi bất kỳ sẽ rollback toàn bộ file.
+-- SmartRent: baseline 13 bảng thu gọn theo yêu cầu ngày 04/11/2026.
+-- Cài vào database trống. Danh sách chi tiết nằm trong JSONB của hồ sơ chính.
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS btree_gist;
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
-CREATE EXTENSION IF NOT EXISTS unaccent;
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA smartrent;
-SET LOCAL search_path = smartrent, public;
-
--- Chuẩn hóa để tìm kiếm không phân biệt hoa thường, không dấu: "Đỗ Thị Bích" -> "do thi bich".
-CREATE FUNCTION normalize_text(p_text text) RETURNS text
-LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
-  SELECT lower(public.unaccent('public.unaccent'::regdictionary, coalesce(p_text, '')))
+SET search_path=smartrent,public;
+CREATE FUNCTION invoice_total(items jsonb) RETURNS numeric LANGUAGE sql IMMUTABLE STRICT AS $$
+ SELECT coalesce(sum(round((x->>'quantity')::numeric*(x->>'unitPrice')::numeric*
+ coalesce((x->>'sign')::integer,1)*coalesce((x->>'numerator')::integer,1)/
+ coalesce((x->>'denominator')::integer,1))),0) FROM jsonb_array_elements(items) x
 $$;
-
--- ============================================================================
--- 1. Tài khoản đăng nhập (đúng cấu trúc ASP.NET Core Identity, khóa Guid)
--- ============================================================================
 CREATE TABLE users (
-    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_name               varchar(256),
-    normalized_user_name    varchar(256),
-    email                   varchar(256),
-    normalized_email        varchar(256),
-    email_confirmed         boolean NOT NULL DEFAULT false,
-    password_hash           text,
-    security_stamp          text,
-    concurrency_stamp       text,
-    phone_number            text,
-    phone_number_confirmed  boolean NOT NULL DEFAULT false,
-    two_factor_enabled      boolean NOT NULL DEFAULT false,
-    lockout_end             timestamptz,
-    lockout_enabled         boolean NOT NULL DEFAULT true,
-    access_failed_count     integer NOT NULL DEFAULT 0 CHECK (access_failed_count >= 0),
-    display_name            varchar(200) NOT NULL,
-    avatar_file_id          uuid,
-    is_active               boolean NOT NULL DEFAULT true,
-    last_login_at           timestamptz,
-    created_at              timestamptz NOT NULL DEFAULT now()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  role varchar(5) NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')),
+  email text CHECK (email IS NULL OR btrim(email) <> ''),
+  password_hash text CHECK (password_hash IS NULL OR length(password_hash) >= 20),
+  display_name text NOT NULL CHECK (btrim(display_name) <> ''),
+  code text UNIQUE,
+  phone text,
+  login_enabled boolean NOT NULL DEFAULT false,
+  date_of_birth date,
+  address_line text,
+  locality text,
+  province text,
+  emergency_contact_name text,
+  emergency_contact_phone text,
+  notes text,
+  identity_documents jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(identity_documents)='array'),
+  avatar_file_id uuid,
+  is_active boolean NOT NULL DEFAULT true,
+  email_verified_at timestamptz,
+  accepted_terms_at timestamptz,
+  security_stamp uuid NOT NULL DEFAULT gen_random_uuid(),
+  failed_login_count integer NOT NULL DEFAULT 0 CHECK (failed_login_count >= 0),
+  locked_until timestamptz,
+  last_login_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (NOT login_enabled OR (email IS NOT NULL AND password_hash IS NOT NULL)),
+  CHECK (role<>'admin' OR login_enabled)
 );
-COMMENT ON TABLE users IS 'Tài khoản đăng nhập của cả nhân sự và khách. Mật khẩu chỉ lưu dạng băm. Chủ trọ sửa email, điện thoại ở Cài đặt và các số này hiện ở trang Liên hệ.';
-CREATE UNIQUE INDEX ux_users_name ON users(normalized_user_name) WHERE normalized_user_name IS NOT NULL;
-CREATE UNIQUE INDEX ux_users_email ON users(normalized_email) WHERE normalized_email IS NOT NULL;
 
-CREATE TABLE roles (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    name              varchar(256),
-    normalized_name   varchar(256),
-    concurrency_stamp text
+CREATE TABLE auth_tokens (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id),
+  kind text NOT NULL CHECK (kind IN ('session','password_reset','invitation')),
+  token_hash text NOT NULL UNIQUE CHECK (length(token_hash) >= 32),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  revoked_at timestamptz,
+  user_agent text,
+  ip_address inet,
+  CHECK (expires_at > created_at)
 );
-COMMENT ON TABLE roles IS 'Vai trò toàn hệ thống của Identity, hiện chỉ có SystemAdmin. Không dùng để cấp quyền trong đơn vị.';
-CREATE UNIQUE INDEX ux_roles_name ON roles(normalized_name) WHERE normalized_name IS NOT NULL;
 
-CREATE TABLE user_roles (
-    user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role_id uuid NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, role_id)
+CREATE TABLE files (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  uploaded_by uuid REFERENCES users(id),
+  storage_key text NOT NULL UNIQUE,
+  file_name text NOT NULL,
+  content_type text NOT NULL,
+  byte_size bigint NOT NULL CHECK (byte_size >= 0),
+  visibility text NOT NULL DEFAULT 'private' CHECK (visibility IN ('public','private')),
+  purpose text NOT NULL CHECK (purpose IN ('avatar','room_image','contract_signed','contract_attachment','payment_proof','ticket','other')),
+  scan_status text NOT NULL DEFAULT 'pending' CHECK (scan_status IN ('pending','clean','rejected','missing')),
+  sha256 text,
+  created_at timestamptz NOT NULL DEFAULT now()
 );
-COMMENT ON TABLE user_roles IS 'Gán vai trò toàn hệ thống cho tài khoản (N-N users, roles).';
 
-CREATE TABLE user_claims (
-    id          integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id     uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    claim_type  text,
-    claim_value text
+CREATE TABLE settings (
+  id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  business_name text NOT NULL DEFAULT 'SmartRent',
+  meter_reading_day smallint NOT NULL DEFAULT 25 CHECK (meter_reading_day BETWEEN 1 AND 28),
+  invoice_create_day smallint NOT NULL DEFAULT 28 CHECK (invoice_create_day BETWEEN 1 AND 28),
+  reminder_enabled boolean NOT NULL DEFAULT true,
+  -- Trang khách chỉ hiển thị một tài khoản nhận tiền mặc định; chưa có giao diện quản lý ngân hàng.
+  bank_name text,
+  bank_account_number text,
+  bank_account_name text,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by uuid REFERENCES users(id),
+  CHECK (invoice_create_day >= meter_reading_day),
+  CHECK (num_nonnulls(bank_name,bank_account_number,bank_account_name) IN (0,3))
 );
-COMMENT ON TABLE user_claims IS 'Claim của tài khoản, bảng chuẩn của Identity.';
 
-CREATE TABLE role_claims (
-    id          integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    role_id     uuid NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    claim_type  text,
-    claim_value text
-);
-COMMENT ON TABLE role_claims IS 'Claim của vai trò toàn hệ thống, bảng chuẩn của Identity.';
-
-CREATE TABLE user_logins (
-    login_provider        varchar(128) NOT NULL,
-    provider_key          varchar(128) NOT NULL,
-    provider_display_name text,
-    user_id               uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    PRIMARY KEY (login_provider, provider_key)
-);
-COMMENT ON TABLE user_logins IS 'Đăng nhập qua nhà cung cấp ngoài, bảng chuẩn của Identity.';
-
-CREATE TABLE user_tokens (
-    user_id        uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    login_provider varchar(128) NOT NULL,
-    name           varchar(128) NOT NULL,
-    value          text,
-    PRIMARY KEY (user_id, login_provider, name)
-);
-COMMENT ON TABLE user_tokens IS 'Token của Identity, gồm token đặt lại mật khẩu.';
-
-CREATE TABLE user_sessions (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id            uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    refresh_token_hash varchar(128) NOT NULL UNIQUE,
-    created_at         timestamptz NOT NULL DEFAULT now(),
-    last_seen_at       timestamptz,
-    expires_at         timestamptz NOT NULL,
-    revoked_at         timestamptz,
-    replaced_by_id     uuid REFERENCES user_sessions(id),
-    ip_address         inet,
-    user_agent         text,
-    CHECK (expires_at > created_at)
-);
-COMMENT ON TABLE user_sessions IS 'Phiên đăng nhập, refresh token chỉ lưu băm. Trang tài khoản liệt kê và thu hồi phiên từ bảng này.';
-
--- ============================================================================
--- 2. Đơn vị chủ trọ, nhân sự và phân quyền
--- ============================================================================
-CREATE TABLE organizations (
-    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code             varchar(40) NOT NULL UNIQUE,
-    name             varchar(250) NOT NULL,
-    legal_name       varchar(250),
-    tax_code         varchar(30),
-    phone            varchar(30),
-    email            varchar(256),
-    is_active        boolean NOT NULL DEFAULT true,
-    suspended_reason text,
-    created_at       timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE organizations IS 'Đơn vị chủ trọ. Quản trị hệ thống tạo, tạm ngưng hoặc mở lại đơn vị.';
-
-CREATE TABLE organization_settings (
-    organization_id          uuid PRIMARY KEY REFERENCES organizations(id) ON DELETE CASCADE,
-    timezone                 varchar(60) NOT NULL DEFAULT 'Asia/Ho_Chi_Minh',
-    meter_reading_day        smallint NOT NULL DEFAULT 25 CHECK (meter_reading_day BETWEEN 1 AND 28),
-    invoice_create_day       smallint NOT NULL DEFAULT 28 CHECK (invoice_create_day BETWEEN 1 AND 28),
-    billing_reminder_enabled boolean NOT NULL DEFAULT true,
-    CHECK (invoice_create_day >= meter_reading_day)
-);
-COMMENT ON TABLE organization_settings IS 'Lịch nhắc ở Cài đặt: ngày nhập số điện nước và ngày tạo hóa đơn hằng tháng.';
-
-CREATE TABLE organization_memberships (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    user_id         uuid NOT NULL REFERENCES users(id),
-    status          varchar(20) NOT NULL DEFAULT 'active' CHECK (status IN ('invited','active','suspended','left')),
-    property_scope  varchar(10) NOT NULL DEFAULT 'assigned' CHECK (property_scope IN ('all','assigned')),
-    joined_at       timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (organization_id, user_id)
-);
-COMMENT ON TABLE organization_memberships IS 'Nhân sự của đơn vị: chủ trọ, quản lý, nhân viên; property_scope quyết định xem mọi cơ sở hay chỉ cơ sở được giao.';
-
-CREATE TABLE permissions (
-    code        varchar(100) PRIMARY KEY,
-    description text NOT NULL
-);
-COMMENT ON TABLE permissions IS 'Danh mục quyền nhỏ mà router và API đang kiểm tra, ví dụ invoices.issue, payments.confirm.';
-
-CREATE TABLE business_roles (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    code            varchar(50) NOT NULL,
-    name            varchar(150) NOT NULL,
-    is_system       boolean NOT NULL DEFAULT false,
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE business_roles IS 'Vai trò trong một đơn vị. Mặc định có Chủ trọ, Quản lý, Nhân viên; đơn vị có thể tự tạo thêm.';
-
-CREATE TABLE business_role_permissions (
-    role_id         uuid NOT NULL REFERENCES business_roles(id) ON DELETE CASCADE,
-    permission_code varchar(100) NOT NULL REFERENCES permissions(code),
-    PRIMARY KEY (role_id, permission_code)
-);
-COMMENT ON TABLE business_role_permissions IS 'Quyền của từng vai trò (N-N).';
-
-CREATE TABLE membership_roles (
-    membership_id uuid NOT NULL REFERENCES organization_memberships(id) ON DELETE CASCADE,
-    role_id       uuid NOT NULL REFERENCES business_roles(id),
-    PRIMARY KEY (membership_id, role_id)
-);
-COMMENT ON TABLE membership_roles IS 'Vai trò của từng nhân sự (N-N).';
-
-CREATE TABLE support_access_grants (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    user_id         uuid NOT NULL REFERENCES users(id),
-    granted_by      uuid NOT NULL REFERENCES users(id),
-    reason          text NOT NULL CHECK (btrim(reason) <> ''),
-    starts_at       timestamptz NOT NULL,
-    expires_at      timestamptz NOT NULL,
-    revoked_at      timestamptz,
-    CHECK (expires_at > starts_at)
-);
-COMMENT ON TABLE support_access_grants IS 'Quyền hỗ trợ có lý do, có hạn do chủ trọ cấp cho quản trị hệ thống. Hiện ở trang Hỗ trợ và vận hành.';
-
--- ============================================================================
--- 3. Tệp tải lên
--- ============================================================================
-CREATE TABLE stored_files (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid REFERENCES organizations(id),
-    storage_key     text NOT NULL UNIQUE,
-    original_name   text NOT NULL,
-    content_type    varchar(150) NOT NULL,
-    byte_size       bigint NOT NULL DEFAULT 0 CHECK (byte_size >= 0),
-    sha256          char(64),
-    purpose         varchar(30) NOT NULL DEFAULT 'other' CHECK (purpose IN
-                      ('identity_front','identity_back','contract_signed','contract_attachment','payment_proof',
-                       'handover','ticket','room_image','room_video','avatar','other')),
-    visibility      varchar(10) NOT NULL DEFAULT 'private' CHECK (visibility IN ('private','public')),
-    scan_status     varchar(15) NOT NULL DEFAULT 'pending' CHECK (scan_status IN ('pending','clean','rejected','missing')),
-    uploaded_by     uuid REFERENCES users(id),
-    created_at      timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE stored_files IS 'Thông tin tệp; nội dung tệp nằm ở kho lưu trữ. Tệp private chỉ tải qua đường dẫn có hạn sau khi kiểm tra quyền.';
-ALTER TABLE users ADD CONSTRAINT users_avatar_file_fk FOREIGN KEY (avatar_file_id) REFERENCES stored_files(id);
-
--- ============================================================================
--- 4. Cơ sở và phòng
--- ============================================================================
 CREATE TABLE properties (
-    id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id       uuid NOT NULL REFERENCES organizations(id),
-    code                  varchar(40) NOT NULL,
-    name                  varchar(200) NOT NULL,
-    address_line          text NOT NULL,
-    locality              varchar(150) NOT NULL,
-    province              varchar(100) NOT NULL,
-    latitude              numeric(10,7) CHECK (latitude BETWEEN -90 AND 90),
-    longitude             numeric(10,7) CHECK (longitude BETWEEN -180 AND 180),
-    description           text,
-    contact_name          varchar(200),
-    phone                 varchar(30),
-    email                 varchar(256),
-    invoice_day           smallint NOT NULL DEFAULT 28 CHECK (invoice_day BETWEEN 1 AND 31),
-    due_after_days        smallint NOT NULL DEFAULT 7 CHECK (due_after_days BETWEEN 0 AND 365),
-    contract_warning_days smallint NOT NULL DEFAULT 30 CHECK (contract_warning_days >= 0),
-    proration_policy      varchar(20) NOT NULL DEFAULT 'actual_days' CHECK (proration_policy IN ('actual_days','full_month')),
-    is_active             boolean NOT NULL DEFAULT true,
-    created_at            timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (organization_id, code)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  name text NOT NULL CHECK (btrim(name) <> ''),
+  address_line text NOT NULL,
+  locality text,
+  province text NOT NULL,
+  description text,
+  is_active boolean NOT NULL DEFAULT true,
+  inactive_reason text,
+  invoice_day smallint NOT NULL DEFAULT 1 CHECK (invoice_day BETWEEN 1 AND 31),
+  due_after_days smallint NOT NULL DEFAULT 5 CHECK (due_after_days BETWEEN 0 AND 365),
+  proration_policy text NOT NULL DEFAULT 'actual_days' CHECK (proration_policy IN ('actual_days','full_month')),
+  amenity_options jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(amenity_options)='array'),
+  rates jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(rates)='array'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (is_active OR nullif(btrim(inactive_reason),'') IS NOT NULL)
 );
-COMMENT ON TABLE properties IS 'Cơ sở (nhà trọ). Địa chỉ nhập tay; invoice_day và due_after_days là mặc định khi lập hóa đơn. Giá điện nước, phí nằm ở charge_rates.';
-
-CREATE TABLE membership_properties (
-    membership_id uuid NOT NULL REFERENCES organization_memberships(id) ON DELETE CASCADE,
-    property_id   uuid NOT NULL REFERENCES properties(id),
-    PRIMARY KEY (membership_id, property_id)
-);
-COMMENT ON TABLE membership_properties IS 'Cơ sở được giao cho nhân sự có property_scope = assigned (N-N).';
-
-CREATE TABLE room_types (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    code            varchar(40) NOT NULL,
-    name            varchar(100) NOT NULL,
-    description     text,
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE room_types IS 'Loại phòng, dùng để lọc ở trang Thuê phòng. Form admin không hỏi loại nên phòng mới nhận loại STANDARD của đơn vị.';
 
 CREATE TABLE rooms (
-    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    property_id      uuid NOT NULL REFERENCES properties(id),
-    room_type_id     uuid NOT NULL REFERENCES room_types(id),
-    code             varchar(40) NOT NULL,
-    name             varchar(150) NOT NULL,
-    floor_label      varchar(30),
-    area_m2          numeric(8,2) NOT NULL CHECK (area_m2 > 0),
-    capacity         smallint NOT NULL CHECK (capacity > 0),
-    description      text,
-    rules_text       text,
-    required_deposit numeric(18,0) NOT NULL DEFAULT 0 CHECK (required_deposit >= 0),
-    operating_status varchar(15) NOT NULL DEFAULT 'available' CHECK (operating_status IN ('available','maintenance','inactive')),
-    created_at       timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (property_id, code)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  property_id uuid NOT NULL REFERENCES properties(id),
+  code text NOT NULL,
+  name text NOT NULL,
+  floor_label text,
+  area_m2 numeric(7,2) NOT NULL CHECK (area_m2 BETWEEN 1 AND 500),
+  capacity smallint NOT NULL CHECK (capacity BETWEEN 1 AND 20),
+  -- Loại phòng chỉ để hiển thị/lọc, không có trang quản lý danh mục loại phòng.
+  room_type_code text NOT NULL DEFAULT 'STANDARD',
+  room_type_name text NOT NULL DEFAULT 'Phòng tiêu chuẩn',
+  description text,
+  rules_text text,
+  required_deposit numeric(16,0) NOT NULL DEFAULT 0 CHECK (required_deposit >= 0),
+  operating_status text NOT NULL DEFAULT 'available' CHECK (operating_status IN ('available','maintenance','inactive')),
+  status_reason text,
+  -- Tin đăng là quan hệ 1:1 với phòng, lưu ngay trên phòng.
+  listing_slug text UNIQUE,
+  listing_title text,
+  listing_description text,
+  listing_status text NOT NULL DEFAULT 'hidden' CHECK (listing_status IN ('hidden','draft','published')),
+  video_url text,
+  published_at timestamptz,
+  amenities jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(amenities)='array'),
+  images jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(images)='array'),
+  rates jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(rates)='array'),
+  status_history jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(status_history)='array'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (code ~ '^[A-Za-z0-9-]{1,20}$'),
+  CHECK (listing_status <> 'published' OR (listing_slug IS NOT NULL AND listing_title IS NOT NULL AND published_at IS NOT NULL))
 );
-COMMENT ON TABLE rooms IS 'Phòng. operating_status chỉ nói phòng được khai thác hay không; Đã thuê suy từ tenancies qua v_room_status, không lưu ở đây.';
-COMMENT ON COLUMN rooms.required_deposit IS 'Tiền cọc đề xuất khi chào thuê. Cọc đã thỏa thuận ở contract_versions, cọc thực thu ở deposit_entries.';
 
-CREATE TABLE room_status_events (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id    uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    old_status varchar(15),
-    new_status varchar(15) NOT NULL,
-    reason     text NOT NULL CHECK (btrim(reason) <> ''),
-    changed_by uuid REFERENCES users(id),
-    changed_at timestamptz NOT NULL DEFAULT now()
+CREATE TABLE bookings (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  room_id uuid REFERENCES rooms(id),
+  contract_id uuid,
+  kind text NOT NULL DEFAULT 'viewing' CHECK(kind IN ('viewing','profile_change','renewal','checkout','transfer')),
+  status text NOT NULL DEFAULT 'new' CHECK(status IN ('new','accepted','consulting','scheduled','completed','no_show','pending','approved','converted','rejected','cancelled')),
+  contact_name text,
+  phone text,
+  email text,
+  occupants smallint CHECK(occupants BETWEEN 1 AND 20),
+  preferred_viewing_at timestamptz,
+  desired_on date,
+  message text,
+  changes jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(changes)='object'),
+  appointments jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(appointments)='array'),
+  hold_status text CHECK(hold_status IN ('holding','converted','cancelled','expired')),
+  hold_from date,
+  hold_to date,
+  hold_expires_at timestamptz,
+  hold_reason text,
+  reviewed_by uuid REFERENCES users(id),
+  reviewed_at timestamptz,
+  decision_notes text,
+  history jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(history)='array'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK((kind='viewing' AND room_id IS NOT NULL AND contract_id IS NULL AND occupants IS NOT NULL AND contact_name IS NOT NULL) OR
+        (kind='profile_change' AND contract_id IS NULL AND changes<>'{}') OR
+        (kind IN ('renewal','checkout','transfer') AND contract_id IS NOT NULL AND desired_on IS NOT NULL)),
+  CHECK(hold_status IS NULL OR (kind='viewing' AND hold_from IS NOT NULL AND hold_expires_at IS NOT NULL)),
+  CHECK(hold_to IS NULL OR hold_to>hold_from),
+  CHECK((reviewed_at IS NULL)=(reviewed_by IS NULL)),
+  CHECK(status<>'rejected' OR nullif(btrim(decision_notes),'') IS NOT NULL),
+  EXCLUDE USING gist(room_id WITH =,daterange(hold_from,hold_to,'[)') WITH &&) WHERE(hold_status='holding')
 );
-COMMENT ON TABLE room_status_events IS 'Lịch sử đưa phòng vào bảo trì, ngừng khai thác hoặc khai thác lại, có lý do.';
 
-CREATE TABLE amenities (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    code            varchar(50) NOT NULL,
-    name            varchar(150) NOT NULL,
-    icon            varchar(50),
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE amenities IS 'Tiện ích của đơn vị. Form phòng thêm được tiện ích mới ngay khi nhập.';
-
-CREATE TABLE room_amenities (
-    room_id    uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    amenity_id uuid NOT NULL REFERENCES amenities(id),
-    PRIMARY KEY (room_id, amenity_id)
-);
-COMMENT ON TABLE room_amenities IS 'Tiện ích của từng phòng (N-N).';
-
-CREATE TABLE room_images (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id    uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    file_id    uuid NOT NULL REFERENCES stored_files(id),
-    sort_order integer NOT NULL DEFAULT 0 CHECK (sort_order >= 0),
-    is_cover   boolean NOT NULL DEFAULT false,
-    caption    text,
-    UNIQUE (room_id, file_id)
-);
-COMMENT ON TABLE room_images IS 'Ảnh phòng, thứ tự và ảnh bìa; mỗi phòng tối đa một ảnh bìa.';
-CREATE UNIQUE INDEX ux_room_cover ON room_images(room_id) WHERE is_cover;
-
-CREATE TABLE room_listings (
-    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id      uuid NOT NULL UNIQUE REFERENCES rooms(id) ON DELETE CASCADE,
-    slug         varchar(250) NOT NULL UNIQUE,
-    title        varchar(250) NOT NULL,
-    description  text,
-    video_url    text,
-    status       varchar(10) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','published','hidden')),
-    published_at timestamptz,
-    updated_at   timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE room_listings IS 'Tin đăng ở trang Thuê phòng, độc lập với việc có người ở; slug là đường dẫn /rooms/:slug.';
-
--- ============================================================================
--- 5. Khách và lịch xem phòng
--- ============================================================================
-CREATE TABLE tenants (
-    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id         uuid NOT NULL REFERENCES organizations(id),
-    user_id                 uuid REFERENCES users(id),
-    code                    varchar(40) NOT NULL,
-    full_name               varchar(200) NOT NULL,
-    email                   varchar(256),
-    phone                   varchar(30),
-    date_of_birth           date,
-    address_line            text,
-    emergency_contact_name  varchar(200),
-    emergency_contact_phone varchar(30),
-    notes                   text,
-    created_at              timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE tenants IS 'Hồ sơ khách theo từng đơn vị, hiện ở mục Khách thuê của admin. Khách tự đăng ký có user_id; khách nhập tay có thể chưa có tài khoản. Điện thoại không bắt buộc duy nhất vì người thân có thể dùng chung số.';
-CREATE UNIQUE INDEX ux_tenant_account ON tenants(organization_id, user_id) WHERE user_id IS NOT NULL;
-CREATE INDEX ix_tenant_email ON tenants(organization_id, lower(email));
-CREATE INDEX ix_tenant_phone ON tenants(organization_id, phone);
-CREATE INDEX ix_tenant_search ON tenants USING gin
-    (normalize_text(full_name::text || ' ' || code::text || ' ' || coalesce(phone::text, '') || ' ' || coalesce(email::text, '')) gin_trgm_ops);
-
-CREATE TABLE tenant_identity_documents (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id          uuid NOT NULL REFERENCES tenants(id),
-    document_type      varchar(30) NOT NULL CHECK (document_type IN ('cccd','cmnd','passport','other')),
-    number_ciphertext  bytea NOT NULL,
-    number_fingerprint varchar(128) NOT NULL,
-    number_last4       varchar(4) NOT NULL,
-    issued_on          date,
-    issuing_authority  text,
-    expires_on         date,
-    front_file_id      uuid REFERENCES stored_files(id),
-    back_file_id       uuid REFERENCES stored_files(id),
-    verified_by        uuid REFERENCES users(id),
-    verified_at        timestamptz,
-    CHECK ((verified_by IS NULL) = (verified_at IS NULL)),
-    UNIQUE (tenant_id, document_type, number_fingerprint)
-);
-COMMENT ON TABLE tenant_identity_documents IS 'Giấy tờ tùy thân. Số giấy tờ chỉ lưu dạng mã hóa, fingerprint để tra trùng, number_last4 để hiển thị che số. Ảnh giấy tờ bắt buộc là tệp private.';
-
-CREATE TABLE tenant_profile_change_requests (
-    id                               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id                        uuid NOT NULL REFERENCES tenants(id),
-    requested_by                     uuid NOT NULL REFERENCES users(id),
-    requested_at                     timestamptz NOT NULL DEFAULT now(),
-    status                           varchar(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled')),
-    proposed_phone                   varchar(30),
-    proposed_email                   varchar(256),
-    proposed_emergency_contact_name  varchar(200),
-    proposed_emergency_contact_phone varchar(30),
-    reason                           text,
-    review_notes                     text,
-    reviewed_by                      uuid REFERENCES users(id),
-    reviewed_at                      timestamptz,
-    CHECK (num_nonnulls(proposed_phone, proposed_email, proposed_emergency_contact_name, proposed_emergency_contact_phone) > 0)
-);
-COMMENT ON TABLE tenant_profile_change_requests IS 'Khách đề nghị đổi liên hệ ở trang Tài khoản, admin duyệt ở hồ sơ khách. Họ tên và giấy tờ phải đối chiếu trực tiếp nên không có ở đây.';
-CREATE UNIQUE INDEX ux_profile_request_pending ON tenant_profile_change_requests(tenant_id) WHERE status = 'pending';
-
-CREATE TABLE rental_inquiries (
-    id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code                 varchar(80) NOT NULL UNIQUE,
-    room_id              uuid NOT NULL REFERENCES rooms(id),
-    tenant_id            uuid REFERENCES tenants(id),
-    source               varchar(10) NOT NULL DEFAULT 'public' CHECK (source IN ('public','staff')),
-    contact_name         varchar(200) NOT NULL,
-    phone                varchar(30),
-    email                varchar(256),
-    desired_move_in      date,
-    preferred_viewing_at timestamptz,
-    occupants            smallint NOT NULL DEFAULT 1 CHECK (occupants > 0),
-    message              text,
-    status               varchar(15) NOT NULL DEFAULT 'new' CHECK (status IN
-                           ('new','accepted','consulting','viewing','approved','rejected','cancelled','converted')),
-    assigned_to          uuid REFERENCES users(id),
-    closed_reason        text,
-    created_at           timestamptz NOT NULL DEFAULT now(),
-    CHECK (nullif(btrim(phone), '') IS NOT NULL OR nullif(btrim(email), '') IS NOT NULL),
-    CHECK (status NOT IN ('rejected','cancelled') OR nullif(btrim(closed_reason), '') IS NOT NULL)
-);
-COMMENT ON TABLE rental_inquiries IS 'Yêu cầu xem phòng khách đặt ở trang phòng, xử lý ở Lịch xem phòng của admin. Không giữ chỗ, không đổi trạng thái phòng.';
-CREATE UNIQUE INDEX ux_inquiry_open ON rental_inquiries(tenant_id, room_id)
-    WHERE tenant_id IS NOT NULL AND status IN ('new','accepted','consulting','viewing','approved');
-
-CREATE TABLE room_viewings (
-    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    inquiry_id   uuid NOT NULL REFERENCES rental_inquiries(id),
-    starts_at    timestamptz NOT NULL,
-    ends_at      timestamptz NOT NULL,
-    host_user_id uuid REFERENCES users(id),
-    status       varchar(12) NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','completed','cancelled','no_show')),
-    result_notes text,
-    created_at   timestamptz NOT NULL DEFAULT now(),
-    CHECK (ends_at > starts_at)
-);
-COMMENT ON TABLE room_viewings IS 'Lịch hẹn xem phòng admin xếp và kết quả sau khi xem.';
-
--- ============================================================================
--- 6. Đợt thuê và bàn giao
--- ============================================================================
-CREATE TABLE tenancies (
-    id                       uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id                  uuid NOT NULL REFERENCES rooms(id),
-    representative_tenant_id uuid NOT NULL REFERENCES tenants(id),
-    inquiry_id               uuid REFERENCES rental_inquiries(id),
-    status                   varchar(12) NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','active','ended','cancelled')),
-    planned_move_in          date NOT NULL,
-    actual_move_in           date,
-    actual_move_out          date,
-    stay                     daterange GENERATED ALWAYS AS
-                               (daterange(coalesce(actual_move_in, planned_move_in), actual_move_out, '[)')) STORED,
-    onboarding_mode          varchar(10) NOT NULL DEFAULT 'normal' CHECK (onboarding_mode IN ('normal','import')),
-    end_reason               text,
-    ended_by                 uuid REFERENCES users(id),
-    created_by               uuid REFERENCES users(id),
-    created_at               timestamptz NOT NULL DEFAULT now(),
-    CHECK (actual_move_out IS NULL OR (actual_move_in IS NOT NULL AND actual_move_out > actual_move_in)),
-    CHECK (status NOT IN ('active','ended') OR actual_move_in IS NOT NULL),
-    CHECK (status <> 'ended' OR (actual_move_out IS NOT NULL AND ended_by IS NOT NULL AND nullif(btrim(end_reason), '') IS NOT NULL)),
-    CHECK (status <> 'active' OR actual_move_out IS NULL),
-    CHECK (status <> 'planned' OR (actual_move_in IS NULL AND actual_move_out IS NULL)),
-    -- Chặn hai người cùng vào một phòng, kể cả hai transaction chạy đồng thời. Ngày trả là biên mở nên người sau vào cùng ngày hợp lệ.
-    EXCLUDE USING gist (room_id WITH =, stay WITH &&) WHERE (status <> 'cancelled')
-);
-COMMENT ON TABLE tenancies IS 'Một đợt ở của khách đại diện trong một phòng, là lịch sử thuê của phòng. onboarding_mode = import là khách đang ở được nhập từ form phòng hoặc từ dữ liệu cũ, chưa có hợp đồng.';
-COMMENT ON COLUMN tenancies.stay IS 'Khoảng ở [ngày vào, ngày trả), tính tự động. Đang ở thì chưa có cận trên.';
-CREATE UNIQUE INDEX ux_representative_active ON tenancies(representative_tenant_id) WHERE status IN ('planned','active');
-
-CREATE TABLE tenancy_residents (
-    id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id   uuid NOT NULL REFERENCES tenancies(id),
-    tenant_id    uuid NOT NULL REFERENCES tenants(id),
-    joined_on    date NOT NULL,
-    left_on      date,
-    relationship varchar(100),
-    CHECK (left_on IS NULL OR left_on > joined_on),
-    EXCLUDE USING gist (tenancy_id WITH =, tenant_id WITH =, daterange(joined_on, left_on, '[)') WITH &&)
-);
-COMMENT ON TABLE tenancy_residents IS 'Người ở cùng. Họ xem được phòng và điều khoản, không có nghĩa vụ thanh toán và không xem công nợ của người đại diện.';
-
-CREATE TABLE tenancy_requests (
-    id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id     uuid NOT NULL REFERENCES tenancies(id),
-    request_type   varchar(12) NOT NULL CHECK (request_type IN ('renewal','checkout')),
-    desired_on     date NOT NULL,
-    message        text,
-    status         varchar(12) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','cancelled','completed')),
-    requested_by   uuid NOT NULL REFERENCES users(id),
-    reviewed_by    uuid REFERENCES users(id),
-    decision_notes text,
-    created_at     timestamptz NOT NULL DEFAULT now(),
-    reviewed_at    timestamptz
-);
-COMMENT ON TABLE tenancy_requests IS 'Đề nghị gia hạn hoặc trả phòng khách gửi từ trang Hợp đồng; gửi chưa làm thay đổi hợp đồng.';
-CREATE UNIQUE INDEX ux_tenancy_request_pending ON tenancy_requests(tenancy_id, request_type) WHERE status = 'pending';
-
-CREATE TABLE handovers (
-    id                               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id                       uuid NOT NULL REFERENCES tenancies(id),
-    kind                             varchar(10) NOT NULL CHECK (kind IN ('checkin','checkout')),
-    occurred_at                      timestamptz NOT NULL,
-    notes                            text,
-    landlord_confirmed_by            uuid REFERENCES users(id),
-    tenant_confirmed_by              uuid REFERENCES users(id),
-    confirmed_at                     timestamptz,
-    representative_confirmation_text text,
-    UNIQUE (tenancy_id, kind)
-);
-COMMENT ON TABLE handovers IS 'Biên bản bàn giao lúc nhận và trả phòng. Khách xem lại ở trang Hợp đồng, kèm chỉ số điện nước.';
-
-CREATE TABLE handover_items (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    handover_id     uuid NOT NULL REFERENCES handovers(id) ON DELETE CASCADE,
-    name            varchar(200) NOT NULL,
-    quantity        numeric(12,3) NOT NULL DEFAULT 1 CHECK (quantity >= 0),
-    condition_notes text
-);
-COMMENT ON TABLE handover_items IS 'Tài sản ghi trong biên bản bàn giao, là nội dung của biên bản nên không phụ thuộc danh mục nào.';
-
-CREATE TABLE handover_files (
-    handover_id uuid NOT NULL REFERENCES handovers(id) ON DELETE CASCADE,
-    file_id     uuid NOT NULL REFERENCES stored_files(id),
-    PRIMARY KEY (handover_id, file_id)
-);
-COMMENT ON TABLE handover_files IS 'Ảnh hiện trạng kèm biên bản bàn giao.';
-
--- ============================================================================
--- 7. Hợp đồng
--- ============================================================================
 CREATE TABLE contracts (
-    id                      uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id              uuid NOT NULL REFERENCES tenancies(id),
-    code                    varchar(80) NOT NULL UNIQUE,
-    predecessor_contract_id uuid REFERENCES contracts(id),
-    terminated_on           date,
-    termination_reason      text,
-    terminated_by           uuid REFERENCES users(id),
-    terminated_at           timestamptz,
-    archived_at             timestamptz,
-    created_by              uuid NOT NULL REFERENCES users(id),
-    created_at              timestamptz NOT NULL DEFAULT now(),
-    CHECK (id IS DISTINCT FROM predecessor_contract_id),
-    CHECK ((terminated_on IS NULL) = (terminated_by IS NULL)),
-    CHECK ((terminated_on IS NULL) = (terminated_at IS NULL)),
-    CHECK (terminated_on IS NULL OR nullif(btrim(termination_reason), '') IS NOT NULL)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  room_id uuid NOT NULL REFERENCES rooms(id),
+  user_id uuid NOT NULL REFERENCES users(id),
+  booking_id uuid UNIQUE REFERENCES bookings(id),
+  status text NOT NULL DEFAULT 'active' CHECK(status IN ('planned','active','ended','cancelled')),
+  onboarding_mode text NOT NULL DEFAULT 'new' CHECK(onboarding_mode IN ('new','import')),
+  starts_on date NOT NULL,
+  move_in_on date,
+  move_out_on date,
+  ends_on date,
+  required_deposit numeric(16,0) NOT NULL DEFAULT 0 CHECK(required_deposit>=0),
+  versions jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(versions)='array'),
+  attachments jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(attachments)='array'),
+  occupants jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(occupants)='array'),
+  initial_readings jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(initial_readings)='object'),
+  final_readings jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(final_readings)='object'),
+  checkin_handover jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(checkin_handover)='object'),
+  checkout_handover jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(checkout_handover)='object'),
+  checkout_summary jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(checkout_summary)='object'),
+  onboarding_gaps jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(onboarding_gaps)='array'),
+  ended_reason text,
+  remaining_debt_reason text,
+  archived_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK(ends_on IS NULL OR ends_on>starts_on),
+  CHECK(move_in_on IS NULL OR move_in_on>=starts_on),
+  CHECK(move_out_on IS NULL OR move_out_on>coalesce(move_in_on,starts_on)),
+  CHECK(status<>'active' OR (move_in_on IS NOT NULL AND move_out_on IS NULL)),
+  CHECK(status<>'ended' OR (move_out_on IS NOT NULL AND nullif(btrim(ended_reason),'') IS NOT NULL)),
+  EXCLUDE USING gist(room_id WITH =,daterange(starts_on,move_out_on,'[)') WITH &&) WHERE(status<>'cancelled')
 );
-COMMENT ON TABLE contracts IS 'Hợp đồng có mã riêng, gắn với đợt thuê. Trạng thái hiển thị suy từ v_contract_status, không lưu.';
-
-CREATE TABLE contract_versions (
-    id                           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    contract_id                  uuid NOT NULL REFERENCES contracts(id),
-    version_no                   integer NOT NULL CHECK (version_no > 0),
-    effective_from               date NOT NULL,
-    ends_on                      date NOT NULL,
-    required_deposit             numeric(18,0) NOT NULL CHECK (required_deposit >= 0),
-    invoice_day                  smallint NOT NULL CHECK (invoice_day BETWEEN 1 AND 31),
-    due_after_days               smallint NOT NULL CHECK (due_after_days BETWEEN 0 AND 365),
-    proration_policy             varchar(20) NOT NULL CHECK (proration_policy IN ('actual_days','full_month')),
-    terms_text                   text NOT NULL,
-    change_reason                text,
-    signed_at                    timestamptz,
-    confirmed_by                 uuid REFERENCES users(id),
-    signature_method             varchar(15) CHECK (signature_method IN ('paper','external_esign')),
-    external_signature_reference text,
-    created_at                   timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (contract_id, version_no),
-    UNIQUE (contract_id, effective_from),
-    CHECK (ends_on > effective_from),
-    CHECK ((signed_at IS NULL AND confirmed_by IS NULL AND signature_method IS NULL)
-        OR (signed_at IS NOT NULL AND confirmed_by IS NOT NULL AND signature_method IS NOT NULL))
-);
-COMMENT ON TABLE contract_versions IS 'Phiên bản hợp đồng. Gia hạn tạo phiên bản mới; bản đã ký bị khóa. ends_on là ngày đầu tiên hết hiệu lực, ngày ghi trên hợp đồng là ends_on - 1.';
-
-CREATE TABLE contract_parties (
-    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    contract_version_id uuid NOT NULL REFERENCES contract_versions(id) ON DELETE CASCADE,
-    party_role          varchar(20) NOT NULL CHECK (party_role IN ('landlord','representative','co_signer')),
-    full_name_snapshot  varchar(250) NOT NULL,
-    address_snapshot    text NOT NULL,
-    identity_masked     varchar(40),
-    contact_snapshot    text,
-    tenant_id           uuid REFERENCES tenants(id)
-);
-COMMENT ON TABLE contract_parties IS 'Các bên tại thời điểm ký. Là ảnh chụp lịch sử của chứng từ nên không đổi theo hồ sơ khách.';
-
-CREATE TABLE contract_files (
-    contract_version_id uuid NOT NULL REFERENCES contract_versions(id) ON DELETE CASCADE,
-    file_id             uuid NOT NULL REFERENCES stored_files(id),
-    file_kind           varchar(20) NOT NULL CHECK (file_kind IN ('draft','signed','appendix','signature_proof')),
-    PRIMARY KEY (contract_version_id, file_id)
-);
-COMMENT ON TABLE contract_files IS 'Tệp thuộc một phiên bản hợp đồng; bản ký là bắt buộc trước khi xác nhận ký và bị khóa sau đó.';
-
-CREATE TABLE contract_attachments (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    contract_id uuid NOT NULL REFERENCES contracts(id) ON DELETE CASCADE,
-    file_id     uuid NOT NULL REFERENCES stored_files(id),
-    note        text,
-    added_by    uuid NOT NULL REFERENCES users(id),
-    added_at    timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (contract_id, file_id)
-);
-COMMENT ON TABLE contract_attachments IS 'Tệp bổ sung vào hồ sơ hợp đồng sau khi ký, tách khỏi tệp của phiên bản đã khóa.';
-
--- ============================================================================
--- 8. Khoản thu, bảng giá, kỳ tính tiền, công tơ
--- ============================================================================
-CREATE TABLE charge_types (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    code            varchar(50) NOT NULL,
-    name            varchar(200) NOT NULL,
-    category        varchar(20) NOT NULL CHECK (category IN ('rent','electricity','water','service','other','compensation')),
-    unit_label      varchar(30) NOT NULL,
-    is_active       boolean NOT NULL DEFAULT true,
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE charge_types IS 'Danh mục khoản thu: tiền thuê, điện, nước, dịch vụ, rác, internet, phí khác, bồi thường, số dư đầu kỳ.';
-
-CREATE TABLE charge_rates (
-    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    property_id         uuid REFERENCES properties(id) ON DELETE CASCADE,
-    room_id             uuid REFERENCES rooms(id) ON DELETE CASCADE,
-    contract_version_id uuid REFERENCES contract_versions(id) ON DELETE CASCADE,
-    scope_id            uuid GENERATED ALWAYS AS (coalesce(contract_version_id, room_id, property_id)) STORED,
-    charge_type_id      uuid NOT NULL REFERENCES charge_types(id),
-    effective_from      date NOT NULL,
-    effective_to        date,
-    unit_price          numeric(18,4) NOT NULL CHECK (unit_price >= 0),
-    calculation_method  varchar(15) NOT NULL CHECK (calculation_method IN ('fixed','metered','per_person','per_quantity')),
-    billing_cycle       varchar(10) NOT NULL DEFAULT 'monthly' CHECK (billing_cycle IN ('monthly','once')),
-    proration_mode      varchar(12) NOT NULL DEFAULT 'full_period' CHECK (proration_mode IN ('full_period','actual_days')),
-    CHECK (num_nonnulls(property_id, room_id, contract_version_id) = 1),
-    CHECK (effective_to IS NULL OR effective_to > effective_from),
-    EXCLUDE USING gist (scope_id WITH =, charge_type_id WITH =, daterange(effective_from, effective_to, '[)') WITH &&)
-);
-COMMENT ON TABLE charge_rates IS 'Bảng giá có hiệu lực theo ngày, thuộc đúng một phạm vi: cơ sở, phòng, hoặc phiên bản hợp đồng. Giá 0 là giá hợp lệ. Đổi giá: đóng effective_to rồi thêm dòng mới, không sửa unit_price.';
 
 CREATE TABLE billing_periods (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    property_id uuid NOT NULL REFERENCES properties(id),
-    month_start date NOT NULL CHECK (extract(day FROM month_start) = 1),
-    status      varchar(8) NOT NULL DEFAULT 'open' CHECK (status IN ('open','locked')),
-    locked_at   timestamptz,
-    locked_by   uuid REFERENCES users(id),
-    UNIQUE (property_id, month_start),
-    CHECK ((status = 'locked' AND locked_at IS NOT NULL AND locked_by IS NOT NULL)
-        OR (status = 'open' AND locked_at IS NULL AND locked_by IS NULL))
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  property_id uuid NOT NULL REFERENCES properties(id),
+  month_start date NOT NULL CHECK (extract(day FROM month_start) = 1),
+  status text NOT NULL DEFAULT 'open' CHECK (status IN ('open','locked')),
+  locked_at timestamptz,
+  locked_by uuid REFERENCES users(id),
+  unlock_reason text,
+  history jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(history)='array'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (property_id,month_start),
+  CHECK ((status = 'locked') = (locked_at IS NOT NULL AND locked_by IS NOT NULL))
 );
-COMMENT ON TABLE billing_periods IS 'Tháng tính tiền của một cơ sở ở trang Tính tiền phòng. Khóa tháng chặn sửa chỉ số và hóa đơn của tháng đó.';
 
-CREATE TABLE billing_period_events (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    billing_period_id uuid NOT NULL REFERENCES billing_periods(id),
-    action            varchar(8) NOT NULL CHECK (action IN ('lock','unlock')),
-    reason            text NOT NULL CHECK (btrim(reason) <> ''),
-    actor_id          uuid NOT NULL REFERENCES users(id),
-    created_at        timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE billing_period_events IS 'Lịch sử khóa và mở khóa tháng, bắt buộc có lý do.';
-
-CREATE TABLE meters (
-    id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    room_id       uuid NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
-    meter_kind    varchar(12) NOT NULL CHECK (meter_kind IN ('electricity','water')),
-    serial_number varchar(100) NOT NULL,
-    installed_at  timestamptz NOT NULL,
-    removed_at    timestamptz,
-    CHECK (removed_at IS NULL OR removed_at > installed_at),
-    EXCLUDE USING gist (room_id WITH =, meter_kind WITH =, tstzrange(installed_at, removed_at, '[)') WITH &&)
-);
-COMMENT ON TABLE meters IS 'Công tơ điện, nước của phòng; mỗi phòng một công tơ đang dùng cho mỗi loại. Thay công tơ: chốt removed_at rồi thêm công tơ mới.';
-
-CREATE TABLE meter_readings (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    meter_id          uuid NOT NULL REFERENCES meters(id),
-    observed_at       timestamptz NOT NULL,
-    reading_value     numeric(18,3) NOT NULL CHECK (reading_value >= 0),
-    billing_period_id uuid REFERENCES billing_periods(id),
-    tenancy_id        uuid REFERENCES tenancies(id),
-    handover_id       uuid REFERENCES handovers(id),
-    reading_kind      varchar(12) NOT NULL CHECK (reading_kind IN ('baseline','periodic','checkin','checkout','replacement')),
-    status            varchar(8) NOT NULL DEFAULT 'valid' CHECK (status IN ('valid','void')),
-    supersedes_id     uuid UNIQUE REFERENCES meter_readings(id),
-    void_reason       text,
-    notes             text,
-    recorded_by       uuid NOT NULL REFERENCES users(id),
-    recorded_at       timestamptz NOT NULL DEFAULT now(),
-    CHECK (id IS DISTINCT FROM supersedes_id),
-    CHECK (status <> 'void' OR nullif(btrim(void_reason), '') IS NOT NULL)
-);
-COMMENT ON TABLE meter_readings IS 'Chỉ số công tơ, không được giảm theo thời gian. Sửa số: hủy bản cũ có lý do rồi ghi bản mới; số đã lên hóa đơn phát hành thì không sửa được.';
-CREATE UNIQUE INDEX ux_meter_observed ON meter_readings(meter_id, observed_at) WHERE status = 'valid';
-CREATE UNIQUE INDEX ux_reading_periodic ON meter_readings(meter_id, billing_period_id)
-    WHERE status = 'valid' AND reading_kind = 'periodic' AND billing_period_id IS NOT NULL;
-
--- ============================================================================
--- 9. Hóa đơn. Tổng tiền, đã thu, còn nợ tính bằng view, không lưu trùng.
--- ============================================================================
 CREATE TABLE invoices (
-    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id          uuid NOT NULL REFERENCES tenancies(id),
-    billing_period_id   uuid REFERENCES billing_periods(id),
-    kind                varchar(20) NOT NULL CHECK (kind IN
-                          ('periodic','final','one_time','replacement','debit_adjustment','credit_adjustment','opening_balance')),
-    original_invoice_id uuid REFERENCES invoices(id),
-    code                varchar(80) UNIQUE,
-    status              varchar(8) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','void')),
-    service_from        date NOT NULL,
-    service_to          date NOT NULL,
-    issued_on           date,
-    due_on              date,
-    issued_at           timestamptz,
-    issued_by           uuid REFERENCES users(id),
-    voided_at           timestamptz,
-    voided_by           uuid REFERENCES users(id),
-    void_reason         text,
-    notes               text,
-    needs_recompute     boolean NOT NULL DEFAULT false,
-    idempotency_key     uuid NOT NULL UNIQUE,
-    created_by          uuid NOT NULL REFERENCES users(id),
-    created_at          timestamptz NOT NULL DEFAULT now(),
-    CHECK (service_to > service_from),
-    CHECK (due_on IS NULL OR due_on >= issued_on),
-    CHECK (id IS DISTINCT FROM original_invoice_id),
-    CHECK ((kind IN ('replacement','debit_adjustment','credit_adjustment')) = (original_invoice_id IS NOT NULL)),
-    CHECK (kind <> 'periodic' OR billing_period_id IS NOT NULL),
-    CHECK (status <> 'issued' OR (code IS NOT NULL AND issued_on IS NOT NULL AND due_on IS NOT NULL AND issued_at IS NOT NULL AND issued_by IS NOT NULL)),
-    CHECK (status <> 'void' OR (voided_at IS NOT NULL AND voided_by IS NOT NULL AND nullif(btrim(void_reason), '') IS NOT NULL)),
-    -- Hóa đơn cuối chỉ có điện nước được phép trùng ngày với hóa đơn tháng đã phát hành; trường hợp có tiền thuê do trigger chặn.
-    EXCLUDE USING gist (tenancy_id WITH =, daterange(service_from, service_to, '[)') WITH &&)
-        WHERE (status = 'issued' AND kind IN ('periodic','replacement'))
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text UNIQUE,
+  contract_id uuid NOT NULL REFERENCES contracts(id),
+  period_id uuid REFERENCES billing_periods(id),
+  kind text NOT NULL DEFAULT 'periodic' CHECK(kind IN ('periodic','final','opening_balance','debit_adjustment','credit_adjustment')),
+  adjusts_invoice_id uuid REFERENCES invoices(id),
+  metered_only boolean NOT NULL DEFAULT false,
+  status text NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','issued','void')),
+  service_from date NOT NULL,
+  service_to date NOT NULL,
+  electricity_start numeric(16,3),
+  electricity_end numeric(16,3),
+  electricity_from_at timestamptz,
+  electricity_to_at timestamptz,
+  water_start numeric(16,3),
+  water_end numeric(16,3),
+  water_from_at timestamptz,
+  water_to_at timestamptz,
+  readings_history jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(readings_history)='array'),
+  correction_reason text,
+  lines jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(lines)='array'),
+  total_amount numeric(16,0) GENERATED ALWAYS AS(invoice_total(lines)) STORED,
+  customer_snapshot jsonb NOT NULL DEFAULT '{}' CHECK(jsonb_typeof(customer_snapshot)='object'),
+  issued_on date,
+  due_on date,
+  issued_by uuid REFERENCES users(id),
+  issued_at timestamptz,
+  voided_at timestamptz,
+  void_reason text,
+  notes text,
+  idempotency_key text UNIQUE,
+  request_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK(service_to>service_from),
+  CHECK((kind IN ('debit_adjustment','credit_adjustment'))=(adjusts_invoice_id IS NOT NULL)),
+  CHECK(kind<>'periodic' OR period_id IS NOT NULL),
+  CHECK(NOT metered_only OR kind='final'),
+  CHECK(electricity_start IS NULL OR electricity_start>=0),
+  CHECK(electricity_end IS NULL OR (electricity_start IS NOT NULL AND electricity_end>=electricity_start AND electricity_from_at IS NOT NULL AND electricity_to_at IS NOT NULL AND electricity_to_at>electricity_from_at)),
+  CHECK(water_start IS NULL OR water_start>=0),
+  CHECK(water_end IS NULL OR (water_start IS NOT NULL AND water_end>=water_start AND water_from_at IS NOT NULL AND water_to_at IS NOT NULL AND water_to_at>water_from_at)),
+  CHECK(status='draft' OR (code IS NOT NULL AND issued_on IS NOT NULL AND due_on IS NOT NULL AND due_on>=issued_on AND issued_at IS NOT NULL AND issued_by IS NOT NULL)),
+  CHECK(status<>'void' OR (voided_at IS NOT NULL AND nullif(btrim(void_reason),'') IS NOT NULL)),
+  CHECK(idempotency_key IS NULL OR request_hash IS NOT NULL),
+  EXCLUDE USING gist(contract_id WITH =,daterange(service_from,service_to,'[)') WITH &&) WHERE(status<>'void' AND kind IN ('periodic','final') AND NOT metered_only)
 );
-COMMENT ON TABLE invoices IS 'Hóa đơn nội bộ: tháng, cuối đợt thuê, phát sinh, thay thế, điều chỉnh tăng giảm, số dư đầu kỳ. Phát hành rồi không sửa, chỉ điều chỉnh hoặc hủy có lý do.';
-COMMENT ON COLUMN invoices.needs_recompute IS 'Hóa đơn nháp cần tính lại vì chỉ số hoặc giá vừa đổi.';
-CREATE UNIQUE INDEX ux_invoice_periodic ON invoices(tenancy_id, billing_period_id) WHERE kind = 'periodic' AND status <> 'void';
-CREATE UNIQUE INDEX ux_invoice_replacement ON invoices(original_invoice_id) WHERE kind = 'replacement' AND status <> 'void';
-
-CREATE TABLE charge_instances (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id        uuid NOT NULL REFERENCES tenancies(id),
-    charge_type_id    uuid NOT NULL REFERENCES charge_types(id),
-    billing_period_id uuid REFERENCES billing_periods(id),
-    occurrence_key    varchar(100) NOT NULL DEFAULT 'default',
-    UNIQUE NULLS NOT DISTINCT (tenancy_id, charge_type_id, billing_period_id, occurrence_key)
-);
-COMMENT ON TABLE charge_instances IS 'Một lần phát sinh của khoản thu trong đợt thuê. Dùng lại đúng dòng này khi lập lại nên phí một lần không thể thu hai lần.';
-
-CREATE TABLE invoice_lines (
-    id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_id            uuid NOT NULL REFERENCES invoices(id),
-    line_no               integer NOT NULL CHECK (line_no > 0),
-    charge_type_id        uuid NOT NULL REFERENCES charge_types(id),
-    charge_instance_id    uuid REFERENCES charge_instances(id),
-    source_rate_id        uuid REFERENCES charge_rates(id),
-    source_scope          varchar(10) CHECK (source_scope IN ('contract','room','property','manual')),
-    description_snapshot  text NOT NULL,
-    unit_snapshot         varchar(30) NOT NULL,
-    quantity              numeric(18,6) NOT NULL CHECK (quantity >= 0),
-    unit_price            numeric(18,4) NOT NULL CHECK (unit_price >= 0),
-    sign                  smallint NOT NULL DEFAULT 1 CHECK (sign IN (-1, 1)),
-    proration_numerator   integer NOT NULL DEFAULT 1 CHECK (proration_numerator >= 0),
-    proration_denominator integer NOT NULL DEFAULT 1 CHECK (proration_denominator > 0),
-    UNIQUE (invoice_id, line_no)
-);
-COMMENT ON TABLE invoice_lines IS 'Từng khoản trên hóa đơn, chụp giá và số lượng tại lúc lập. Đổi bảng giá không làm đổi hóa đơn cũ.';
-
-CREATE TABLE invoice_charge_claims (
-    charge_instance_id uuid PRIMARY KEY REFERENCES charge_instances(id),
-    invoice_line_id    uuid NOT NULL UNIQUE REFERENCES invoice_lines(id) ON DELETE CASCADE
-);
-COMMENT ON TABLE invoice_charge_claims IS 'Phát sinh đang được dòng hóa đơn nào sử dụng. Hóa đơn hủy thì nhả ra, khóa chính chặn thu trùng.';
-
-CREATE TABLE invoice_meter_segments (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_line_id uuid NOT NULL REFERENCES invoice_lines(id) ON DELETE CASCADE,
-    from_reading_id uuid NOT NULL REFERENCES meter_readings(id),
-    to_reading_id   uuid NOT NULL REFERENCES meter_readings(id),
-    UNIQUE (invoice_line_id, from_reading_id, to_reading_id),
-    CHECK (from_reading_id <> to_reading_id)
-);
-COMMENT ON TABLE invoice_meter_segments IS 'Chỉ số đầu và cuối làm căn cứ cho dòng điện, nước; có nhiều đoạn khi thay công tơ giữa tháng.';
-
--- ============================================================================
--- 10. Thu tiền, phân bổ, sổ cọc, quyết toán
--- ============================================================================
-CREATE TABLE payment_methods (
-    code      varchar(30) PRIMARY KEY,
-    name      varchar(100) NOT NULL,
-    is_active boolean NOT NULL DEFAULT true
-);
-COMMENT ON TABLE payment_methods IS 'Cách thanh toán: tiền mặt, chuyển khoản, khác.';
-
-CREATE TABLE bank_accounts (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    bank_name       varchar(100) NOT NULL,
-    account_number  varchar(100) NOT NULL,
-    account_holder  varchar(200) NOT NULL,
-    is_default      boolean NOT NULL DEFAULT false,
-    is_active       boolean NOT NULL DEFAULT true,
-    UNIQUE (organization_id, bank_name, account_number)
-);
-COMMENT ON TABLE bank_accounts IS 'Tài khoản nhận tiền của đơn vị, hiện ở trang thanh toán hóa đơn của khách.';
-CREATE UNIQUE INDEX ux_bank_default ON bank_accounts(organization_id) WHERE is_default;
 
 CREATE TABLE payments (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code               varchar(80) NOT NULL UNIQUE,
-    tenant_id          uuid NOT NULL REFERENCES tenants(id),
-    property_id        uuid REFERENCES properties(id),
-    amount             numeric(18,0) NOT NULL CHECK (amount > 0),
-    received_at        timestamptz NOT NULL,
-    method_code        varchar(30) NOT NULL REFERENCES payment_methods(code),
-    bank_account_id    uuid REFERENCES bank_accounts(id),
-    external_reference varchar(200),
-    status             varchar(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','rejected')),
-    confirmed_by       uuid REFERENCES users(id),
-    confirmed_at       timestamptz,
-    rejection_reason   text,
-    reported_by        uuid REFERENCES users(id),
-    notes              text,
-    idempotency_key    uuid NOT NULL UNIQUE,
-    created_at         timestamptz NOT NULL DEFAULT now(),
-    CHECK ((status = 'confirmed' AND confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL)
-        OR (status <> 'confirmed' AND confirmed_by IS NULL AND confirmed_at IS NULL)),
-    CHECK (status <> 'rejected' OR nullif(btrim(rejection_reason), '') IS NOT NULL)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  user_id uuid NOT NULL REFERENCES users(id),
+  contract_id uuid REFERENCES contracts(id),
+  intended_invoice_id uuid REFERENCES invoices(id),
+  kind text NOT NULL DEFAULT 'receipt' CHECK(kind IN ('receipt','receipt_reversal','deposit_receipt','deposit_refund','deposit_offset','deposit_offset_reversal')),
+  reverses_id uuid REFERENCES payments(id),
+  status text NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','confirmed','rejected')),
+  amount numeric(16,0) NOT NULL CHECK(amount>0),
+  method text CHECK(method IN ('cash','bank_transfer')),
+  external_reference text,
+  allocations jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(allocations)='array'),
+  proof_file_ids jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(proof_file_ids)='array'),
+  submitted_by uuid REFERENCES users(id),
+  confirmed_by uuid REFERENCES users(id),
+  confirmed_at timestamptz,
+  reason text,
+  notes text,
+  received_at timestamptz NOT NULL DEFAULT now(),
+  idempotency_key text,
+  request_hash text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CHECK(kind NOT LIKE 'deposit_%' OR contract_id IS NOT NULL),
+  CHECK((kind IN ('receipt_reversal','deposit_offset_reversal'))=(reverses_id IS NOT NULL)),
+  CHECK((status='confirmed')=(confirmed_at IS NOT NULL AND confirmed_by IS NOT NULL)),
+  CHECK(kind NOT IN ('receipt_reversal','deposit_refund','deposit_offset','deposit_offset_reversal') OR status='confirmed'),
+  CHECK(kind NOT IN ('receipt_reversal','deposit_refund','deposit_offset_reversal') OR nullif(btrim(reason),'') IS NOT NULL),
+  CHECK(status<>'rejected' OR nullif(btrim(reason),'') IS NOT NULL),
+  CHECK((kind IN ('deposit_offset','deposit_offset_reversal'))=(method IS NULL)),
+  CHECK(method IS DISTINCT FROM 'bank_transfer' OR nullif(btrim(external_reference),'') IS NOT NULL),
+  CHECK(idempotency_key IS NULL OR request_hash IS NOT NULL),
+  UNIQUE(user_id,idempotency_key)
 );
-COMMENT ON TABLE payments IS 'Tiền thực nhận hoặc khách báo đã chuyển. Báo chuyển khoản là pending, chưa tính đã thu; chỉ confirmed mới phân bổ được.';
-CREATE UNIQUE INDEX ux_bank_reference ON payments(bank_account_id, external_reference)
-    WHERE bank_account_id IS NOT NULL AND external_reference IS NOT NULL AND status <> 'rejected';
-
-CREATE TABLE payment_files (
-    payment_id uuid NOT NULL REFERENCES payments(id),
-    file_id    uuid NOT NULL REFERENCES stored_files(id),
-    PRIMARY KEY (payment_id, file_id)
-);
-COMMENT ON TABLE payment_files IS 'Ảnh biên lai khách gửi kèm khi báo chuyển khoản.';
-
-CREATE TABLE payment_intended_invoices (
-    payment_id uuid NOT NULL REFERENCES payments(id),
-    invoice_id uuid NOT NULL REFERENCES invoices(id),
-    PRIMARY KEY (payment_id, invoice_id)
-);
-COMMENT ON TABLE payment_intended_invoices IS 'Hóa đơn khách chọn khi báo chuyển khoản. Chỉ là gợi ý cho quản lý, chưa phải phân bổ tiền.';
-
-CREATE TABLE payment_reversals (
-    id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    payment_id         uuid NOT NULL REFERENCES payments(id),
-    amount             numeric(18,0) NOT NULL CHECK (amount > 0),
-    kind               varchar(10) NOT NULL CHECK (kind IN ('correction','refund')),
-    occurred_at        timestamptz NOT NULL,
-    method_code        varchar(30) NOT NULL REFERENCES payment_methods(code),
-    evidence_file_id   uuid REFERENCES stored_files(id),
-    external_reference varchar(200),
-    reason             text NOT NULL CHECK (btrim(reason) <> ''),
-    confirmed_by       uuid NOT NULL REFERENCES users(id),
-    idempotency_key    uuid NOT NULL UNIQUE,
-    created_at         timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE payment_reversals IS 'Đảo khoản thu nhập sai hoặc hoàn tiền; giữ nguyên khoản thu gốc, không xóa dấu vết.';
-
-CREATE TABLE checkout_settlements (
-    id                    uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id            uuid NOT NULL UNIQUE REFERENCES tenancies(id),
-    checkout_handover_id  uuid REFERENCES handovers(id),
-    status                varchar(10) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','confirmed')),
-    allow_remaining_debt  boolean NOT NULL DEFAULT false,
-    remaining_debt_reason text,
-    confirmed_by          uuid REFERENCES users(id),
-    confirmed_at          timestamptz,
-    notes                 text,
-    CHECK (NOT allow_remaining_debt OR nullif(btrim(remaining_debt_reason), '') IS NOT NULL),
-    CHECK ((status = 'confirmed' AND confirmed_by IS NOT NULL AND confirmed_at IS NOT NULL)
-        OR (status = 'draft' AND confirmed_by IS NULL AND confirmed_at IS NULL))
-);
-COMMENT ON TABLE checkout_settlements IS 'Quyết toán khi trả phòng. Khách còn nợ phải có lý do; nợ vẫn được giữ sau khi đóng đợt thuê.';
-
-CREATE TABLE deposit_entries (
-    id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenancy_id          uuid NOT NULL REFERENCES tenancies(id),
-    payment_id          uuid NOT NULL REFERENCES payments(id),
-    kind                varchar(15) NOT NULL CHECK (kind IN ('receipt','refund','offset','reversal')),
-    amount              numeric(18,0) NOT NULL CHECK (amount > 0),
-    related_entry_id    uuid REFERENCES deposit_entries(id),
-    payment_reversal_id uuid REFERENCES payment_reversals(id),
-    settlement_id       uuid REFERENCES checkout_settlements(id),
-    occurred_at         timestamptz NOT NULL,
-    reason              text NOT NULL,
-    confirmed_by        uuid NOT NULL REFERENCES users(id),
-    idempotency_key     uuid NOT NULL UNIQUE,
-    created_at          timestamptz NOT NULL DEFAULT now(),
-    CHECK (id IS DISTINCT FROM related_entry_id),
-    CHECK ((kind = 'reversal') = (related_entry_id IS NOT NULL)),
-    CHECK ((kind = 'refund') = (payment_reversal_id IS NOT NULL))
-);
-COMMENT ON TABLE deposit_entries IS 'Sổ cọc chỉ ghi thêm: nhận, hoàn, bù trừ vào hóa đơn, đảo. Mỗi dòng giữ khoản thu gốc nên đối chiếu được từng đồng.';
-
-CREATE TABLE payment_allocations (
-    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    invoice_id       uuid NOT NULL REFERENCES invoices(id),
-    payment_id       uuid REFERENCES payments(id),
-    deposit_entry_id uuid REFERENCES deposit_entries(id),
-    kind             varchar(10) NOT NULL CHECK (kind IN ('apply','reversal')),
-    amount           numeric(18,0) NOT NULL CHECK (amount > 0),
-    reverses_id      uuid REFERENCES payment_allocations(id),
-    allocated_by     uuid NOT NULL REFERENCES users(id),
-    allocated_at     timestamptz NOT NULL DEFAULT now(),
-    reason           text,
-    idempotency_key  uuid NOT NULL UNIQUE,
-    CHECK (num_nonnulls(payment_id, deposit_entry_id) = 1),
-    CHECK ((kind = 'reversal') = (reverses_id IS NOT NULL)),
-    CHECK (id IS DISTINCT FROM reverses_id),
-    CHECK (kind <> 'reversal' OR nullif(btrim(reason), '') IS NOT NULL)
-);
-COMMENT ON TABLE payment_allocations IS 'Phân bổ tiền vào hóa đơn, từ một khoản thu hoặc từ bù trừ cọc. Hoàn tác bằng dòng đảo liên kết, không sửa dòng cũ.';
-
--- ============================================================================
--- 11. Ticket hỗ trợ
--- ============================================================================
-CREATE TABLE ticket_categories (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    code            varchar(40) NOT NULL,
-    name            varchar(100) NOT NULL,
-    UNIQUE (organization_id, code)
-);
-COMMENT ON TABLE ticket_categories IS 'Loại sự cố khách chọn khi gửi yêu cầu hỗ trợ.';
-
-CREATE TABLE sla_policies (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    priority        varchar(10) NOT NULL CHECK (priority IN ('urgent','high','normal','low')),
-    target_hours    integer NOT NULL CHECK (target_hours > 0),
-    UNIQUE (organization_id, priority)
-);
-COMMENT ON TABLE sla_policies IS 'Số giờ xử lý theo mức ưu tiên, tính liên tục 24/7: 4, 12, 48, 96 giờ.';
 
 CREATE TABLE tickets (
-    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    code             varchar(80) NOT NULL UNIQUE,
-    room_id          uuid NOT NULL REFERENCES rooms(id),
-    tenancy_id       uuid REFERENCES tenancies(id),
-    category_id      uuid NOT NULL REFERENCES ticket_categories(id),
-    title            varchar(250) NOT NULL,
-    description      text NOT NULL,
-    priority         varchar(10) NOT NULL DEFAULT 'normal' CHECK (priority IN ('urgent','high','normal','low')),
-    status           varchar(15) NOT NULL DEFAULT 'new' CHECK (status IN ('new','accepted','in_progress','waiting','resolved','closed')),
-    reported_by      uuid NOT NULL REFERENCES users(id),
-    assigned_to      uuid REFERENCES users(id),
-    sla_policy_id    uuid REFERENCES sla_policies(id),
-    due_at           timestamptz,
-    resolved_at      timestamptz,
-    closed_at        timestamptz,
-    resolution_notes text,
-    created_at       timestamptz NOT NULL DEFAULT now()
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  code text NOT NULL UNIQUE,
+  room_id uuid NOT NULL REFERENCES rooms(id),
+  contract_id uuid REFERENCES contracts(id),
+  category_code text NOT NULL CHECK(category_code IN ('ELECTRICITY','WATER','INTERNET','OTHER')),
+  reported_by uuid NOT NULL REFERENCES users(id),
+  assigned_to uuid REFERENCES users(id),
+  title text NOT NULL,
+  description text NOT NULL,
+  priority text NOT NULL DEFAULT 'normal' CHECK (priority IN ('low','normal','high','urgent')),
+  status text NOT NULL DEFAULT 'new' CHECK (status IN ('new','accepted','in_progress','waiting','resolved','closed')),
+  due_at timestamptz NOT NULL,
+  waiting_reason text,
+  resolution_notes text,
+  resolved_at timestamptz,
+  closed_at timestamptz,
+  attachment_file_ids jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(attachment_file_ids)='array'),
+  messages jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(messages)='array'),
+  history jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(history)='array'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CHECK (status<>'waiting' OR nullif(btrim(waiting_reason),'') IS NOT NULL),
+  CHECK (status NOT IN ('resolved','closed') OR nullif(btrim(resolution_notes),'') IS NOT NULL)
 );
-COMMENT ON TABLE tickets IS 'Yêu cầu hỗ trợ theo phòng, dùng chung giữa trang Hỗ trợ của khách và Ticket của admin.';
 
-CREATE TABLE ticket_messages (
-    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id   uuid NOT NULL REFERENCES tickets(id),
-    author_id   uuid NOT NULL REFERENCES users(id),
-    body        text NOT NULL,
-    is_internal boolean NOT NULL DEFAULT false,
-    created_at  timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE ticket_messages IS 'Hội thoại của ticket. Ghi chú nội bộ (is_internal) không bao giờ trả cho khách.';
-
-CREATE TABLE ticket_files (
-    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id  uuid NOT NULL REFERENCES tickets(id),
-    message_id uuid REFERENCES ticket_messages(id),
-    file_id    uuid NOT NULL REFERENCES stored_files(id),
-    UNIQUE (ticket_id, file_id)
-);
-COMMENT ON TABLE ticket_files IS 'Ảnh đính kèm ticket hoặc một tin nhắn trong ticket.';
-
-CREATE TABLE ticket_events (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    ticket_id       uuid NOT NULL REFERENCES tickets(id),
-    event_type      varchar(30) NOT NULL,
-    old_status      varchar(15),
-    new_status      varchar(15),
-    old_assignee_id uuid REFERENCES users(id),
-    new_assignee_id uuid REFERENCES users(id),
-    reason          text,
-    actor_id        uuid NOT NULL REFERENCES users(id),
-    created_at      timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE ticket_events IS 'Lịch sử đổi trạng thái, phân công, mở lại của ticket; chỉ ghi thêm.';
-
--- ============================================================================
--- 12. Thông báo và vận hành
--- ============================================================================
 CREATE TABLE notifications (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id uuid REFERENCES organizations(id),
-    recipient_id    uuid NOT NULL REFERENCES users(id),
-    event_key       varchar(250) NOT NULL,
-    title           text NOT NULL,
-    body            text NOT NULL,
-    relative_url    text,
-    read_at         timestamptz,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    UNIQUE (recipient_id, event_key)
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  recipient_id uuid NOT NULL REFERENCES users(id),
+  event_key text NOT NULL,
+  title text NOT NULL,
+  body text NOT NULL,
+  url text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  read_at timestamptz,
+  UNIQUE (recipient_id,event_key)
 );
-COMMENT ON TABLE notifications IS 'Thông báo ở chuông trên đầu trang. event_key chống gửi trùng cùng một sự kiện.';
-
-CREATE TABLE email_outbox (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id   uuid REFERENCES organizations(id),
-    recipient_user_id uuid REFERENCES users(id),
-    to_email          varchar(256) NOT NULL,
-    template_code     varchar(60) NOT NULL,
-    subject           text NOT NULL,
-    body              text NOT NULL,
-    dedupe_key        varchar(300) NOT NULL UNIQUE,
-    status            varchar(10) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','sending','sent','failed')),
-    attempts          integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
-    available_at      timestamptz NOT NULL DEFAULT now(),
-    locked_until      timestamptz,
-    sent_at           timestamptz,
-    last_error        text,
-    created_at        timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE email_outbox IS 'Hàng đợi email ghi cùng transaction nghiệp vụ, tiến trình nền gửi và thử lại: đặt lại mật khẩu, hóa đơn, nhắc nợ. Lỗi email không làm mất hóa đơn.';
-
-CREATE TABLE backup_runs (
-    id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    kind              varchar(15) NOT NULL CHECK (kind IN ('backup','restore_test')),
-    status            varchar(10) NOT NULL CHECK (status IN ('running','succeeded','failed')),
-    reference         text NOT NULL,
-    requested_by      uuid REFERENCES users(id),
-    started_at        timestamptz NOT NULL DEFAULT now(),
-    finished_at       timestamptz,
-    error_message     text
-);
-COMMENT ON TABLE backup_runs IS 'Nhật ký sao lưu và thử khôi phục ở trang Hỗ trợ và vận hành. Ghi dòng ở đây không tự tạo bản sao lưu.';
-
-CREATE TABLE audit_logs (
-    id              bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    organization_id uuid REFERENCES organizations(id),
-    actor_id        uuid REFERENCES users(id),
-    action          varchar(40) NOT NULL,
-    table_name      varchar(100) NOT NULL,
-    record_key      jsonb NOT NULL,
-    old_data        jsonb,
-    new_data        jsonb,
-    reason          text,
-    correlation_id  uuid,
-    occurred_at     timestamptz NOT NULL DEFAULT now()
-);
-COMMENT ON TABLE audit_logs IS 'Nhật ký tự động: ai, lúc nào, sửa gì, trước sau ra sao, lý do. Cũng ghi các lần xuất CSV. Chứa liên hệ khách nên phải bảo vệ như dữ liệu riêng tư.';
-
-CREATE TABLE api_idempotency_keys (
-    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    route           varchar(200) NOT NULL,
-    idempotency_key uuid NOT NULL,
-    request_hash    char(64) NOT NULL,
-    response_status smallint,
-    response_body   jsonb,
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    expires_at      timestamptz NOT NULL,
-    PRIMARY KEY (user_id, route, idempotency_key)
-);
-COMMENT ON TABLE api_idempotency_keys IS 'Chống gửi trùng ở tầng API cho thao tác không có cột idempotency_key riêng: đặt lịch, tạo hợp đồng, trả phòng, gửi ticket. Xóa khi quá expires_at.';
-
-CREATE TABLE document_counters (
-    organization_id uuid NOT NULL REFERENCES organizations(id),
-    series          varchar(40) NOT NULL,
-    last_value      bigint NOT NULL DEFAULT 0 CHECK (last_value >= 0),
-    PRIMARY KEY (organization_id, series)
-);
-COMMENT ON TABLE document_counters IS 'Bộ đếm cấp mã hóa đơn, hợp đồng, phiếu thu, ticket, yêu cầu xem phòng; an toàn khi nhiều người cùng thao tác.';
-
--- ============================================================================
--- 13. Index: PostgreSQL không tự tạo index cho khóa ngoại
--- ============================================================================
-DO $$
-DECLARE r record; col_name text;
-BEGIN
-  FOR r IN
-    SELECT c.conrelid, c.conkey[1] AS attnum, t.relname
-    FROM pg_constraint c
-    JOIN pg_class t ON t.oid = c.conrelid
-    JOIN pg_namespace n ON n.oid = t.relnamespace
-    WHERE c.contype = 'f' AND n.nspname = 'smartrent' AND array_length(c.conkey, 1) = 1
-  LOOP
-    IF NOT EXISTS (SELECT 1 FROM pg_index i
-                   WHERE i.indrelid = r.conrelid AND i.indkey[0] = r.attnum AND i.indpred IS NULL) THEN
-      SELECT attname INTO col_name FROM pg_attribute WHERE attrelid = r.conrelid AND attnum = r.attnum;
-      EXECUTE format('CREATE INDEX %I ON smartrent.%I (%I)', 'ix_' || r.relname || '_' || col_name, r.relname, col_name);
-    END IF;
-  END LOOP;
-END $$;
-CREATE INDEX ix_invoice_due ON invoices(due_on) WHERE status = 'issued';
-CREATE INDEX ix_invoice_period_status ON invoices(billing_period_id, status);
-CREATE INDEX ix_tickets_queue ON tickets(status, priority, due_at);
-CREATE INDEX ix_inquiries_queue ON rental_inquiries(status, created_at DESC);
-CREATE INDEX ix_payments_pending ON payments(created_at DESC) WHERE status = 'pending';
-CREATE INDEX ix_outbox_pending ON email_outbox(available_at) WHERE status IN ('pending','failed');
-CREATE INDEX ix_notifications_unread ON notifications(recipient_id, created_at DESC) WHERE read_at IS NULL;
-CREATE INDEX ix_audit_scope_time ON audit_logs(organization_id, occurred_at DESC);
-CREATE INDEX ix_meter_history ON meter_readings(meter_id, observed_at DESC) WHERE status = 'valid';
-CREATE INDEX ix_listing_published ON room_listings(status, published_at DESC);
-CREATE INDEX ix_idempotency_expiry ON api_idempotency_keys(expires_at);
+ALTER TABLE users ADD FOREIGN KEY(avatar_file_id) REFERENCES files(id);
+ALTER TABLE bookings ADD FOREIGN KEY(contract_id) REFERENCES contracts(id);
+CREATE UNIQUE INDEX users_email_unique ON users(lower(btrim(email))) WHERE email IS NOT NULL;
+CREATE UNIQUE INDEX users_one_admin ON users(role) WHERE role='admin';
+CREATE INDEX users_profile_idx ON users(role,phone,lower(display_name));
+CREATE INDEX auth_tokens_user_idx ON auth_tokens(user_id,kind);
+CREATE UNIQUE INDEX rooms_code_unique ON rooms(property_id,lower(code));
+CREATE INDEX rooms_search_idx ON rooms(property_id,operating_status,listing_status);
+CREATE INDEX rooms_amenities_idx ON rooms USING gin(amenities);
+CREATE UNIQUE INDEX bookings_one_open_viewing ON bookings(user_id,room_id) WHERE(kind='viewing' AND status NOT IN ('converted','rejected','cancelled'));
+CREATE UNIQUE INDEX bookings_one_pending_request ON bookings(user_id,kind,coalesce(contract_id,'00000000-0000-0000-0000-000000000000'::uuid)) WHERE(kind<>'viewing' AND status='pending');
+CREATE INDEX bookings_queue_idx ON bookings(kind,status,preferred_viewing_at);
+CREATE INDEX contracts_customer_idx ON contracts(user_id,status);
+CREATE INDEX contracts_expiry_idx ON contracts(ends_on) WHERE status='active';
+CREATE UNIQUE INDEX invoices_one_final ON invoices(contract_id) WHERE(kind='final' AND status<>'void');
+CREATE UNIQUE INDEX invoices_one_month ON invoices(contract_id,period_id) WHERE(kind='periodic' AND status<>'void');
+CREATE INDEX invoices_due_idx ON invoices(status,due_on);
+CREATE INDEX invoices_period_idx ON invoices(period_id,status);
+CREATE UNIQUE INDEX payments_bank_reference ON payments(lower(btrim(external_reference))) WHERE(kind IN ('receipt','deposit_receipt') AND method='bank_transfer' AND status<>'rejected');
+CREATE INDEX payments_customer_idx ON payments(user_id,status,received_at);
+CREATE INDEX payments_contract_idx ON payments(contract_id,kind);
+CREATE INDEX payments_reversal_idx ON payments(reverses_id);
+CREATE INDEX tickets_inbox_idx ON tickets(status,due_at);
+CREATE INDEX tickets_customer_idx ON tickets(reported_by,contract_id);
+CREATE INDEX notifications_recipient_idx ON notifications(recipient_id,created_at DESC);
+COMMENT ON TABLE users IS 'Tài khoản và toàn bộ hồ sơ khách, kể cả khách chưa kích hoạt đăng nhập.';
+COMMENT ON TABLE auth_tokens IS 'Phiên đăng nhập, đặt lại mật khẩu và lời mời; chỉ lưu hash token.';
+COMMENT ON TABLE files IS 'Metadata tệp dùng chung; nội dung nhị phân ở storage.';
+COMMENT ON TABLE settings IS 'Cấu hình thương hiệu, lịch nhắc và ngân hàng mặc định.';
+COMMENT ON TABLE properties IS 'Cơ sở, danh mục tiện ích và bảng giá mặc định dạng JSONB.';
+COMMENT ON TABLE rooms IS 'Phòng cùng tin đăng, tiện ích, ảnh, giá riêng và lịch sử trạng thái.';
+COMMENT ON TABLE bookings IS 'Yêu cầu, lịch xem, giữ chỗ và đề nghị của khách, phân biệt bằng kind.';
+COMMENT ON TABLE contracts IS 'Một hồ sơ thuê và hợp đồng; chứa gia hạn, bản ký, người ở cùng, bàn giao.';
+COMMENT ON TABLE billing_periods IS 'Kỳ tháng theo cơ sở và trạng thái khóa, kể cả tháng chưa có hóa đơn.';
+COMMENT ON TABLE invoices IS 'Hóa đơn cùng chỉ số điện nước, lịch sử sửa số và toàn bộ dòng tính tiền.';
+COMMENT ON TABLE payments IS 'Sổ thanh toán và cọc; phân bổ vào hóa đơn nằm trong JSONB.';
+COMMENT ON TABLE tickets IS 'Sự cố cùng loại, tệp, hội thoại và tiến độ trong một bảng.';
+COMMENT ON TABLE notifications IS 'Thông báo và trạng thái đọc theo tài khoản.';
 COMMIT;

@@ -1,0 +1,2796 @@
+{
+  "views": [
+    {
+      "name": "v_deposit_balances",
+      "definition": " SELECT c.id AS contract_id,\n    (COALESCE(sum(\n        CASE\n            WHEN (p.kind = ANY (ARRAY['deposit_receipt'::text, 'deposit_offset_reversal'::text])) THEN p.amount\n            ELSE (- p.amount)\n        END), (0)::numeric))::numeric(16,0) AS held,\n    (COALESCE(sum(p.amount) FILTER (WHERE (p.kind = 'deposit_receipt'::text)), (0)::numeric))::numeric(16,0) AS received,\n    (COALESCE(sum(p.amount) FILTER (WHERE (p.kind = 'deposit_refund'::text)), (0)::numeric))::numeric(16,0) AS refunded,\n    (COALESCE(sum(\n        CASE\n            WHEN (p.kind = 'deposit_offset'::text) THEN p.amount\n            WHEN (p.kind = 'deposit_offset_reversal'::text) THEN (- p.amount)\n            ELSE (0)::numeric\n        END), (0)::numeric))::numeric(16,0) AS offset_amount\n   FROM (smartrent.contracts c\n     LEFT JOIN smartrent.payments p ON (((p.contract_id = c.id) AND (p.kind ~~ 'deposit_%'::text) AND (p.status = 'confirmed'::text))))\n  GROUP BY c.id;"
+    },
+    {
+      "name": "v_invoice_balances",
+      "definition": " SELECT i.id,\n    i.contract_id,\n    i.status,\n    i.total_amount,\n    (\n        CASE\n            WHEN ((i.status = 'issued'::text) AND (i.adjusts_invoice_id IS NULL)) THEN (i.total_amount + COALESCE(adj.amount, (0)::numeric))\n            ELSE (0)::numeric\n        END)::numeric(16,0) AS receivable_amount,\n    (COALESCE(paid.amount, (0)::numeric))::numeric(16,0) AS paid_amount,\n    ((\n        CASE\n            WHEN ((i.status = 'issued'::text) AND (i.adjusts_invoice_id IS NULL)) THEN (i.total_amount + COALESCE(adj.amount, (0)::numeric))\n            ELSE (0)::numeric\n        END - COALESCE(paid.amount, (0)::numeric)))::numeric(16,0) AS outstanding_amount,\n        CASE\n            WHEN ((i.status <> 'issued'::text) OR (i.adjusts_invoice_id IS NOT NULL)) THEN NULL::text\n            WHEN (COALESCE(paid.amount, (0)::numeric) >= (i.total_amount + COALESCE(adj.amount, (0)::numeric))) THEN 'paid'::text\n            WHEN (COALESCE(paid.amount, (0)::numeric) = (0)::numeric) THEN 'unpaid'::text\n            ELSE 'partial'::text\n        END AS payment_status,\n    ((i.status = 'issued'::text) AND (i.adjusts_invoice_id IS NULL) AND (i.due_on < ((now() AT TIME ZONE 'Asia/Ho_Chi_Minh'::text))::date) AND ((i.total_amount + COALESCE(adj.amount, (0)::numeric)) > COALESCE(paid.amount, (0)::numeric))) AS is_overdue\n   FROM ((smartrent.invoices i\n     LEFT JOIN LATERAL ( SELECT sum(invoices.total_amount) AS amount\n           FROM smartrent.invoices\n          WHERE ((invoices.adjusts_invoice_id = i.id) AND (invoices.status = 'issued'::text))) adj ON (true))\n     LEFT JOIN LATERAL ( SELECT sum((((a.value ->> 'amount'::text))::numeric * (\n                CASE\n                    WHEN (p.kind = ANY (ARRAY['receipt_reversal'::text, 'deposit_offset_reversal'::text])) THEN '-1'::integer\n                    ELSE 1\n                END)::numeric)) AS amount\n           FROM (smartrent.payments p\n             CROSS JOIN LATERAL jsonb_array_elements(p.allocations) a(value))\n          WHERE ((p.status = 'confirmed'::text) AND ((a.value ->> 'invoiceId'::text) = (i.id)::text))) paid ON (true));"
+    },
+    {
+      "name": "v_public_rooms",
+      "definition": " SELECT r.id,\n    r.property_id,\n    r.code,\n    r.name,\n    r.area_m2,\n    r.capacity,\n    r.room_type_code,\n    r.room_type_name,\n    r.listing_slug,\n    r.listing_title,\n    r.listing_description,\n    r.video_url,\n    r.rules_text,\n    r.required_deposit,\n    r.amenities,\n    r.rates,\n    COALESCE(( SELECT jsonb_agg(x.value) AS jsonb_agg\n           FROM (jsonb_array_elements(r.images) x(value)\n             JOIN smartrent.files f ON ((f.id = ((x.value ->> 'fileId'::text))::uuid)))\n          WHERE ((f.visibility = 'public'::text) AND (f.scan_status = 'clean'::text))), '[]'::jsonb) AS images\n   FROM (smartrent.rooms r\n     JOIN smartrent.properties p ON ((p.id = r.property_id)))\n  WHERE ((r.listing_status = 'published'::text) AND p.is_active AND (r.operating_status <> 'inactive'::text) AND (EXISTS ( SELECT 1\n           FROM (jsonb_array_elements(r.images) x(value)\n             JOIN smartrent.files f ON ((f.id = ((x.value ->> 'fileId'::text))::uuid)))\n          WHERE ((f.visibility = 'public'::text) AND (f.scan_status = 'clean'::text)))));"
+    },
+    {
+      "name": "v_room_occupancy",
+      "definition": " SELECT id,\n    property_id,\n    code,\n    name,\n    floor_label,\n    area_m2,\n    capacity,\n    room_type_code,\n    room_type_name,\n    description,\n    rules_text,\n    required_deposit,\n    operating_status,\n    status_reason,\n    listing_slug,\n    listing_title,\n    listing_description,\n    listing_status,\n    video_url,\n    published_at,\n    amenities,\n    images,\n    rates,\n    status_history,\n    created_at,\n    updated_at,\n        CASE\n            WHEN (EXISTS ( SELECT 1\n               FROM smartrent.contracts c\n              WHERE ((c.room_id = r.id) AND (c.status = 'active'::text)))) THEN 'occupied'::text\n            WHEN (EXISTS ( SELECT 1\n               FROM smartrent.bookings b\n              WHERE ((b.room_id = r.id) AND (b.hold_status = 'holding'::text) AND (b.hold_expires_at > now())))) THEN 'reserved'::text\n            ELSE operating_status\n        END AS occupancy_status\n   FROM smartrent.rooms r;"
+    },
+    {
+      "name": "v_user_bookings",
+      "definition": " SELECT id,\n    code,\n    user_id,\n    room_id,\n    contract_id,\n    kind,\n    status,\n    contact_name,\n    phone,\n    email,\n    occupants,\n    preferred_viewing_at,\n    desired_on,\n    message,\n    changes,\n    appointments,\n    hold_status,\n    hold_from,\n    hold_to,\n    hold_expires_at,\n    hold_reason,\n    reviewed_by,\n    reviewed_at,\n    decision_notes,\n    history,\n    created_at,\n    updated_at\n   FROM smartrent.bookings\n  WHERE (user_id = smartrent.request_user_id());"
+    },
+    {
+      "name": "v_user_contracts",
+      "definition": " SELECT id,\n    code,\n    room_id,\n    user_id,\n    status,\n    starts_on,\n    ends_on,\n    move_in_on,\n    move_out_on,\n    (user_id = smartrent.request_user_id()) AS finance_visible\n   FROM smartrent.contracts c\n  WHERE ((user_id = smartrent.request_user_id()) OR (EXISTS ( SELECT 1\n           FROM jsonb_array_elements(c.occupants) p(value)\n          WHERE (((p.value ->> 'userId'::text) = (smartrent.request_user_id())::text) AND ((p.value ->> 'leftOn'::text) IS NULL)))));"
+    },
+    {
+      "name": "v_user_invoices",
+      "definition": " SELECT i.id,\n    i.code,\n    i.contract_id,\n    i.period_id,\n    i.kind,\n    i.adjusts_invoice_id,\n    i.metered_only,\n    i.status,\n    i.service_from,\n    i.service_to,\n    i.electricity_start,\n    i.electricity_end,\n    i.electricity_from_at,\n    i.electricity_to_at,\n    i.water_start,\n    i.water_end,\n    i.water_from_at,\n    i.water_to_at,\n    i.readings_history,\n    i.correction_reason,\n    i.lines,\n    i.total_amount,\n    i.customer_snapshot,\n    i.issued_on,\n    i.due_on,\n    i.issued_by,\n    i.issued_at,\n    i.voided_at,\n    i.void_reason,\n    i.notes,\n    i.idempotency_key,\n    i.request_hash,\n    i.created_at,\n    b.receivable_amount,\n    b.paid_amount,\n    b.outstanding_amount,\n    b.payment_status,\n    b.is_overdue\n   FROM ((smartrent.invoices i\n     JOIN smartrent.v_invoice_balances b ON ((b.id = i.id)))\n     JOIN smartrent.contracts c ON ((c.id = i.contract_id)))\n  WHERE ((c.user_id = smartrent.request_user_id()) AND (i.status <> 'draft'::text));"
+    },
+    {
+      "name": "v_user_notifications",
+      "definition": " SELECT id,\n    recipient_id,\n    event_key,\n    title,\n    body,\n    url,\n    created_at,\n    read_at\n   FROM smartrent.notifications\n  WHERE (recipient_id = smartrent.request_user_id());"
+    },
+    {
+      "name": "v_user_tickets",
+      "definition": " SELECT id,\n    code,\n    room_id,\n    contract_id,\n    reported_by,\n    category_code,\n    title,\n    description,\n    priority,\n    status,\n    due_at,\n    resolution_notes,\n    attachment_file_ids,\n    COALESCE(( SELECT jsonb_agg(m.value ORDER BY (m.value ->> 'createdAt'::text)) AS jsonb_agg\n           FROM jsonb_array_elements(t.messages) m(value)\n          WHERE (NOT COALESCE(((m.value ->> 'isInternal'::text))::boolean, false))), '[]'::jsonb) AS messages,\n    history,\n    created_at,\n    updated_at\n   FROM smartrent.tickets t\n  WHERE ((reported_by = smartrent.request_user_id()) OR (EXISTS ( SELECT 1\n           FROM smartrent.contracts c\n          WHERE ((c.id = t.contract_id) AND (c.user_id = smartrent.request_user_id())))));"
+    }
+  ],
+  "tables": [
+    {
+      "name": "auth_tokens",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "token_hash",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "consumed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "user_agent",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "ip_address",
+          "type": "inet",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX auth_tokens_pkey ON smartrent.auth_tokens USING btree (id)",
+        "CREATE UNIQUE INDEX auth_tokens_token_hash_key ON smartrent.auth_tokens USING btree (token_hash)",
+        "CREATE INDEX auth_tokens_user_idx ON smartrent.auth_tokens USING btree (user_id, kind)"
+      ],
+      "constraints": [
+        {
+          "name": "auth_tokens_check",
+          "type": "c",
+          "definition": "CHECK ((expires_at > created_at))"
+        },
+        {
+          "name": "auth_tokens_kind_check",
+          "type": "c",
+          "definition": "CHECK ((kind = ANY (ARRAY['session'::text, 'password_reset'::text, 'invitation'::text])))"
+        },
+        {
+          "name": "auth_tokens_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "auth_tokens_token_hash_check",
+          "type": "c",
+          "definition": "CHECK ((length(token_hash) >= 32))"
+        },
+        {
+          "name": "auth_tokens_token_hash_key",
+          "type": "u",
+          "definition": "UNIQUE (token_hash)"
+        },
+        {
+          "name": "auth_tokens_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+        }
+      ],
+      "description": "Phiên đăng nhập, đặt lại mật khẩu và lời mời; chỉ lưu hash token."
+    },
+    {
+      "name": "billing_periods",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "property_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "month_start",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'open'::text",
+          "nullable": false
+        },
+        {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "locked_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "unlock_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "history",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX billing_periods_pkey ON smartrent.billing_periods USING btree (id)",
+        "CREATE UNIQUE INDEX billing_periods_property_id_month_start_key ON smartrent.billing_periods USING btree (property_id, month_start)"
+      ],
+      "constraints": [
+        {
+          "name": "billing_periods_check",
+          "type": "c",
+          "definition": "CHECK (((status = 'locked'::text) = ((locked_at IS NOT NULL) AND (locked_by IS NOT NULL))))"
+        },
+        {
+          "name": "billing_periods_history_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(history) = 'array'::text))"
+        },
+        {
+          "name": "billing_periods_locked_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (locked_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "billing_periods_month_start_check",
+          "type": "c",
+          "definition": "CHECK ((EXTRACT(day FROM month_start) = (1)::numeric))"
+        },
+        {
+          "name": "billing_periods_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "billing_periods_property_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (property_id) REFERENCES smartrent.properties(id)"
+        },
+        {
+          "name": "billing_periods_property_id_month_start_key",
+          "type": "u",
+          "definition": "UNIQUE (property_id, month_start)"
+        },
+        {
+          "name": "billing_periods_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'locked'::text])))"
+        }
+      ],
+      "description": "Kỳ tháng theo cơ sở và trạng thái khóa, kể cả tháng chưa có hóa đơn."
+    },
+    {
+      "name": "bookings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "room_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "contract_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": "'viewing'::text",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'new'::text",
+          "nullable": false
+        },
+        {
+          "name": "contact_name",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "occupants",
+          "type": "smallint",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "preferred_viewing_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "desired_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "message",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "changes",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "appointments",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "hold_status",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "hold_from",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "hold_to",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "hold_expires_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "hold_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "decision_notes",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "history",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX bookings_pkey ON smartrent.bookings USING btree (id)",
+        "CREATE UNIQUE INDEX bookings_code_key ON smartrent.bookings USING btree (code)",
+        "CREATE INDEX bookings_room_id_daterange_excl ON smartrent.bookings USING gist (room_id, daterange(hold_from, hold_to, '[)'::text)) WHERE (hold_status = 'holding'::text)",
+        "CREATE UNIQUE INDEX bookings_one_open_viewing ON smartrent.bookings USING btree (user_id, room_id) WHERE ((kind = 'viewing'::text) AND (status <> ALL (ARRAY['converted'::text, 'rejected'::text, 'cancelled'::text])))",
+        "CREATE UNIQUE INDEX bookings_one_pending_request ON smartrent.bookings USING btree (user_id, kind, COALESCE(contract_id, '00000000-0000-0000-0000-000000000000'::uuid)) WHERE ((kind <> 'viewing'::text) AND (status = 'pending'::text))",
+        "CREATE INDEX bookings_queue_idx ON smartrent.bookings USING btree (kind, status, preferred_viewing_at)"
+      ],
+      "constraints": [
+        {
+          "name": "bookings_appointments_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(appointments) = 'array'::text))"
+        },
+        {
+          "name": "bookings_changes_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(changes) = 'object'::text))"
+        },
+        {
+          "name": "bookings_check",
+          "type": "c",
+          "definition": "CHECK ((((kind = 'viewing'::text) AND (room_id IS NOT NULL) AND (contract_id IS NULL) AND (occupants IS NOT NULL) AND (contact_name IS NOT NULL)) OR ((kind = 'profile_change'::text) AND (contract_id IS NULL) AND (changes <> '{}'::jsonb)) OR ((kind = ANY (ARRAY['renewal'::text, 'checkout'::text, 'transfer'::text])) AND (contract_id IS NOT NULL) AND (desired_on IS NOT NULL))))"
+        },
+        {
+          "name": "bookings_check1",
+          "type": "c",
+          "definition": "CHECK (((hold_status IS NULL) OR ((kind = 'viewing'::text) AND (hold_from IS NOT NULL) AND (hold_expires_at IS NOT NULL))))"
+        },
+        {
+          "name": "bookings_check2",
+          "type": "c",
+          "definition": "CHECK (((hold_to IS NULL) OR (hold_to > hold_from)))"
+        },
+        {
+          "name": "bookings_check3",
+          "type": "c",
+          "definition": "CHECK (((reviewed_at IS NULL) = (reviewed_by IS NULL)))"
+        },
+        {
+          "name": "bookings_check4",
+          "type": "c",
+          "definition": "CHECK (((status <> 'rejected'::text) OR (NULLIF(btrim(decision_notes), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "bookings_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "bookings_contract_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+        },
+        {
+          "name": "bookings_history_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(history) = 'array'::text))"
+        },
+        {
+          "name": "bookings_hold_status_check",
+          "type": "c",
+          "definition": "CHECK ((hold_status = ANY (ARRAY['holding'::text, 'converted'::text, 'cancelled'::text, 'expired'::text])))"
+        },
+        {
+          "name": "bookings_kind_check",
+          "type": "c",
+          "definition": "CHECK ((kind = ANY (ARRAY['viewing'::text, 'profile_change'::text, 'renewal'::text, 'checkout'::text, 'transfer'::text])))"
+        },
+        {
+          "name": "bookings_occupants_check",
+          "type": "c",
+          "definition": "CHECK (((occupants >= 1) AND (occupants <= 20)))"
+        },
+        {
+          "name": "bookings_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "bookings_reviewed_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (reviewed_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "bookings_room_id_daterange_excl",
+          "type": "x",
+          "definition": "EXCLUDE USING gist (room_id WITH =, daterange(hold_from, hold_to, '[)'::text) WITH &&) WHERE ((hold_status = 'holding'::text))"
+        },
+        {
+          "name": "bookings_room_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+        },
+        {
+          "name": "bookings_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['new'::text, 'accepted'::text, 'consulting'::text, 'scheduled'::text, 'completed'::text, 'no_show'::text, 'pending'::text, 'approved'::text, 'converted'::text, 'rejected'::text, 'cancelled'::text])))"
+        },
+        {
+          "name": "bookings_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+        }
+      ],
+      "description": "Yêu cầu, lịch xem, giữ chỗ và đề nghị của khách, phân biệt bằng kind."
+    },
+    {
+      "name": "contracts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "room_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "booking_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'active'::text",
+          "nullable": false
+        },
+        {
+          "name": "onboarding_mode",
+          "type": "text",
+          "default": "'new'::text",
+          "nullable": false
+        },
+        {
+          "name": "starts_on",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "move_in_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "move_out_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "ends_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "required_deposit",
+          "type": "numeric(16,0)",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "versions",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "attachments",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "occupants",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "initial_readings",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "final_readings",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "checkin_handover",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "checkout_handover",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "checkout_summary",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "onboarding_gaps",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "ended_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "remaining_debt_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "archived_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX contracts_pkey ON smartrent.contracts USING btree (id)",
+        "CREATE UNIQUE INDEX contracts_code_key ON smartrent.contracts USING btree (code)",
+        "CREATE UNIQUE INDEX contracts_booking_id_key ON smartrent.contracts USING btree (booking_id)",
+        "CREATE INDEX contracts_room_id_daterange_excl ON smartrent.contracts USING gist (room_id, daterange(starts_on, move_out_on, '[)'::text)) WHERE (status <> 'cancelled'::text)",
+        "CREATE INDEX contracts_customer_idx ON smartrent.contracts USING btree (user_id, status)",
+        "CREATE INDEX contracts_expiry_idx ON smartrent.contracts USING btree (ends_on) WHERE (status = 'active'::text)"
+      ],
+      "constraints": [
+        {
+          "name": "contract_checkout",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "contracts_attachments_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(attachments) = 'array'::text))"
+        },
+        {
+          "name": "contracts_booking_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (booking_id) REFERENCES smartrent.bookings(id)"
+        },
+        {
+          "name": "contracts_booking_id_key",
+          "type": "u",
+          "definition": "UNIQUE (booking_id)"
+        },
+        {
+          "name": "contracts_check",
+          "type": "c",
+          "definition": "CHECK (((ends_on IS NULL) OR (ends_on > starts_on)))"
+        },
+        {
+          "name": "contracts_check1",
+          "type": "c",
+          "definition": "CHECK (((move_in_on IS NULL) OR (move_in_on >= starts_on)))"
+        },
+        {
+          "name": "contracts_check2",
+          "type": "c",
+          "definition": "CHECK (((move_out_on IS NULL) OR (move_out_on > COALESCE(move_in_on, starts_on))))"
+        },
+        {
+          "name": "contracts_check3",
+          "type": "c",
+          "definition": "CHECK (((status <> 'active'::text) OR ((move_in_on IS NOT NULL) AND (move_out_on IS NULL))))"
+        },
+        {
+          "name": "contracts_check4",
+          "type": "c",
+          "definition": "CHECK (((status <> 'ended'::text) OR ((move_out_on IS NOT NULL) AND (NULLIF(btrim(ended_reason), ''::text) IS NOT NULL))))"
+        },
+        {
+          "name": "contracts_checkin_handover_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(checkin_handover) = 'object'::text))"
+        },
+        {
+          "name": "contracts_checkout_handover_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(checkout_handover) = 'object'::text))"
+        },
+        {
+          "name": "contracts_checkout_summary_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(checkout_summary) = 'object'::text))"
+        },
+        {
+          "name": "contracts_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "contracts_final_readings_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(final_readings) = 'object'::text))"
+        },
+        {
+          "name": "contracts_initial_readings_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(initial_readings) = 'object'::text))"
+        },
+        {
+          "name": "contracts_occupants_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(occupants) = 'array'::text))"
+        },
+        {
+          "name": "contracts_onboarding_gaps_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(onboarding_gaps) = 'array'::text))"
+        },
+        {
+          "name": "contracts_onboarding_mode_check",
+          "type": "c",
+          "definition": "CHECK ((onboarding_mode = ANY (ARRAY['new'::text, 'import'::text])))"
+        },
+        {
+          "name": "contracts_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "contracts_required_deposit_check",
+          "type": "c",
+          "definition": "CHECK ((required_deposit >= (0)::numeric))"
+        },
+        {
+          "name": "contracts_room_id_daterange_excl",
+          "type": "x",
+          "definition": "EXCLUDE USING gist (room_id WITH =, daterange(starts_on, move_out_on, '[)'::text) WITH &&) WHERE ((status <> 'cancelled'::text))"
+        },
+        {
+          "name": "contracts_room_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+        },
+        {
+          "name": "contracts_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['planned'::text, 'active'::text, 'ended'::text, 'cancelled'::text])))"
+        },
+        {
+          "name": "contracts_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "contracts_versions_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(versions) = 'array'::text))"
+        }
+      ],
+      "description": "Một hồ sơ thuê và hợp đồng; chứa gia hạn, bản ký, người ở cùng, bàn giao."
+    },
+    {
+      "name": "files",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "uploaded_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "storage_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "file_name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "content_type",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "byte_size",
+          "type": "bigint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "visibility",
+          "type": "text",
+          "default": "'private'::text",
+          "nullable": false
+        },
+        {
+          "name": "purpose",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "scan_status",
+          "type": "text",
+          "default": "'pending'::text",
+          "nullable": false
+        },
+        {
+          "name": "sha256",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX files_pkey ON smartrent.files USING btree (id)",
+        "CREATE UNIQUE INDEX files_storage_key_key ON smartrent.files USING btree (storage_key)"
+      ],
+      "constraints": [
+        {
+          "name": "files_byte_size_check",
+          "type": "c",
+          "definition": "CHECK ((byte_size >= 0))"
+        },
+        {
+          "name": "files_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "files_purpose_check",
+          "type": "c",
+          "definition": "CHECK ((purpose = ANY (ARRAY['avatar'::text, 'room_image'::text, 'contract_signed'::text, 'contract_attachment'::text, 'payment_proof'::text, 'ticket'::text, 'other'::text])))"
+        },
+        {
+          "name": "files_scan_status_check",
+          "type": "c",
+          "definition": "CHECK ((scan_status = ANY (ARRAY['pending'::text, 'clean'::text, 'rejected'::text, 'missing'::text])))"
+        },
+        {
+          "name": "files_storage_key_key",
+          "type": "u",
+          "definition": "UNIQUE (storage_key)"
+        },
+        {
+          "name": "files_uploaded_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (uploaded_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "files_visibility_check",
+          "type": "c",
+          "definition": "CHECK ((visibility = ANY (ARRAY['public'::text, 'private'::text])))"
+        }
+      ],
+      "description": "Metadata tệp dùng chung; nội dung nhị phân ở storage."
+    },
+    {
+      "name": "invoices",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "contract_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "period_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": "'periodic'::text",
+          "nullable": false
+        },
+        {
+          "name": "adjusts_invoice_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "metered_only",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'draft'::text",
+          "nullable": false
+        },
+        {
+          "name": "service_from",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "service_to",
+          "type": "date",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "electricity_start",
+          "type": "numeric(16,3)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "electricity_end",
+          "type": "numeric(16,3)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "electricity_from_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "electricity_to_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "water_start",
+          "type": "numeric(16,3)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "water_end",
+          "type": "numeric(16,3)",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "water_from_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "water_to_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "readings_history",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "correction_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "lines",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "total_amount",
+          "type": "numeric(16,0)",
+          "default": "smartrent.invoice_total(lines)",
+          "nullable": true
+        },
+        {
+          "name": "customer_snapshot",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "issued_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "due_on",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "issued_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "issued_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "voided_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "void_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX invoices_pkey ON smartrent.invoices USING btree (id)",
+        "CREATE UNIQUE INDEX invoices_code_key ON smartrent.invoices USING btree (code)",
+        "CREATE UNIQUE INDEX invoices_idempotency_key_key ON smartrent.invoices USING btree (idempotency_key)",
+        "CREATE INDEX invoices_contract_id_daterange_excl ON smartrent.invoices USING gist (contract_id, daterange(service_from, service_to, '[)'::text)) WHERE ((status <> 'void'::text) AND (kind = ANY (ARRAY['periodic'::text, 'final'::text])) AND (NOT metered_only))",
+        "CREATE UNIQUE INDEX invoices_one_final ON smartrent.invoices USING btree (contract_id) WHERE ((kind = 'final'::text) AND (status <> 'void'::text))",
+        "CREATE UNIQUE INDEX invoices_one_month ON smartrent.invoices USING btree (contract_id, period_id) WHERE ((kind = 'periodic'::text) AND (status <> 'void'::text))",
+        "CREATE INDEX invoices_due_idx ON smartrent.invoices USING btree (status, due_on)",
+        "CREATE INDEX invoices_period_idx ON smartrent.invoices USING btree (period_id, status)"
+      ],
+      "constraints": [
+        {
+          "name": "invoice_balances",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "invoices_adjusts_invoice_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (adjusts_invoice_id) REFERENCES smartrent.invoices(id)"
+        },
+        {
+          "name": "invoices_check",
+          "type": "c",
+          "definition": "CHECK ((service_to > service_from))"
+        },
+        {
+          "name": "invoices_check1",
+          "type": "c",
+          "definition": "CHECK (((kind = ANY (ARRAY['debit_adjustment'::text, 'credit_adjustment'::text])) = (adjusts_invoice_id IS NOT NULL)))"
+        },
+        {
+          "name": "invoices_check2",
+          "type": "c",
+          "definition": "CHECK (((kind <> 'periodic'::text) OR (period_id IS NOT NULL)))"
+        },
+        {
+          "name": "invoices_check3",
+          "type": "c",
+          "definition": "CHECK (((NOT metered_only) OR (kind = 'final'::text)))"
+        },
+        {
+          "name": "invoices_check4",
+          "type": "c",
+          "definition": "CHECK (((electricity_end IS NULL) OR ((electricity_start IS NOT NULL) AND (electricity_end >= electricity_start) AND (electricity_from_at IS NOT NULL) AND (electricity_to_at IS NOT NULL) AND (electricity_to_at > electricity_from_at))))"
+        },
+        {
+          "name": "invoices_check5",
+          "type": "c",
+          "definition": "CHECK (((water_end IS NULL) OR ((water_start IS NOT NULL) AND (water_end >= water_start) AND (water_from_at IS NOT NULL) AND (water_to_at IS NOT NULL) AND (water_to_at > water_from_at))))"
+        },
+        {
+          "name": "invoices_check6",
+          "type": "c",
+          "definition": "CHECK (((status = 'draft'::text) OR ((code IS NOT NULL) AND (issued_on IS NOT NULL) AND (due_on IS NOT NULL) AND (due_on >= issued_on) AND (issued_at IS NOT NULL) AND (issued_by IS NOT NULL))))"
+        },
+        {
+          "name": "invoices_check7",
+          "type": "c",
+          "definition": "CHECK (((status <> 'void'::text) OR ((voided_at IS NOT NULL) AND (NULLIF(btrim(void_reason), ''::text) IS NOT NULL))))"
+        },
+        {
+          "name": "invoices_check8",
+          "type": "c",
+          "definition": "CHECK (((idempotency_key IS NULL) OR (request_hash IS NOT NULL)))"
+        },
+        {
+          "name": "invoices_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "invoices_contract_id_daterange_excl",
+          "type": "x",
+          "definition": "EXCLUDE USING gist (contract_id WITH =, daterange(service_from, service_to, '[)'::text) WITH &&) WHERE (((status <> 'void'::text) AND (kind = ANY (ARRAY['periodic'::text, 'final'::text])) AND (NOT metered_only)))"
+        },
+        {
+          "name": "invoices_contract_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+        },
+        {
+          "name": "invoices_customer_snapshot_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(customer_snapshot) = 'object'::text))"
+        },
+        {
+          "name": "invoices_electricity_start_check",
+          "type": "c",
+          "definition": "CHECK (((electricity_start IS NULL) OR (electricity_start >= (0)::numeric)))"
+        },
+        {
+          "name": "invoices_idempotency_key_key",
+          "type": "u",
+          "definition": "UNIQUE (idempotency_key)"
+        },
+        {
+          "name": "invoices_issued_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (issued_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "invoices_kind_check",
+          "type": "c",
+          "definition": "CHECK ((kind = ANY (ARRAY['periodic'::text, 'final'::text, 'opening_balance'::text, 'debit_adjustment'::text, 'credit_adjustment'::text])))"
+        },
+        {
+          "name": "invoices_lines_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(lines) = 'array'::text))"
+        },
+        {
+          "name": "invoices_period_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (period_id) REFERENCES smartrent.billing_periods(id)"
+        },
+        {
+          "name": "invoices_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "invoices_readings_history_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(readings_history) = 'array'::text))"
+        },
+        {
+          "name": "invoices_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['draft'::text, 'issued'::text, 'void'::text])))"
+        },
+        {
+          "name": "invoices_water_start_check",
+          "type": "c",
+          "definition": "CHECK (((water_start IS NULL) OR (water_start >= (0)::numeric)))"
+        }
+      ],
+      "description": "Hóa đơn cùng chỉ số điện nước, lịch sử sửa số và toàn bộ dòng tính tiền."
+    },
+    {
+      "name": "notifications",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "recipient_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "event_key",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "body",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "url",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "read_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX notifications_pkey ON smartrent.notifications USING btree (id)",
+        "CREATE UNIQUE INDEX notifications_recipient_id_event_key_key ON smartrent.notifications USING btree (recipient_id, event_key)",
+        "CREATE INDEX notifications_recipient_idx ON smartrent.notifications USING btree (recipient_id, created_at DESC)"
+      ],
+      "constraints": [
+        {
+          "name": "notifications_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "notifications_recipient_id_event_key_key",
+          "type": "u",
+          "definition": "UNIQUE (recipient_id, event_key)"
+        },
+        {
+          "name": "notifications_recipient_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (recipient_id) REFERENCES smartrent.users(id)"
+        }
+      ],
+      "description": "Thông báo và trạng thái đọc theo tài khoản."
+    },
+    {
+      "name": "payments",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "user_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "contract_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "intended_invoice_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "kind",
+          "type": "text",
+          "default": "'receipt'::text",
+          "nullable": false
+        },
+        {
+          "name": "reverses_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'pending'::text",
+          "nullable": false
+        },
+        {
+          "name": "amount",
+          "type": "numeric(16,0)",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "method",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "external_reference",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "allocations",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "proof_file_ids",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "submitted_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "confirmed_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "confirmed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX payments_pkey ON smartrent.payments USING btree (id)",
+        "CREATE UNIQUE INDEX payments_code_key ON smartrent.payments USING btree (code)",
+        "CREATE UNIQUE INDEX payments_user_id_idempotency_key_key ON smartrent.payments USING btree (user_id, idempotency_key)",
+        "CREATE UNIQUE INDEX payments_bank_reference ON smartrent.payments USING btree (lower(btrim(external_reference))) WHERE ((kind = ANY (ARRAY['receipt'::text, 'deposit_receipt'::text])) AND (method = 'bank_transfer'::text) AND (status <> 'rejected'::text))",
+        "CREATE INDEX payments_customer_idx ON smartrent.payments USING btree (user_id, status, received_at)",
+        "CREATE INDEX payments_contract_idx ON smartrent.payments USING btree (contract_id, kind)",
+        "CREATE INDEX payments_reversal_idx ON smartrent.payments USING btree (reverses_id)"
+      ],
+      "constraints": [
+        {
+          "name": "payment_balances",
+          "type": "t",
+          "definition": "TRIGGER DEFERRABLE INITIALLY DEFERRED"
+        },
+        {
+          "name": "payments_allocations_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(allocations) = 'array'::text))"
+        },
+        {
+          "name": "payments_amount_check",
+          "type": "c",
+          "definition": "CHECK ((amount > (0)::numeric))"
+        },
+        {
+          "name": "payments_check",
+          "type": "c",
+          "definition": "CHECK (((kind !~~ 'deposit_%'::text) OR (contract_id IS NOT NULL)))"
+        },
+        {
+          "name": "payments_check1",
+          "type": "c",
+          "definition": "CHECK (((kind = ANY (ARRAY['receipt_reversal'::text, 'deposit_offset_reversal'::text])) = (reverses_id IS NOT NULL)))"
+        },
+        {
+          "name": "payments_check2",
+          "type": "c",
+          "definition": "CHECK (((status = 'confirmed'::text) = ((confirmed_at IS NOT NULL) AND (confirmed_by IS NOT NULL))))"
+        },
+        {
+          "name": "payments_check3",
+          "type": "c",
+          "definition": "CHECK (((kind <> ALL (ARRAY['receipt_reversal'::text, 'deposit_refund'::text, 'deposit_offset'::text, 'deposit_offset_reversal'::text])) OR (status = 'confirmed'::text)))"
+        },
+        {
+          "name": "payments_check4",
+          "type": "c",
+          "definition": "CHECK (((kind <> ALL (ARRAY['receipt_reversal'::text, 'deposit_refund'::text, 'deposit_offset_reversal'::text])) OR (NULLIF(btrim(reason), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "payments_check5",
+          "type": "c",
+          "definition": "CHECK (((status <> 'rejected'::text) OR (NULLIF(btrim(reason), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "payments_check6",
+          "type": "c",
+          "definition": "CHECK (((kind = ANY (ARRAY['deposit_offset'::text, 'deposit_offset_reversal'::text])) = (method IS NULL)))"
+        },
+        {
+          "name": "payments_check7",
+          "type": "c",
+          "definition": "CHECK (((method IS DISTINCT FROM 'bank_transfer'::text) OR (NULLIF(btrim(external_reference), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "payments_check8",
+          "type": "c",
+          "definition": "CHECK (((idempotency_key IS NULL) OR (request_hash IS NOT NULL)))"
+        },
+        {
+          "name": "payments_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "payments_confirmed_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (confirmed_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "payments_contract_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+        },
+        {
+          "name": "payments_intended_invoice_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (intended_invoice_id) REFERENCES smartrent.invoices(id)"
+        },
+        {
+          "name": "payments_kind_check",
+          "type": "c",
+          "definition": "CHECK ((kind = ANY (ARRAY['receipt'::text, 'receipt_reversal'::text, 'deposit_receipt'::text, 'deposit_refund'::text, 'deposit_offset'::text, 'deposit_offset_reversal'::text])))"
+        },
+        {
+          "name": "payments_method_check",
+          "type": "c",
+          "definition": "CHECK ((method = ANY (ARRAY['cash'::text, 'bank_transfer'::text])))"
+        },
+        {
+          "name": "payments_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "payments_proof_file_ids_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(proof_file_ids) = 'array'::text))"
+        },
+        {
+          "name": "payments_reverses_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (reverses_id) REFERENCES smartrent.payments(id)"
+        },
+        {
+          "name": "payments_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'confirmed'::text, 'rejected'::text])))"
+        },
+        {
+          "name": "payments_submitted_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (submitted_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "payments_user_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "payments_user_id_idempotency_key_key",
+          "type": "u",
+          "definition": "UNIQUE (user_id, idempotency_key)"
+        }
+      ],
+      "description": "Sổ thanh toán và cọc; phân bổ vào hóa đơn nằm trong JSONB."
+    },
+    {
+      "name": "properties",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "address_line",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "locality",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "province",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "inactive_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "invoice_day",
+          "type": "smallint",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "due_after_days",
+          "type": "smallint",
+          "default": "5",
+          "nullable": false
+        },
+        {
+          "name": "proration_policy",
+          "type": "text",
+          "default": "'actual_days'::text",
+          "nullable": false
+        },
+        {
+          "name": "amenity_options",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "rates",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX properties_pkey ON smartrent.properties USING btree (id)",
+        "CREATE UNIQUE INDEX properties_code_key ON smartrent.properties USING btree (code)"
+      ],
+      "constraints": [
+        {
+          "name": "properties_amenity_options_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(amenity_options) = 'array'::text))"
+        },
+        {
+          "name": "properties_check",
+          "type": "c",
+          "definition": "CHECK ((is_active OR (NULLIF(btrim(inactive_reason), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "properties_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "properties_due_after_days_check",
+          "type": "c",
+          "definition": "CHECK (((due_after_days >= 0) AND (due_after_days <= 365)))"
+        },
+        {
+          "name": "properties_invoice_day_check",
+          "type": "c",
+          "definition": "CHECK (((invoice_day >= 1) AND (invoice_day <= 31)))"
+        },
+        {
+          "name": "properties_name_check",
+          "type": "c",
+          "definition": "CHECK ((btrim(name) <> ''::text))"
+        },
+        {
+          "name": "properties_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "properties_proration_policy_check",
+          "type": "c",
+          "definition": "CHECK ((proration_policy = ANY (ARRAY['actual_days'::text, 'full_month'::text])))"
+        },
+        {
+          "name": "properties_rates_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(rates) = 'array'::text))"
+        }
+      ],
+      "description": "Cơ sở, danh mục tiện ích và bảng giá mặc định dạng JSONB."
+    },
+    {
+      "name": "rooms",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "property_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "floor_label",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "area_m2",
+          "type": "numeric(7,2)",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "capacity",
+          "type": "smallint",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "room_type_code",
+          "type": "text",
+          "default": "'STANDARD'::text",
+          "nullable": false
+        },
+        {
+          "name": "room_type_name",
+          "type": "text",
+          "default": "'Phòng tiêu chuẩn'::text",
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "rules_text",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "required_deposit",
+          "type": "numeric(16,0)",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "operating_status",
+          "type": "text",
+          "default": "'available'::text",
+          "nullable": false
+        },
+        {
+          "name": "status_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "listing_slug",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "listing_title",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "listing_description",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "listing_status",
+          "type": "text",
+          "default": "'hidden'::text",
+          "nullable": false
+        },
+        {
+          "name": "video_url",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "amenities",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "images",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "rates",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "status_history",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX rooms_pkey ON smartrent.rooms USING btree (id)",
+        "CREATE UNIQUE INDEX rooms_listing_slug_key ON smartrent.rooms USING btree (listing_slug)",
+        "CREATE UNIQUE INDEX rooms_code_unique ON smartrent.rooms USING btree (property_id, lower(code))",
+        "CREATE INDEX rooms_search_idx ON smartrent.rooms USING btree (property_id, operating_status, listing_status)",
+        "CREATE INDEX rooms_amenities_idx ON smartrent.rooms USING gin (amenities)"
+      ],
+      "constraints": [
+        {
+          "name": "rooms_amenities_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(amenities) = 'array'::text))"
+        },
+        {
+          "name": "rooms_area_m2_check",
+          "type": "c",
+          "definition": "CHECK (((area_m2 >= (1)::numeric) AND (area_m2 <= (500)::numeric)))"
+        },
+        {
+          "name": "rooms_capacity_check",
+          "type": "c",
+          "definition": "CHECK (((capacity >= 1) AND (capacity <= 20)))"
+        },
+        {
+          "name": "rooms_check",
+          "type": "c",
+          "definition": "CHECK (((listing_status <> 'published'::text) OR ((listing_slug IS NOT NULL) AND (listing_title IS NOT NULL) AND (published_at IS NOT NULL))))"
+        },
+        {
+          "name": "rooms_code_check",
+          "type": "c",
+          "definition": "CHECK ((code ~ '^[A-Za-z0-9-]{1,20}$'::text))"
+        },
+        {
+          "name": "rooms_images_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(images) = 'array'::text))"
+        },
+        {
+          "name": "rooms_listing_slug_key",
+          "type": "u",
+          "definition": "UNIQUE (listing_slug)"
+        },
+        {
+          "name": "rooms_listing_status_check",
+          "type": "c",
+          "definition": "CHECK ((listing_status = ANY (ARRAY['hidden'::text, 'draft'::text, 'published'::text])))"
+        },
+        {
+          "name": "rooms_operating_status_check",
+          "type": "c",
+          "definition": "CHECK ((operating_status = ANY (ARRAY['available'::text, 'maintenance'::text, 'inactive'::text])))"
+        },
+        {
+          "name": "rooms_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "rooms_property_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (property_id) REFERENCES smartrent.properties(id)"
+        },
+        {
+          "name": "rooms_rates_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(rates) = 'array'::text))"
+        },
+        {
+          "name": "rooms_required_deposit_check",
+          "type": "c",
+          "definition": "CHECK ((required_deposit >= (0)::numeric))"
+        },
+        {
+          "name": "rooms_status_history_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(status_history) = 'array'::text))"
+        }
+      ],
+      "description": "Phòng cùng tin đăng, tiện ích, ảnh, giá riêng và lịch sử trạng thái."
+    },
+    {
+      "name": "settings",
+      "columns": [
+        {
+          "name": "id",
+          "type": "smallint",
+          "default": "1",
+          "nullable": false
+        },
+        {
+          "name": "business_name",
+          "type": "text",
+          "default": "'SmartRent'::text",
+          "nullable": false
+        },
+        {
+          "name": "meter_reading_day",
+          "type": "smallint",
+          "default": "25",
+          "nullable": false
+        },
+        {
+          "name": "invoice_create_day",
+          "type": "smallint",
+          "default": "28",
+          "nullable": false
+        },
+        {
+          "name": "reminder_enabled",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "bank_name",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "bank_account_number",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "bank_account_name",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX settings_pkey ON smartrent.settings USING btree (id)"
+      ],
+      "constraints": [
+        {
+          "name": "settings_check",
+          "type": "c",
+          "definition": "CHECK ((invoice_create_day >= meter_reading_day))"
+        },
+        {
+          "name": "settings_check1",
+          "type": "c",
+          "definition": "CHECK ((num_nonnulls(bank_name, bank_account_number, bank_account_name) = ANY (ARRAY[0, 3])))"
+        },
+        {
+          "name": "settings_id_check",
+          "type": "c",
+          "definition": "CHECK ((id = 1))"
+        },
+        {
+          "name": "settings_invoice_create_day_check",
+          "type": "c",
+          "definition": "CHECK (((invoice_create_day >= 1) AND (invoice_create_day <= 28)))"
+        },
+        {
+          "name": "settings_meter_reading_day_check",
+          "type": "c",
+          "definition": "CHECK (((meter_reading_day >= 1) AND (meter_reading_day <= 28)))"
+        },
+        {
+          "name": "settings_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "settings_updated_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (updated_by) REFERENCES smartrent.users(id)"
+        }
+      ],
+      "description": "Cấu hình thương hiệu, lịch nhắc và ngân hàng mặc định."
+    },
+    {
+      "name": "tickets",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "room_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "contract_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "category_code",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "reported_by",
+          "type": "uuid",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "assigned_to",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "title",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "description",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "priority",
+          "type": "text",
+          "default": "'normal'::text",
+          "nullable": false
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "default": "'new'::text",
+          "nullable": false
+        },
+        {
+          "name": "due_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "waiting_reason",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "resolution_notes",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "closed_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "attachment_file_ids",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "messages",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "history",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX tickets_pkey ON smartrent.tickets USING btree (id)",
+        "CREATE UNIQUE INDEX tickets_code_key ON smartrent.tickets USING btree (code)",
+        "CREATE INDEX tickets_inbox_idx ON smartrent.tickets USING btree (status, due_at)",
+        "CREATE INDEX tickets_customer_idx ON smartrent.tickets USING btree (reported_by, contract_id)"
+      ],
+      "constraints": [
+        {
+          "name": "tickets_assigned_to_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (assigned_to) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "tickets_attachment_file_ids_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(attachment_file_ids) = 'array'::text))"
+        },
+        {
+          "name": "tickets_category_code_check",
+          "type": "c",
+          "definition": "CHECK ((category_code = ANY (ARRAY['ELECTRICITY'::text, 'WATER'::text, 'INTERNET'::text, 'OTHER'::text])))"
+        },
+        {
+          "name": "tickets_check",
+          "type": "c",
+          "definition": "CHECK (((status <> 'waiting'::text) OR (NULLIF(btrim(waiting_reason), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "tickets_check1",
+          "type": "c",
+          "definition": "CHECK (((status <> ALL (ARRAY['resolved'::text, 'closed'::text])) OR (NULLIF(btrim(resolution_notes), ''::text) IS NOT NULL)))"
+        },
+        {
+          "name": "tickets_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "tickets_contract_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+        },
+        {
+          "name": "tickets_history_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(history) = 'array'::text))"
+        },
+        {
+          "name": "tickets_messages_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(messages) = 'array'::text))"
+        },
+        {
+          "name": "tickets_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "tickets_priority_check",
+          "type": "c",
+          "definition": "CHECK ((priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text])))"
+        },
+        {
+          "name": "tickets_reported_by_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (reported_by) REFERENCES smartrent.users(id)"
+        },
+        {
+          "name": "tickets_room_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+        },
+        {
+          "name": "tickets_status_check",
+          "type": "c",
+          "definition": "CHECK ((status = ANY (ARRAY['new'::text, 'accepted'::text, 'in_progress'::text, 'waiting'::text, 'resolved'::text, 'closed'::text])))"
+        }
+      ],
+      "description": "Sự cố cùng loại, tệp, hội thoại và tiến độ trong một bảng."
+    },
+    {
+      "name": "users",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "role",
+          "type": "character varying(5)",
+          "default": "'user'::character varying",
+          "nullable": false
+        },
+        {
+          "name": "email",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "password_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "display_name",
+          "type": "text",
+          "default": null,
+          "nullable": false
+        },
+        {
+          "name": "code",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "phone",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "login_enabled",
+          "type": "boolean",
+          "default": "false",
+          "nullable": false
+        },
+        {
+          "name": "date_of_birth",
+          "type": "date",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "address_line",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "locality",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "province",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "emergency_contact_name",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "emergency_contact_phone",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "notes",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "identity_documents",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
+        },
+        {
+          "name": "avatar_file_id",
+          "type": "uuid",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "is_active",
+          "type": "boolean",
+          "default": "true",
+          "nullable": false
+        },
+        {
+          "name": "email_verified_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "accepted_terms_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "security_stamp",
+          "type": "uuid",
+          "default": "gen_random_uuid()",
+          "nullable": false
+        },
+        {
+          "name": "failed_login_count",
+          "type": "integer",
+          "default": "0",
+          "nullable": false
+        },
+        {
+          "name": "locked_until",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "default": "now()",
+          "nullable": false
+        }
+      ],
+      "indexes": [
+        "CREATE UNIQUE INDEX users_pkey ON smartrent.users USING btree (id)",
+        "CREATE UNIQUE INDEX users_code_key ON smartrent.users USING btree (code)",
+        "CREATE UNIQUE INDEX users_email_unique ON smartrent.users USING btree (lower(btrim(email))) WHERE (email IS NOT NULL)",
+        "CREATE UNIQUE INDEX users_one_admin ON smartrent.users USING btree (role) WHERE ((role)::text = 'admin'::text)",
+        "CREATE INDEX users_profile_idx ON smartrent.users USING btree (role, phone, lower(display_name))"
+      ],
+      "constraints": [
+        {
+          "name": "users_avatar_file_id_fkey",
+          "type": "f",
+          "definition": "FOREIGN KEY (avatar_file_id) REFERENCES smartrent.files(id)"
+        },
+        {
+          "name": "users_check",
+          "type": "c",
+          "definition": "CHECK (((NOT login_enabled) OR ((email IS NOT NULL) AND (password_hash IS NOT NULL))))"
+        },
+        {
+          "name": "users_check1",
+          "type": "c",
+          "definition": "CHECK ((((role)::text <> 'admin'::text) OR login_enabled))"
+        },
+        {
+          "name": "users_code_key",
+          "type": "u",
+          "definition": "UNIQUE (code)"
+        },
+        {
+          "name": "users_display_name_check",
+          "type": "c",
+          "definition": "CHECK ((btrim(display_name) <> ''::text))"
+        },
+        {
+          "name": "users_email_check",
+          "type": "c",
+          "definition": "CHECK (((email IS NULL) OR (btrim(email) <> ''::text)))"
+        },
+        {
+          "name": "users_failed_login_count_check",
+          "type": "c",
+          "definition": "CHECK ((failed_login_count >= 0))"
+        },
+        {
+          "name": "users_identity_documents_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(identity_documents) = 'array'::text))"
+        },
+        {
+          "name": "users_password_hash_check",
+          "type": "c",
+          "definition": "CHECK (((password_hash IS NULL) OR (length(password_hash) >= 20)))"
+        },
+        {
+          "name": "users_pkey",
+          "type": "p",
+          "definition": "PRIMARY KEY (id)"
+        },
+        {
+          "name": "users_role_check",
+          "type": "c",
+          "definition": "CHECK (((role)::text = ANY ((ARRAY['admin'::character varying, 'user'::character varying])::text[])))"
+        }
+      ],
+      "description": "Tài khoản và toàn bộ hồ sơ khách, kể cả khách chưa kích hoạt đăng nhập."
+    }
+  ],
+  "triggers": 14,
+  "foreignKeys": [
+    {
+      "child": "settings",
+      "parent": "users",
+      "columns": [
+        "updated_by"
+      ],
+      "definition": "FOREIGN KEY (updated_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "auth_tokens",
+      "parent": "users",
+      "columns": [
+        "user_id"
+      ],
+      "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "files",
+      "parent": "users",
+      "columns": [
+        "uploaded_by"
+      ],
+      "definition": "FOREIGN KEY (uploaded_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "rooms",
+      "parent": "properties",
+      "columns": [
+        "property_id"
+      ],
+      "definition": "FOREIGN KEY (property_id) REFERENCES smartrent.properties(id)"
+    },
+    {
+      "child": "bookings",
+      "parent": "users",
+      "columns": [
+        "user_id"
+      ],
+      "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "bookings",
+      "parent": "rooms",
+      "columns": [
+        "room_id"
+      ],
+      "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+    },
+    {
+      "child": "bookings",
+      "parent": "users",
+      "columns": [
+        "reviewed_by"
+      ],
+      "definition": "FOREIGN KEY (reviewed_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "contracts",
+      "parent": "rooms",
+      "columns": [
+        "room_id"
+      ],
+      "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+    },
+    {
+      "child": "contracts",
+      "parent": "users",
+      "columns": [
+        "user_id"
+      ],
+      "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "contracts",
+      "parent": "bookings",
+      "columns": [
+        "booking_id"
+      ],
+      "definition": "FOREIGN KEY (booking_id) REFERENCES smartrent.bookings(id)"
+    },
+    {
+      "child": "billing_periods",
+      "parent": "properties",
+      "columns": [
+        "property_id"
+      ],
+      "definition": "FOREIGN KEY (property_id) REFERENCES smartrent.properties(id)"
+    },
+    {
+      "child": "billing_periods",
+      "parent": "users",
+      "columns": [
+        "locked_by"
+      ],
+      "definition": "FOREIGN KEY (locked_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "invoices",
+      "parent": "contracts",
+      "columns": [
+        "contract_id"
+      ],
+      "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+    },
+    {
+      "child": "invoices",
+      "parent": "billing_periods",
+      "columns": [
+        "period_id"
+      ],
+      "definition": "FOREIGN KEY (period_id) REFERENCES smartrent.billing_periods(id)"
+    },
+    {
+      "child": "invoices",
+      "parent": "invoices",
+      "columns": [
+        "adjusts_invoice_id"
+      ],
+      "definition": "FOREIGN KEY (adjusts_invoice_id) REFERENCES smartrent.invoices(id)"
+    },
+    {
+      "child": "invoices",
+      "parent": "users",
+      "columns": [
+        "issued_by"
+      ],
+      "definition": "FOREIGN KEY (issued_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "users",
+      "columns": [
+        "user_id"
+      ],
+      "definition": "FOREIGN KEY (user_id) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "contracts",
+      "columns": [
+        "contract_id"
+      ],
+      "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "invoices",
+      "columns": [
+        "intended_invoice_id"
+      ],
+      "definition": "FOREIGN KEY (intended_invoice_id) REFERENCES smartrent.invoices(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "payments",
+      "columns": [
+        "reverses_id"
+      ],
+      "definition": "FOREIGN KEY (reverses_id) REFERENCES smartrent.payments(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "users",
+      "columns": [
+        "submitted_by"
+      ],
+      "definition": "FOREIGN KEY (submitted_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "payments",
+      "parent": "users",
+      "columns": [
+        "confirmed_by"
+      ],
+      "definition": "FOREIGN KEY (confirmed_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "tickets",
+      "parent": "rooms",
+      "columns": [
+        "room_id"
+      ],
+      "definition": "FOREIGN KEY (room_id) REFERENCES smartrent.rooms(id)"
+    },
+    {
+      "child": "tickets",
+      "parent": "contracts",
+      "columns": [
+        "contract_id"
+      ],
+      "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+    },
+    {
+      "child": "tickets",
+      "parent": "users",
+      "columns": [
+        "reported_by"
+      ],
+      "definition": "FOREIGN KEY (reported_by) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "tickets",
+      "parent": "users",
+      "columns": [
+        "assigned_to"
+      ],
+      "definition": "FOREIGN KEY (assigned_to) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "notifications",
+      "parent": "users",
+      "columns": [
+        "recipient_id"
+      ],
+      "definition": "FOREIGN KEY (recipient_id) REFERENCES smartrent.users(id)"
+    },
+    {
+      "child": "users",
+      "parent": "files",
+      "columns": [
+        "avatar_file_id"
+      ],
+      "definition": "FOREIGN KEY (avatar_file_id) REFERENCES smartrent.files(id)"
+    },
+    {
+      "child": "bookings",
+      "parent": "contracts",
+      "columns": [
+        "contract_id"
+      ],
+      "definition": "FOREIGN KEY (contract_id) REFERENCES smartrent.contracts(id)"
+    }
+  ]
+}

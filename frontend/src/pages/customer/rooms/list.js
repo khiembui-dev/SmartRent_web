@@ -100,7 +100,7 @@ export default async function RoomsPage(ctx) {
 
   const [filtersResult, viewingsResult] = await Promise.allSettled([
     publicApi.filters(),
-    session.isTenant ? portalApi.inquiries() : Promise.resolve([]),
+    session.isCustomer ? portalApi.inquiries() : Promise.resolve([]),
   ]);
   if (ctx.signal.aborted) return;
   if (viewingsResult.status === 'fulfilled') setHtml($('[data-viewings]'), myViewings(viewingsResult.value));

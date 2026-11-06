@@ -162,6 +162,7 @@ export default async function DashboardPage(ctx) {
     replaceQuery({ month: month === today.slice(0, 7) ? undefined : month, propertyId: propertyId || undefined });
     body.style.opacity = body.children.length > 1 ? '.6' : '';
     try {
+
       const data = await dashboardApi.get({ month, propertyId: propertyId || undefined }, { signal: ctx.signal });
       disposeChart();
       render(body, data);

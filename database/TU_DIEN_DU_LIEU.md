@@ -563,6 +563,8 @@ Sự cố cùng loại, tệp, hội thoại và tiến độ trong một bảng
 | `history` | `jsonb` | Không | '[]'::jsonb |
 | `created_at` | `timestamp with time zone` | Không | now() |
 | `updated_at` | `timestamp with time zone` | Không | now() |
+| `idempotency_key` | `text` | Có | — |
+| `request_hash` | `text` | Có | — |
 
 Ràng buộc:
 
@@ -587,6 +589,7 @@ Chỉ mục:
 - `CREATE UNIQUE INDEX tickets_code_key ON smartrent.tickets USING btree (code)`
 - `CREATE INDEX tickets_inbox_idx ON smartrent.tickets USING btree (status, due_at)`
 - `CREATE INDEX tickets_customer_idx ON smartrent.tickets USING btree (reported_by, contract_id)`
+- `CREATE UNIQUE INDEX tickets_reporter_idempotency_unique ON smartrent.tickets USING btree (reported_by, idempotency_key)`
 
 ## users
 

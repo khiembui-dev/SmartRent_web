@@ -89,6 +89,8 @@ export function createUploader(input, { multiple = false, maxFiles = 5, accept =
     pond,
     get files() { return [...uploaded.values()]; },
     get fileIds() { return [...uploaded.keys()]; },
+    // Form Ticket không được gửi khi người dùng đã chọn ảnh nhưng ảnh đó tải lên thất bại.
+    get hasErrors() { return pond.getFiles().some((f) => [FilePond.FileStatus.PROCESSING_ERROR, FilePond.FileStatus.LOAD_ERROR].includes(f.status)); },
     get busy() { return pond.getFiles().some((f) => f.status === FilePond.FileStatus.PROCESSING || f.status === FilePond.FileStatus.PROCESSING_QUEUED); },
     reset() { pond.removeFiles(); uploaded.clear(); emit(); },
     destroy() { pond.destroy(); },

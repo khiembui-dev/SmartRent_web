@@ -450,8 +450,15 @@ BEGIN
   FOR previous IN SELECT value FROM jsonb_array_elements(OLD.messages) LOOP
    IF NOT NEW.messages @> jsonb_build_array(previous) THEN RAISE EXCEPTION 'ticket_messages_are_append_only' USING ERRCODE='23514'; END IF;
   END LOOP;
-  IF NEW.status<>OLD.status OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to THEN
-   NEW.history=OLD.history||jsonb_build_array(jsonb_build_object('at',now(),'from',OLD.status,'to',NEW.status,'assignedTo',NEW.assigned_to,'actorId',request_user_id()));
+  IF NEW.status<>OLD.status OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to
+   OR (current_setting('smartrent.ticket_action',true)='assign'
+       AND nullif(current_setting('smartrent.ticket_reason',true),'') IS NOT NULL) THEN
+   -- GUC LOCAL do API đặt trong transaction: giữ lý do chờ/mở lại và không tạo event trùng.
+   NEW.history=OLD.history||jsonb_build_array(jsonb_build_object(
+    'id',gen_random_uuid(),'kind',CASE WHEN current_setting('smartrent.ticket_action',true)='reopen' THEN 'reopen'
+      WHEN current_setting('smartrent.ticket_action',true)='assign' THEN 'assign' ELSE 'status' END,
+    'at',now(),'from',OLD.status,'to',NEW.status,'assignedTo',NEW.assigned_to,'actorId',request_user_id(),
+    'reason',nullif(current_setting('smartrent.ticket_reason',true),'')));
   END IF;
  END IF;
  NEW.updated_at=now(); RETURN NEW;

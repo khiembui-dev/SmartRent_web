@@ -2249,13 +2249,26 @@
           "type": "timestamp with time zone",
           "default": "now()",
           "nullable": false
+        },
+        {
+          "name": "idempotency_key",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "request_hash",
+          "type": "text",
+          "default": null,
+          "nullable": true
         }
       ],
       "indexes": [
         "CREATE UNIQUE INDEX tickets_pkey ON smartrent.tickets USING btree (id)",
         "CREATE UNIQUE INDEX tickets_code_key ON smartrent.tickets USING btree (code)",
         "CREATE INDEX tickets_inbox_idx ON smartrent.tickets USING btree (status, due_at)",
-        "CREATE INDEX tickets_customer_idx ON smartrent.tickets USING btree (reported_by, contract_id)"
+        "CREATE INDEX tickets_customer_idx ON smartrent.tickets USING btree (reported_by, contract_id)",
+        "CREATE UNIQUE INDEX tickets_reporter_idempotency_unique ON smartrent.tickets USING btree (reported_by, idempotency_key)"
       ],
       "constraints": [
         {

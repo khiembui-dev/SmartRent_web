@@ -10,6 +10,7 @@ node_modules/
 dist/
 bin/
 obj/
+App_Data/
 
 # Công cụ
 .vs/

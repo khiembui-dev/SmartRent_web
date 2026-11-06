@@ -71,7 +71,7 @@ Thay cổng nếu đã đổi `DB_PORT`. Lưu chuỗi kết nối riêng trên m
 dotnet user-secrets set "ConnectionStrings:SmartRent" "Host=127.0.0.1;Port=5433;Database=smartrent;Username=smartrent_app;Password=<DB_APP_PASSWORD>" --project .\backend\src\SmartRent.Api
 ```
 
-Không đưa lệnh chứa mật khẩu thật vào source hoặc ảnh chia sẻ. Backend hiện là khung: **chưa có DbContext, chưa đọc connection string hoặc kết nối database**. Người lập trình cần triển khai kết nối, xác thực và API; xem [backend README](../backend/README.md) và [bàn giao API](BACKEND_HANDOFF.md). Nếu sau này backend chạy trong cùng mạng Compose, host sẽ là `db` và cổng `5432`; cấu hình hiện tại chỉ chạy database trong Docker.
+Không đưa lệnh chứa mật khẩu thật vào source hoặc ảnh chia sẻ. Backend đã đăng ký Npgsql, đăng nhập admin và API Dashboard bằng PostgreSQL; các API nghiệp vụ khác vẫn cần hoàn thiện. Xem [backend README](../backend/README.md) và [bàn giao API](BACKEND_HANDOFF.md). Sau khi chạy backend bằng profile `http`, mở `http://localhost:5080/api/v1/dev/database-check` từ máy local. Kết quả `connected: true` xác nhận backend truy vấn được PostgreSQL. Endpoint kiểm tra chỉ có trong Development, không cung cấp dữ liệu nghiệp vụ. Nếu sau này backend chạy trong cùng mạng Compose, host sẽ là `db` và cổng `5432`; cấu hình hiện tại chỉ chạy database trong Docker.
 
 ## 5. Chạy các phần hiện có
 

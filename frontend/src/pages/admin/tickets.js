@@ -24,6 +24,9 @@ export default async function TicketsPage(ctx) {
   let q = '';
   let items = [];
   let t = null;
+  // Bỏ phản hồi cũ khi tìm kiếm/chọn ticket liên tiếp; tránh chi tiết của A hiện dưới lựa chọn B.
+  let listVersion = 0;
+  let paneVersion = 0;
 
   setHtml(ctx.outlet, html`${pageHeader({ title: 'Ticket', subtitle: 'Yêu cầu hỗ trợ khách gửi từ tài khoản của mình.' })}
   <div class="ad-inbox ${selected ? 'has-selected' : ''}">
@@ -48,12 +51,15 @@ export default async function TicketsPage(ctx) {
   };
 
   const loadItems = async () => {
+    const version = ++listVersion;
     const query = { q: q || undefined, pageSize: 100, sort: filter === 'open' ? 'dueAt' : '-createdAt', ...(filter === 'overdue' ? { overdue: 'true' } : { status: filter || undefined }) };
     try {
-      items = (await ticketsApi.list(query, { signal: ctx.signal })).items;
+      const result = await ticketsApi.list(query, { signal: ctx.signal });
+      if (version !== listVersion || ctx.signal.aborted) return;
+      items = result.items;
       renderItems();
     } catch (error) {
-      if (ctx.signal.aborted) return;
+      if (ctx.signal.aborted || version !== listVersion) return;
       setHtml(itemsEl, errorState(error));
       itemsEl.querySelector('#sr-retry')?.addEventListener('click', loadItems);
     }
@@ -102,9 +108,11 @@ export default async function TicketsPage(ctx) {
       if (!body) { showErrors(composer, { body: ['Nhập nội dung trả lời.'] }); return; }
       const button = composer.querySelector('button[type="submit"]');
       button.disabled = true;
+      const ticketId = t.id;
       try {
-        t = await ticketsApi.message(t.id, { body, isInternal: composer.querySelector('[data-field="isInternal"]')?.checked || false });
-        renderPane();
+        const next = await ticketsApi.message(ticketId, { body, isInternal: composer.querySelector('[data-field="isInternal"]')?.checked || false });
+        // Nếu người dùng đã chọn ticket khác trong lúc gửi, chỉ cập nhật danh sách, không đổi pane mới.
+        if (selected === ticketId) { t = next; renderPane(); }
         await loadItems();
       } catch (error) {
         button.disabled = false;
@@ -114,16 +122,20 @@ export default async function TicketsPage(ctx) {
   };
 
   const loadPane = async () => {
+    const version = ++paneVersion;
     if (!selected) {
       setHtml(pane, emptyState({ iconName: 'chat-left-text', title: 'Chọn một ticket', text: 'Nội dung trao đổi hiện ở đây.' }));
       return;
     }
     setHtml(pane, loadingBlock(8));
     try {
-      t = await ticketsApi.get(selected);
+      const result = await ticketsApi.get(selected);
+      if (version !== paneVersion || ctx.signal.aborted) return;
+      t = result;
       ctx.setTitle(`${t.code}: ${t.title}`);
       renderPane();
     } catch (error) {
+      if (ctx.signal.aborted || version !== paneVersion) return;
       setHtml(pane, errorState(error));
       pane.querySelector('#sr-retry')?.addEventListener('click', loadPane);
     }
@@ -164,11 +176,13 @@ export default async function TicketsPage(ctx) {
   });
 
   const move = async (body, message) => {
-    const next = await runAction(() => ticketsApi.transition(t.id, body), { success: message });
+    // Backend so sánh status đã hiển thị; nếu tab khác vừa sửa thì trả 409 thay vì ghi đè.
+    const ticketId = t.id;
+    const expectedStatus = t.status;
+    const next = await runAction(() => ticketsApi.transition(ticketId, { ...body, expectedStatus }), { success: message });
     if (next) {
-      t = next;
       dataChanged();
-      renderPane();
+      if (selected === ticketId) { t = next; renderPane(); }
       await loadItems();
     }
   };
@@ -183,7 +197,7 @@ export default async function TicketsPage(ctx) {
       const next = await formModal({
         title: 'Ghi nhận đã giải quyết', submitLabel: 'Đã giải quyết', submitTone: 'success',
         fields: [{ name: 'resolutionNotes', label: 'Kết quả xử lý', type: 'textarea', rows: 3, required: true, help: 'Khách thấy nội dung này.' }],
-        onSubmit: (v) => ticketsApi.transition(t.id, { action: 'resolve', resolutionNotes: v.resolutionNotes }),
+        onSubmit: (v) => ticketsApi.transition(t.id, { action: 'resolve', resolutionNotes: v.resolutionNotes, expectedStatus: t.status }),
       });
       if (next) {
         t = next;
@@ -202,7 +216,7 @@ export default async function TicketsPage(ctx) {
       const next = await formModal({
         title: 'Phân công xử lý', submitLabel: 'Phân công',
         fields: [{ name: 'userId', label: 'Người xử lý', type: 'select', required: true, options: staffOptions(catalog), default: t.assignedTo?.id }, { name: 'note', label: 'Ghi chú', optional: true }],
-        onSubmit: (v) => ticketsApi.assign(t.id, v),
+        onSubmit: (v) => ticketsApi.assign(t.id, { ...v, expectedStatus: t.status }),
       });
       if (next) {
         t = next;

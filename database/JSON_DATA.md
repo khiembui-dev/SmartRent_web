@@ -102,6 +102,10 @@ proof_file_ids là mảng UUID tệp private/clean. Không dùng file trong phò
 
 ## Hỗ trợ và lịch sử
 
+Backend Ticket sử dụng `tickets.idempotency_key` + `request_hash` để chống tạo trùng khi gửi lại request. Unique index theo `reported_by,idempotency_key`; cùng key với nội dung khác trả 409.
+
+Khi đổi status/phân công, API đặt ba biến LOCAL trong cùng transaction: `smartrent.user_id`, `smartrent.ticket_action`, `smartrent.ticket_reason`. Trigger tự thêm history gồm `id,kind,at,from,to,assignedTo,actorId,reason`; DTO đổi `at/from/to` thành `occurredAt/fromStatus/toStatus`. Lý do mở lại/chờ không bị mất. Sự kiện tạo ban đầu có `kind=created,occurredAt,toStatus`. Reader tương thích cả các entry cũ chưa có id/kind.
+
 tickets.category_code là ELECTRICITY/WATER/INTERNET/OTHER. Nhãn tiếng Việt do DTO dựng; không có bảng danh mục. priority low/normal/high/urgent. Backend tính due_at khi tạo theo quy tắc hiện tại 120/48/24/4 giờ.
 
 messages:

@@ -30,6 +30,14 @@ Các bảng đã gộp được thay bằng cột JSONB trên hồ sơ chính. C
 
 ## Cài đặt
 
+Database đã cài từ phiên bản trước khi có backend Ticket: chạy migration bổ sung, không xóa volume:
+
+```powershell
+docker compose exec -T db psql -U postgres -d smartrent -v ON_ERROR_STOP=1 -f /smartrent-database/06_ticket_backend.sql
+```
+
+Migration thêm `tickets.idempotency_key/request_hash` và cập nhật history trigger; vẫn 13 bảng. Database mới dùng baseline 01/02 đã có sẵn thay đổi.
+
 PostgreSQL 16, extension `btree_gist`. Chạy tại gốc repository:
 
 ```powershell

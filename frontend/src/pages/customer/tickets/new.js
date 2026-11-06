@@ -64,7 +64,9 @@ export default async function TicketNewPage(ctx) {
   ctx.onCleanup(() => uploader.destroy());
   const binding = bindForm(form, {
     fields, submittingLabel: 'Đang gửi…',
-    validate: () => (uploader.busy ? { description: ['Đợi tải ảnh xong.'] } : null),
+    // Chỉ gửi các fileId backend đã xác nhận; không lặng lẽ bỏ ảnh khi upload bị lỗi.
+    validate: () => (uploader.busy ? { description: ['Đợi tải ảnh xong.'] }
+      : uploader.hasErrors ? { description: ['Ảnh tải lên lỗi. Thử lại hoặc gỡ ảnh lỗi trước khi gửi.'] } : null),
     onSubmit: async (v, { idempotencyKey }) => {
       const ticket = await portalApi.createTicket({ ...v, fileIds: uploader.fileIds }, idempotencyKey);
       toast(`Đã gửi ${ticket.code}`);

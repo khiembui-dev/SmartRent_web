@@ -327,11 +327,15 @@ CREATE TABLE tickets (
   attachment_file_ids jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(attachment_file_ids)='array'),
   messages jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(messages)='array'),
   history jsonb NOT NULL DEFAULT '[]' CHECK(jsonb_typeof(history)='array'),
+  -- Cùng người gửi và Idempotency-Key chỉ tạo một ticket; hash chặn dùng lại key với body khác.
+  idempotency_key text,
+  request_hash text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK (status<>'waiting' OR nullif(btrim(waiting_reason),'') IS NOT NULL),
   CHECK (status NOT IN ('resolved','closed') OR nullif(btrim(resolution_notes),'') IS NOT NULL)
 );
+CREATE UNIQUE INDEX tickets_reporter_idempotency_unique ON tickets(reported_by,idempotency_key);
 
 CREATE TABLE notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

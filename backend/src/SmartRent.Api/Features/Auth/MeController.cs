@@ -2,10 +2,15 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace SmartRent.Api.Features.Auth;
 
-// Đăng nhập, đăng ký, tài khoản. Người 1 phụ trách.
-// Danh sách API cần viết: backend/HUONG_DAN_THEO_TRANG.md.
 [ApiController]
 [Route("api/v1/me")]
-public sealed class MeController : ControllerBase
+public sealed class MeController(AuthSessionService sessions) : ControllerBase
 {
+    [HttpGet]
+    public async Task<IActionResult> Get(CancellationToken cancellationToken)
+    {
+        var user = await sessions.FindUserAsync(
+            AuthSessionService.BearerToken(Request), cancellationToken);
+        return user is null ? Unauthorized() : Ok(await sessions.MeAsync(user, cancellationToken));
+    }
 }

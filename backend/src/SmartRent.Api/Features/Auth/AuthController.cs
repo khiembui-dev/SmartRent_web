@@ -1,50 +1,99 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace SmartRent.Api.Features.Auth;
 
 [ApiController]
 [Route("api/v1/auth")]
-public sealed class AuthController(AuthSessionService sessions) : ControllerBase
+public sealed class AuthController : ControllerBase
 {
-    public sealed record LoginRequest(string Email, string Password, string Audience);
+    private readonly IAuthService _authService;
+
+    public AuthController(IAuthService _authService)
+    {
+        this._authService = _authService;
+    }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest request,
-        CancellationToken cancellationToken)
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> Login([FromBody] LoginRequest req, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrEmpty(request.Password) ||
-            request.Audience is not ("admin" or "customer"))
-            return BadRequest(new { detail = "Thiếu email, mật khẩu hoặc khu đăng nhập không hợp lệ." });
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
 
-        var session = await sessions.LoginAsync(request.Email, request.Password,
-            request.Audience, cancellationToken);
-        if (session is null)
-            return Unauthorized(new { detail = "Email hoặc mật khẩu chưa đúng, hoặc tài khoản không thuộc khu này." });
+        var result = await _authService.LoginAsync(req, ip, userAgent, ct);
 
-        Response.Cookies.Append("smartrent_refresh", session.AccessToken, new CookieOptions
+        // Đặt refresh token vào HttpOnly cookie theo chuẩn bảo mật
+        Response.Cookies.Append("smartrent_refresh", result.RefreshToken, new CookieOptions
         {
-            HttpOnly = true, Secure = Request.IsHttps, SameSite = SameSiteMode.Strict,
-            Path = "/api/v1/auth", Expires = session.ExpiresAt
+            HttpOnly = true,
+            Secure = Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/api/v1/auth",
+            Expires = result.ExpiresAt
         });
-        return Ok(new { accessToken = session.AccessToken, expiresAt = session.ExpiresAt });
+
+        return Ok(result);
+    }
+
+    [HttpPost("register")]
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> Register([FromBody] RegisterRequest req, CancellationToken ct)
+    {
+        var ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var userAgent = Request.Headers.UserAgent.ToString();
+
+        var result = await _authService.RegisterAsync(req, ip, userAgent, ct);
+
+        Response.Cookies.Append("smartrent_refresh", result.RefreshToken, new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = Request.IsHttps,
+            SameSite = SameSiteMode.Strict,
+            Path = "/api/v1/auth",
+            Expires = result.ExpiresAt
+        });
+
+        return Ok(result);
     }
 
     [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
+    [AllowAnonymous]
+    public async Task<ActionResult<LoginResponse>> Refresh([FromBody] RefreshTokenRequest? req, CancellationToken ct)
     {
-        var token = Request.Cookies["smartrent_refresh"];
-        var user = await sessions.FindUserAsync(token, cancellationToken);
-        var expiresAt = await sessions.SessionExpiryAsync(token, cancellationToken);
-        if (user is null || expiresAt is null) return Unauthorized();
-        return Ok(new { accessToken = token, expiresAt });
+        var refreshToken = req?.RefreshToken ?? Request.Cookies["smartrent_refresh"];
+        var result = await _authService.RefreshTokenAsync(refreshToken ?? string.Empty, ct);
+        return Ok(result);
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+    [Authorize]
+    public async Task<IActionResult> Logout(CancellationToken ct)
     {
-        await sessions.RevokeAsync(Request.Cookies["smartrent_refresh"] ??
-            AuthSessionService.BearerToken(Request), cancellationToken);
-        Response.Cookies.Delete("smartrent_refresh", new CookieOptions { Path = "/api/v1/auth" });
-        return NoContent();
+        var refreshToken = Request.Cookies["smartrent_refresh"];
+        await _authService.LogoutAsync(refreshToken, ct);
+
+        Response.Cookies.Delete("smartrent_refresh", new CookieOptions
+        {
+            Path = "/api/v1/auth"
+        });
+
+        return Ok(new { message = "Đăng xuất thành công." });
+    }
+
+    [HttpPost("forgot-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req, CancellationToken ct)
+    {
+        await _authService.ForgotPasswordAsync(req, ct);
+        return Ok(new { message = "Nếu email tồn tại trên hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi." });
+    }
+
+    [HttpPost("reset-password")]
+    [AllowAnonymous]
+    public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req, CancellationToken ct)
+    {
+        await _authService.ResetPasswordAsync(req, ct);
+        return Ok(new { message = "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới." });
     }
 }

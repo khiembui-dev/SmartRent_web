@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
-
+using Npgsql;
+using SmartRent.Api.Common;
 namespace SmartRent.Api.Features.Contracts;
 
-// Hợp đồng, nhận phòng, trả phòng, phần khách thuê. Người 3 phụ trách.
-// Danh sách API cần viết: backend/HUONG_DAN_THEO_TRANG.md.
-[ApiController]
-[Route("api/v1/portal/requests")]
-public sealed class PortalRequestsController : ControllerBase
+[ApiController, Route("api/v1/portal/requests")]
+public sealed class PortalRequestsController(NpgsqlDataSource db) : LeasingController(db)
 {
+    [HttpGet] public async Task<IActionResult> List(CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var rows = await JsonRowsAsync(c, t, "select jsonb_build_object('id',id,'tenancyId',contract_id,'requestType',kind,'status',status,'desiredOn',desired_on,'message',message,'decisionNotes',decision_notes,'createdAt',created_at) from bookings where user_id=@user and kind in ('renewal','checkout','transfer') order by created_at desc", ct, P("user", actor)); await t.RollbackAsync(ct); return Ok(rows); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpPost] public async Task<IActionResult> Create([FromBody] RequestInput body, CancellationToken ct) { if (body.RequestType is not ("renewal" or "checkout" or "transfer") || body.TenancyId is null || body.DesiredOn is null) return BadRequest(new { code = "request_fields_required", message = "Đề nghị không hợp lệ." }); try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var json = await ScalarStringAsync(c, t, "insert into bookings(code,user_id,contract_id,kind,status,desired_on,message) values(next_code('REQ'),@user,@contract,@kind,'pending',@desired,@message) returning jsonb_build_object('id',id,'status',status,'requestType',kind,'desiredOn',desired_on)::text", ct, P("user", actor), P("contract", body.TenancyId), P("kind", body.RequestType), P("desired", body.DesiredOn), P("message", body.Message)); await CommitAsync(t, ct); return Content(json!, "application/json"); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpPost("{id:guid}/cancel")] public async Task<IActionResult> Cancel(Guid id, CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(false, ct); await using (c) await using (t) { var x = await ScalarStringAsync(c, t, "update bookings set status='cancelled' where id=@id and user_id=@user and kind in ('renewal','checkout','transfer') and status='pending' returning id::text", ct, P("id", id), P("user", actor)); if (x is null) { await t.RollbackAsync(ct); return NotFound(); } await CommitAsync(t, ct); return NoContent(); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
 }
+public sealed record RequestInput(Guid? TenancyId, string? RequestType, DateOnly? DesiredOn, string? Message);

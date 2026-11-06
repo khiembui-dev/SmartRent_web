@@ -1,3 +1,5 @@
+> Bản ghép nhóm 06/11/2026: xem [nguồn code, kiểm tra và phần còn thiếu](../docs/TEAM_INTEGRATION.md).
+
 # SmartRent backend
 
 ASP.NET Core kết nối PostgreSQL qua Npgsql. Đăng nhập, `/api/v1/me`, Dashboard và Ticket admin/khách đã gọi SQL thật. Ticket gồm ảnh private, trao đổi, ghi chú nội bộ, xử lý, xác nhận/mở lại và thông báo. Các module nghiệp vụ khác vẫn đang được triển khai. Frontend local chọn `mock` hoặc `api` qua `VITE_DATA_SOURCE`.

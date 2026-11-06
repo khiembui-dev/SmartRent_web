@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
-
+using Npgsql;
+using SmartRent.Api.Common;
 namespace SmartRent.Api.Features.Viewings;
 
-// Lịch hẹn xem phòng. Người 3 phụ trách.
-// Danh sách API cần viết: backend/HUONG_DAN_THEO_TRANG.md.
-[ApiController]
-[Route("api/v1/viewings")]
-public sealed class ViewingsController : ControllerBase
+[ApiController, Route("api/v1/viewings")]
+public sealed class ViewingsController(NpgsqlDataSource db) : LeasingController(db)
 {
+    [HttpGet] public async Task<IActionResult> List([FromQuery] DateTimeOffset? from, CancellationToken ct) { try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var rows = await JsonRowsAsync(c, t, $"select jsonb_build_object('inquiry',{ViewingSql.InquiryJson("b")},'date',to_char((a->>'startsAt')::timestamptz at time zone 'Asia/Ho_Chi_Minh','YYYY-MM-DD'),'id',a->>'id','inquiryId',b.id,'code',b.code,'status',a->>'status','startsAt',a->>'startsAt','endsAt',a->>'endsAt','resultNotes',a->>'resultNotes','contactName',b.contact_name,'phone',b.phone,'room',jsonb_build_object('id',r.id,'code',r.code)) from bookings b join rooms r on r.id=b.room_id cross join lateral jsonb_array_elements(b.appointments) a where b.kind='viewing' and (@from::timestamptz is null or (a->>'startsAt')::timestamptz>=@from) order by (a->>'startsAt')::timestamptz", ct, P("from", from)); await t.RollbackAsync(ct); return Ok(new { items = rows }); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpPost("{id}/result")] public async Task<IActionResult> Result(string id, [FromBody] ViewingResult input, CancellationToken ct) { if (input.Status is not ("completed" or "no_show" or "cancelled")) return BadRequest(new { code = "invalid_status", message = "Kết quả không hợp lệ." }); try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var json = await ScalarStringAsync(c, t, """update bookings set appointments=(select jsonb_agg(case when a->>'id'=@id then jsonb_set(jsonb_set(a,'{status}',to_jsonb(@status::text)),'{resultNotes}',to_jsonb(@notes::text)) else a end) from jsonb_array_elements(appointments) a),status=case when @status='completed' then 'completed' else status end where kind='viewing' and appointments @> jsonb_build_array(jsonb_build_object('id',@id)) returning id::text""", ct, P("id", id), P("status", input.Status), P("notes", input.ResultNotes ?? "")); if (json is null) { await t.RollbackAsync(ct); return NotFound(); } await CommitAsync(t, ct); return Ok(new { id, status = input.Status }); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
 }
+public sealed record ViewingResult(string? Status, string? ResultNotes);

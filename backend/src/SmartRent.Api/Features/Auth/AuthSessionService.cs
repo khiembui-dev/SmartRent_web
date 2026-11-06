@@ -67,7 +67,7 @@ public sealed class AuthSessionService(NpgsqlDataSource source)
         await using var command = source.CreateCommand("""
             SELECT u.id,u.role,u.display_name,u.email,u.phone,u.password_hash
             FROM smartrent.auth_tokens t JOIN smartrent.users u ON u.id=t.user_id
-            WHERE t.kind='session' AND t.token_hash=@token_hash
+            WHERE t.kind='session' AND upper(t.token_hash)=@token_hash
               AND t.expires_at>now() AND t.revoked_at IS NULL
               AND u.is_active AND u.login_enabled
             """);
@@ -84,7 +84,7 @@ public sealed class AuthSessionService(NpgsqlDataSource source)
         if (string.IsNullOrWhiteSpace(token) || token.Length > 128) return null;
         await using var command = source.CreateCommand("""
             SELECT expires_at FROM smartrent.auth_tokens
-            WHERE kind='session' AND token_hash=@token_hash
+            WHERE kind='session' AND upper(token_hash)=@token_hash
               AND expires_at>now() AND revoked_at IS NULL
             """);
         command.Parameters.AddWithValue("token_hash", TokenHash(token));
@@ -96,7 +96,7 @@ public sealed class AuthSessionService(NpgsqlDataSource source)
         if (string.IsNullOrWhiteSpace(token) || token.Length > 128) return;
         await using var command = source.CreateCommand("""
             UPDATE smartrent.auth_tokens SET revoked_at=now()
-            WHERE kind='session' AND token_hash=@token_hash AND revoked_at IS NULL
+            WHERE kind='session' AND upper(token_hash)=@token_hash AND revoked_at IS NULL
             """);
         command.Parameters.AddWithValue("token_hash", TokenHash(token));
         await command.ExecuteNonQueryAsync(cancellationToken);

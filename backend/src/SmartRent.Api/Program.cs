@@ -1,19 +1,30 @@
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using SmartRent.Api.Common;
+using SmartRent.Api.Common.Auth;
+using SmartRent.Api.Common.Errors;
+using SmartRent.Api.Data;
+using SmartRent.Api.Data.Entities;
+using SmartRent.Api.Features.Auth;
+using SmartRent.Api.Features.Settings;
 using System.Net;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
+builder.Services.AddControllers(options => options.Filters.Add<ProblemDetailsExceptionFilter>());
 builder.Services.AddOpenApi();
 
-// Mật khẩu được lưu trong user-secrets hoặc biến môi trường, không đặt trong source.
-builder.Services.AddSingleton(_ =>
-{
-    var connectionString = builder.Configuration.GetConnectionString("SmartRent")
-        ?? throw new InvalidOperationException(
-            "Chưa cấu hình ConnectionStrings:SmartRent cho backend.");
-    return NpgsqlDataSource.Create(connectionString);
-});
+// Mọi module dùng cùng connection string local và schema; không chạy EF migration/EnsureCreated.
+builder.Services.AddLeasingInfrastructure(builder.Configuration);
+builder.Services.AddDbContext<SmartRentDbContext>(options =>
+    options.UseNpgsql(builder.Configuration.GetConnectionString("SmartRent")));
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+builder.Services.AddScoped<ISessionTokenService, SessionTokenService>();
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ISettingsService, SettingsService>();
 // Tạo repository theo vòng đời request để controller có thể yêu cầu qua constructor.
 builder.Services.AddScoped<
     SmartRent.Api.Features.Dashboard.DashboardRepository
@@ -69,6 +80,8 @@ if (app.Environment.IsDevelopment())
 }
 
 // Ánh xạ các route từ controller, ví dụ /api/v1/dashboard/room-stats-dev.
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 
 app.Run();

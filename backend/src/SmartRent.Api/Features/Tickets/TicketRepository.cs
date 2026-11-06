@@ -123,6 +123,32 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
             await using var reader = await cmd.ExecuteReaderAsync(ct);
             while (await reader.ReadAsync(ct)) staff.Add(new { id=reader.GetGuid(0), displayName=reader.GetString(1) });
         }
-        return new { ticketCategories = categories, staff };
+        // Các màn hình dùng chung /catalog: lấy danh mục từ database 13 bảng,
+        // không dựng tài khoản ngân hàng hoặc phòng minh họa khi chưa cấu hình.
+        await using var catalogCommand = source.CreateCommand("""
+            SELECT jsonb_build_object(
+              'properties',coalesce((SELECT jsonb_agg(jsonb_build_object('id',id,'code',code,'name',name)) FROM smartrent.properties),'[]'),
+              'roomTypes',coalesce((SELECT jsonb_agg(x) FROM (
+                SELECT DISTINCT jsonb_build_object('id',room_type_code,'code',room_type_code,'name',room_type_name) x FROM smartrent.rooms) q),'[]'),
+              'amenities',coalesce((SELECT jsonb_agg(x) FROM (
+                SELECT DISTINCT a x FROM smartrent.properties p CROSS JOIN LATERAL jsonb_array_elements(p.amenity_options) a) q),'[]'),
+              'chargeTypes',coalesce((SELECT jsonb_agg(x) FROM (
+                SELECT DISTINCT a || jsonb_build_object('id',a->>'code','unitLabel',a->>'unit') x FROM (
+                  SELECT rates FROM smartrent.properties UNION ALL SELECT rates FROM smartrent.rooms
+                ) q CROSS JOIN LATERAL jsonb_array_elements(q.rates) a) q),'[]'),
+              'bankAccounts',coalesce((SELECT jsonb_build_array(jsonb_build_object(
+                'id','default','bankName',bank_name,'accountNumber',bank_account_number,
+                'accountNumberMasked',bank_account_number,'accountName',bank_account_name,'isDefault',true))
+                FROM smartrent.settings WHERE id=1 AND nullif(btrim(bank_account_number),'') IS NOT NULL),'[]'),
+              'transferTargets',coalesce((SELECT jsonb_agg(jsonb_build_object(
+                'id',r.id,'code',r.code,'name',r.name,'propertyId',r.property_id,'propertyName',p.name))
+                FROM smartrent.rooms r JOIN smartrent.properties p ON p.id=r.property_id
+                WHERE r.operating_status='available' AND r.listing_status='published'
+                  AND NOT EXISTS(SELECT 1 FROM smartrent.contracts c WHERE c.room_id=r.id AND c.status IN ('reserved','active'))),'[]'))::text
+            """);
+        var catalog = JsonNode.Parse((string)(await catalogCommand.ExecuteScalarAsync(ct))!)!.AsObject();
+        catalog["ticketCategories"] = System.Text.Json.JsonSerializer.SerializeToNode(categories);
+        catalog["staff"] = System.Text.Json.JsonSerializer.SerializeToNode(staff);
+        return catalog;
     }
 }

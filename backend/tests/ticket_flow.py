@@ -9,6 +9,7 @@ import json
 import pathlib
 import argparse
 import tempfile
+import os
 import secrets
 import subprocess
 import urllib.error
@@ -16,7 +17,8 @@ import urllib.request
 import uuid
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-BASE = "http://127.0.0.1:5080/api/v1"
+COMPOSE_ROOT = pathlib.Path(os.environ.get("SMARTRENT_COMPOSE_ROOT",str(ROOT)))
+BASE = os.environ.get("SMARTRENT_TEST_API_URL","http://127.0.0.1:5080/api/v1")
 ids = {k: str(uuid.uuid4()) for k in ["user", "stranger", "resident", "property", "room", "contract"]}
 tokens = {k: secrets.token_urlsafe(32) for k in ["admin", "user", "stranger", "resident"]}
 hashes = {k: hashlib.sha256(v.encode()).hexdigest().upper() for k, v in tokens.items()}
@@ -30,7 +32,7 @@ args = options.parse_args()
 def sql(statement):
     result = subprocess.run(["docker", "compose", "exec", "-T", "db", "psql", "-U", "postgres",
                              "-d", "smartrent", "-v", "ON_ERROR_STOP=1", "-At"],
-                            input=statement, text=True, capture_output=True, cwd=ROOT, encoding="utf-8")
+                            input=statement, text=True, capture_output=True, cwd=COMPOSE_ROOT, encoding="utf-8")
     if result.returncode:
         raise RuntimeError(result.stderr)
     return result.stdout.strip()
@@ -80,6 +82,8 @@ def cleanup_fixture():
       DELETE FROM notifications WHERE recipient_id IN ({user_ids})
         OR url IN (SELECT '/admin/tickets/'||id::text FROM tickets WHERE room_id='{ids['room']}');
       DELETE FROM tickets WHERE room_id='{ids['room']}';
+      DELETE FROM bookings WHERE user_id IN ({user_ids});
+      DELETE FROM billing_periods WHERE property_id='{ids['property']}';
       DELETE FROM contracts WHERE id='{ids['contract']}';
       DELETE FROM files WHERE uploaded_by IN ({user_ids});
       DELETE FROM auth_tokens WHERE user_id IN ({user_ids}) OR token_hash='{hashes['admin']}';

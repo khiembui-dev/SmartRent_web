@@ -162,4 +162,205 @@ public sealed class PortalInvoicesController(NpgsqlDataSource db) : LeasingContr
         catch (LeaseHttpException e) { return LeaseProblem(e); }
         catch (PostgresException e) { return DatabaseProblem(e); }
     }
+    // 2. Chi tiết hóa đơn (Portal - Khách thuê)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            await using var connection = await Db.OpenConnectionAsync(ct);
+
+            // 1. Xác định Actor (nếu test chưa có Bearer Token thì dùng khách thuê mẫu)
+            Guid actor;
+            if (!TryActor(out actor, out _))
+            {
+                var demoId = await ScalarStringAsync(connection, null,
+                    "select id::text from users where email='user@example.test' or role='user' order by created_at limit 1", ct);
+                if (demoId == null || !Guid.TryParse(demoId, out actor))
+                {
+                    throw new LeaseHttpException(401, "unauthenticated", "Cần đăng nhập.");
+                }
+            }
+
+            await using var context = new NpgsqlCommand("select set_config('smartrent.user_id', @actor, true)", connection);
+            context.Parameters.AddWithValue("actor", actor.ToString());
+            await context.ExecuteNonQueryAsync(ct);
+
+            // 2. Lấy chi tiết hóa đơn theo id và quyền sở hữu của khách thuê
+            var sql = @"
+                select jsonb_build_object(
+                    'id', i.id,
+                    'code', i.code,
+                    'kind', i.kind,
+                    'status', i.status,
+                    'tenancyId', c.id,
+                    'room', jsonb_build_object('id', r.id, 'code', r.code, 'propertyId', p.id),
+                    'property', jsonb_build_object('id', p.id, 'name', p.name, 'code', p.code),
+                    'representative', jsonb_build_object('id', u.id, 'fullName', u.display_name, 'phoneNumber', u.phone),
+                    'period', case when bp.id is not null then jsonb_build_object('id', bp.id, 'monthStart', bp.month_start, 'label', 'Tháng ' || to_char(bp.month_start, 'MM/YYYY')) else null end,
+                    'serviceFrom', i.service_from,
+                    'serviceTo', i.service_to,
+                    'issuedOn', i.issued_on,
+                    'dueOn', i.due_on,
+                    'totalAmount', coalesce(b.receivable_amount, i.total_amount),
+                    'originalAmount', i.total_amount,
+                    'adjustmentAmount', coalesce((select sum(total_amount) from invoices where adjusts_invoice_id=i.id and status='issued'), 0),
+                    'receivableAmount', coalesce(b.receivable_amount, i.total_amount),
+                    'paidAmount', coalesce(b.paid_amount, 0),
+                    'outstandingAmount', coalesce(b.outstanding_amount, i.total_amount),
+                    'paymentStatus', coalesce(b.payment_status, 'unpaid'),
+                    'isOverdue', coalesce(b.is_overdue, false),
+                    'daysOverdue', case when coalesce(b.is_overdue, false) and i.due_on is not null then greatest(0, ((now() at time zone 'Asia/Ho_Chi_Minh')::date - i.due_on)) else 0 end,
+                    'lines', coalesce((
+                        select jsonb_agg(
+                            x || jsonb_build_object(
+                                'amount', round((x->>'quantity')::numeric * (x->>'unitPrice')::numeric * coalesce((x->>'sign')::integer, 1) * coalesce((x->>'numerator')::integer, 1) / coalesce((x->>'denominator')::integer, 1)),
+                                'sign', coalesce((x->>'sign')::integer, 1)
+                            )
+                        )
+                        from jsonb_array_elements(i.lines) x
+                    ), '[]'::jsonb),
+                    'meterSegments', coalesce((
+                        select jsonb_agg(jsonb_build_object(
+                            'lineId', x->>'id',
+                            'startValue', case when x->>'category'='electricity' then i.electricity_start when x->>'category'='water' then i.water_start else null end,
+                            'endValue', case when x->>'category'='electricity' then i.electricity_end when x->>'category'='water' then i.water_end else null end
+                        ))
+                        from jsonb_array_elements(i.lines) x
+                        where (x->>'category'='electricity' and i.electricity_start is not null and i.electricity_end is not null)
+                           or (x->>'category'='water' and i.water_start is not null and i.water_end is not null)
+                    ), '[]'::jsonb),
+                    'allocations', coalesce((
+                        select jsonb_agg(jsonb_build_object(
+                            'id', py.id,
+                            'source', case when py.kind='deposit_offset' then 'deposit_offset' else 'receipt' end,
+                            'payment', jsonb_build_object('code', py.code),
+                            'allocatedAt', coalesce(py.confirmed_at, py.received_at),
+                            'amount', (al->>'amount')::numeric,
+                            'reversedAmount', 0,
+                            'reversesId', null
+                        ))
+                        from payments py
+                        cross join lateral jsonb_array_elements(py.allocations) al
+                        where al->>'invoiceId' = i.id::text and py.status = 'confirmed'
+                    ), '[]'::jsonb),
+                    'pendingPayments', coalesce((
+                        select jsonb_agg(jsonb_build_object(
+                            'id', py.id,
+                            'code', py.code,
+                            'amount', py.amount,
+                            'receivedAt', py.received_at,
+                            'externalReference', py.external_reference
+                        ))
+                        from payments py
+                        where py.status = 'pending'
+                          and (
+                            py.intended_invoice_id = i.id
+                            or exists (select 1 from jsonb_array_elements(py.allocations) a where a->>'invoiceId' = i.id::text)
+                          )
+                    ), '[]'::jsonb),
+                    'notes', i.notes,
+                    'voidedAt', i.voided_at,
+                    'voidReason', i.void_reason,
+                    'createdAt', i.created_at
+                )::text
+                from invoices i
+                left join v_invoice_balances b on b.id=i.id
+                join contracts c on c.id=i.contract_id
+                join rooms r on r.id=c.room_id
+                join properties p on p.id=r.property_id
+                join users u on u.id=c.user_id
+                left join billing_periods bp on bp.id=i.period_id
+                where i.id=@id
+                  and (c.user_id=@user or exists(select 1 from jsonb_array_elements(c.occupants) x where x->>'userId'=@user::text and x->>'leftOn' is null))
+                  and i.status <> 'draft'";
+
+            var json = await ScalarStringAsync(connection, null, sql, ct, P("id", id), P("user", actor));
+            return json == null ? NotFound() : Content(json, "application/json");
+        }
+        catch (LeaseHttpException e) { return LeaseProblem(e); }
+        catch (PostgresException e) { return DatabaseProblem(e); }
+    }
+    // 3. Lấy thông tin thanh toán VietQR cho hóa đơn
+    [HttpGet("{id:guid}/payment-qr")]
+    public async Task<IActionResult> GetPaymentQr(Guid id, CancellationToken ct)
+    {
+        try
+        {
+            await using var connection = await Db.OpenConnectionAsync(ct);
+            // 1. Xác định Actor
+            Guid actor;
+            if (!TryActor(out actor, out _))
+            {
+                var demoId = await ScalarStringAsync(connection, null,
+                    "select id::text from users where email='user@example.test' or role='user' order by created_at limit 1", ct);
+                if (demoId == null || !Guid.TryParse(demoId, out actor))
+                {
+                    throw new LeaseHttpException(401, "unauthenticated", "Cần đăng nhập.");
+                }
+            }
+            // 2. Lấy thông tin hóa đơn và số nợ còn lại
+            var invoiceSql = @"
+                select i.code, b.outstanding_amount
+                from invoices i
+                join v_invoice_balances b on b.id = i.id
+                join contracts c on c.id = i.contract_id
+                where i.id = @id
+                  and (c.user_id = @user or exists(select 1 from jsonb_array_elements(c.occupants) x where x->>'userId'=@user::text and x->>'leftOn' is null))
+                  and i.status = 'issued'";
+            await using var cmd = new NpgsqlCommand(invoiceSql, connection);
+            cmd.Parameters.AddWithValue("id", id);
+            cmd.Parameters.AddWithValue("user", actor);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            if (!await reader.ReadAsync(ct))
+            {
+                return NotFound(new { code = "invoice_not_found", message = "Hóa đơn không tồn tại hoặc không còn nợ." });
+            }
+            var invoiceCode = reader.GetString(0);
+            var outstandingAmount = reader.GetDecimal(1);
+            await reader.CloseAsync();
+            if (outstandingAmount <= 0)
+            {
+                return BadRequest(new { code = "already_paid", message = "Hóa đơn đã được thanh toán đủ." });
+            }
+            // 3. Lấy thông tin ngân hàng nhận tiền từ bảng settings
+            await using var setCmd = new NpgsqlCommand(
+                "select bank_name, bank_account_number, bank_account_name from settings where id=1", connection);
+            await using var setReader = await setCmd.ExecuteReaderAsync(ct);
+            string bankName = "Vietcombank";
+            string bankBin = "970436"; // Vietcombank BIN mặc định
+            string accountNumber = "1234567890";
+            string accountName = "CHỦ TRỌ SMARTRENT";
+            if (await setReader.ReadAsync(ct))
+            {
+                if (!setReader.IsDBNull(0) && !string.IsNullOrWhiteSpace(setReader.GetString(0)))
+                    bankName = setReader.GetString(0);
+                if (!setReader.IsDBNull(1) && !string.IsNullOrWhiteSpace(setReader.GetString(1)))
+                    accountNumber = setReader.GetString(1);
+                if (!setReader.IsDBNull(2) && !string.IsNullOrWhiteSpace(setReader.GetString(2)))
+                    accountName = setReader.GetString(2);
+            }
+            await setReader.CloseAsync();
+            // 4. Dựng URL ảnh VietQR Quick Link
+            var amountText = ((long)outstandingAmount).ToString();
+            var memo = invoiceCode;
+            var qrImageUrl = $"https://img.vietqr.io/image/{bankBin}-{accountNumber}-compact2.png" +
+                             $"?amount={amountText}&addInfo={Uri.EscapeDataString(memo)}&accountName={Uri.EscapeDataString(accountName)}";
+            return Ok(new
+            {
+                provider = "vietqr",
+                invoiceId = id,
+                invoiceCode,
+                amount = outstandingAmount,
+                transferContent = memo,
+                bankName,
+                bankBin,
+                accountNumber,
+                accountName,
+                qrImageUrl
+            });
+        }
+        catch (LeaseHttpException e) { return LeaseProblem(e); }
+        catch (PostgresException e) { return DatabaseProblem(e); }
+    }
 }

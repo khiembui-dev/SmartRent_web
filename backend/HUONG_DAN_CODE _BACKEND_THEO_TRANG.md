@@ -1,3 +1,5 @@
+> Cập nhật 07/11/2026: xem [bản hoàn thiện backend hiện tại](../docs/BACKEND_COMPLETION.md). Các ghi chú phần còn thiếu bên dưới là snapshot trước đợt hoàn thiện này.
+
 # Hướng dẫn code backend theo từng trang — baseline 13 bảng
 
 Nguồn: router/routes.js, trang và helper hiện tại; 40 route, 63 mục chức năng. Tên endpoint/DTO cũ được giữ để tích hợp giao diện, không dùng làm lý do tạo lại bảng đã gộp. Backend hiện còn khung controller.

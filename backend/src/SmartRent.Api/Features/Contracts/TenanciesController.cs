@@ -1,68 +1,136 @@
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using SmartRent.Api.Common;
+using SmartRent.Api.Features.Rooms;
+using SmartRent.Api.Features.Payments;
+using static SmartRent.Api.Common.BusinessData;
 namespace SmartRent.Api.Features.Contracts;
 
 [ApiController, Route("api/v1/tenancies")]
-public sealed class TenanciesController(NpgsqlDataSource db) : LeasingController(db)
+public sealed class TenanciesController(NpgsqlDataSource db) : BusinessController(db)
 {
-    [HttpGet] public async Task<IActionResult> List(CancellationToken ct) { try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var rows = await JsonRowsAsync(c, t, $"select {ContractSql.Json("c")} from contracts c join users u on u.id=c.user_id join rooms r on r.id=c.room_id join properties p on p.id=r.property_id order by c.created_at desc", ct); await t.RollbackAsync(ct); return Ok(new { items = rows }); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
-    [HttpGet("{id:guid}")] public async Task<IActionResult> Get(Guid id, CancellationToken ct) { try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var json = await ScalarStringAsync(c, t, $"select {ContractSql.Json("c", true)} from contracts c join users u on u.id=c.user_id join rooms r on r.id=c.room_id join properties p on p.id=r.property_id where c.id=@id", ct, P("id", id)); await t.RollbackAsync(ct); return json is null ? NotFound() : Content(json, "application/json"); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    private static async Task<JsonObject> Detail(NpgsqlConnection c, NpgsqlTransaction t, Guid id, CancellationToken ct)
+    {
+        var result = await ContractsController.Detail(c, t, id, ct);
+        result["property"] = new JsonObject { ["id"] = result["room"]!.Id("propertyId"), ["name"] = result["room"].Text("propertyName") };
+        result["contracts"] = result["versions"]!.AsArray().Count == 0 ? new JsonArray() : new JsonArray(result.DeepClone());
+        return result;
+    }
+    [HttpGet("{id:guid}")] public Task<IActionResult> Get(Guid id, CancellationToken ct) => Run(true, async (c, t, a) => await Detail(c, t, id, ct), ct);
     [HttpPost("check-in")]
-    public async Task<IActionResult> CheckIn([FromBody] JsonElement body, CancellationToken ct)
+    public Task<IActionResult> Checkin(JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        var room = body.Guid("roomId"); var tenant = body.Guid("tenantId"); var starts = body.Date("moveInOn"); if (room is null || tenant is null || starts is null) return BadRequest(new { code = "checkin_fields_required", message = "Cần phòng, khách và ngày vào ở." }); try
+        var b = Object(body);
+        var key = Request.Headers["Idempotency-Key"].ToString();
+        var hash = PaymentLedger.Hash(b);
+        if (key.Length > 200)
+            throw Invalid("Mã yêu cầu quá dài.");
+        if (key != "")
         {
-            var (c, t, actor) = await BeginAsync(true, ct); await using (c) await using (t)
+            await Execute(c, t, "select pg_advisory_xact_lock(hashtextextended(@key,0))", ct, "key", "checkin:" + key);
+            var replay = await Scalar(c, t, "select jsonb_build_object('id',id,'hash',checkout_summary->>'requestHash')::text from contracts where checkout_summary->>'checkinKey'=@key", ct, "key", key);
+            if (replay is not null)
             {
-                await ScalarStringAsync(c, t, "select expire_holds()", ct); var key = Request.Headers["Idempotency-Key"].ToString(); var hash = Hash(body.GetRawText()); if (!string.IsNullOrWhiteSpace(key)) { var replay = await ScalarStringAsync(c, t, "select id::text from contracts where checkout_summary->>'checkinKey'=@key", ct, P("key", key)); if (replay is not null) { await t.RollbackAsync(ct); return await Get(Guid.Parse(replay), ct); } }
-                var contract = body.ValueOr("contract", JsonInput.EmptyObject); var signature = body.ValueOr("signature", JsonInput.EmptyObject); var version = JsonDocument.Parse(ContractSql.Version(contract, Guid.NewGuid(), 1, null, null)).RootElement; var signed = JsonSerializer.Serialize(new { id = version.GetProperty("id"), versionNo = 1, effectiveFrom = contract.String("effectiveFrom") ?? starts.Value.ToString("yyyy-MM-dd"), endsOn = contract.String("endsOn"), requiredDeposit = contract.Decimal("requiredDeposit") ?? 0, invoiceDay = contract.Decimal("invoiceDay") ?? 1, dueAfterDays = contract.Decimal("dueAfterDays") ?? 5, prorationPolicy = contract.String("prorationPolicy") ?? "actual_days", termsText = contract.String("termsText") ?? "", changeReason = (string?)null, signedAt = signature.String("signedAt") ?? DateTimeOffset.UtcNow.ToString("O"), signedBy = actor, fileIds = new[] { signature.String("signedFileId") }, partiesSnapshot = new { }, rates = contract.ValueOr("rates", JsonInput.EmptyArray) });
-                var readings = body.ValueOr("readings", JsonInput.EmptyObject).GetRawText(); var json = await ScalarStringAsync(c, t, """insert into contracts(code,room_id,user_id,booking_id,status,onboarding_mode,starts_on,move_in_on,versions,initial_readings,checkin_handover,checkout_summary) values(next_code('CON'),@room,@tenant,@booking,'active','new',@starts,@starts,jsonb_build_array(@version::jsonb),@readings::jsonb,@handover::jsonb,jsonb_build_object('checkinKey',nullif(@key,''),'requestHash',@hash)) returning id::text""", ct, P("room", room), P("tenant", tenant), P("booking", body.Guid("inquiryId")), P("starts", starts), P("version", signed), P("readings", readings), P("handover", body.ValueOr("handover", JsonInput.EmptyObject).GetRawText()), P("key", key), P("hash", hash));
-                if (body.TryGetProperty("deposit", out var deposit) && deposit.Decimal("amount") > 0) await Deposit(c, t, Guid.Parse(json!), tenant.Value, deposit.Decimal("amount")!.Value, deposit.String("methodCode") ?? "cash", deposit.String("externalReference"), actor, key, hash, ct); await CommitAsync(t, ct); return await Get(Guid.Parse(json!), ct);
+                var old = JsonNode.Parse(replay)!;
+                if (old.Text("hash") != hash)
+                    throw new LeaseHttpException(409, "idempotency_conflict", "Mã đã dùng với nội dung khác.");
+                return await Detail(c, t, old.Id("id"), ct);
             }
         }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
+        var room = b.Id("roomId");
+        var tenant = b.Id("tenantId");
+        var day = DateOnly.Parse(b.Text("moveInOn")!);
+        if (day > Today)
+            throw Invalid("Ngày vào ở không được ở tương lai.");
+        var contract = b["contract"]?.AsObject() ?? throw Invalid("Cần thông tin hợp đồng.");
+        var signature = b["signature"]?.AsObject() ?? throw Invalid("Cần bản hợp đồng đã ký.");
+        var file = signature.Id("signedFileId");
+        await RoomsController.CheckFile(c, t, file, a, "contract_signed", ct);
+        var version = BuildVersion(contract, day, a, file, signature.Text("signedAt"));
+        var readings = Readings(b["readings"], day, signature.Text("signedAt"));
+        var id = Guid.NewGuid();
+        await Execute(c, t, """
+            insert into contracts(id,code,room_id,user_id,booking_id,starts_on,move_in_on,versions,initial_readings,checkin_handover,checkout_summary)
+            values(@id,next_code('CON'),@room,@user,@booking,@day,@day,@v::jsonb,@readings::jsonb,@handover::jsonb,jsonb_build_object('checkinKey',nullif(@key,''),'requestHash',@hash))
+            """, ct, "id", id, "room", room, "user", tenant, "booking", b.Text("inquiryId") is string booking ? Guid.Parse(booking) : null, "day", day, "v", new JsonArray(version).ToJsonString(), "readings", readings.ToJsonString(), "handover", b["handover"]?.ToJsonString() ?? "{}", "key", key, "hash", hash);
+        if (b["deposit"].Number("amount") > 0)
+            await PaymentLedger.Append(c, t, a, tenant, id, null, "deposit_receipt", b["deposit"].Number("amount"), b["deposit"].Text("methodCode") ?? "cash", b["deposit"].Text("externalReference"), new(), null, null, null, DateTimeOffset.UtcNow, true, null, hash, ct);
+        return await Detail(c, t, id, ct);
+    }, ct);
+    private static JsonObject BuildVersion(JsonObject b, DateOnly day, Guid actor, Guid file, string? signedAt) => new() { ["id"] = Guid.NewGuid(), ["versionNo"] = 1, ["effectiveFrom"] = day.ToString("yyyy-MM-dd"), ["endsOn"] = b.Text("endsOn"), ["requiredDeposit"] = b.Number("requiredDeposit"), ["invoiceDay"] = b.Number("invoiceDay", 1), ["dueAfterDays"] = b.Number("dueAfterDays", 5), ["prorationPolicy"] = b.Text("prorationPolicy") ?? "actual_days", ["termsText"] = b.Text("termsText") ?? "", ["rates"] = Rates(b["rates"], day), ["fileIds"] = new JsonArray(JsonValue.Create(file)), ["signedAt"] = signedAt ?? DateTimeOffset.UtcNow.ToString("O"), ["signedBy"] = actor, ["partiesSnapshot"] = new JsonObject() };
+    private static JsonObject Readings(JsonNode? input, DateOnly day, string? at)
+    {
+        var result = new JsonObject();
+        foreach (var kind in new[] { "electricity", "water" })
+        if (input?[kind] is JsonNode value)
+        {
+            if (value is JsonObject)
+                result[kind] = value.DeepClone();
+            else
+                result[kind] = new JsonObject { ["value"] = value.DeepClone(), ["observedAt"] = at ?? new DateTimeOffset(day.ToDateTime(new TimeOnly(7, 0)), TimeSpan.FromHours(7)).ToUniversalTime().ToString("O") };
+        }
+        return result;
     }
-    [HttpPost("{id:guid}/contracts")] public async Task<IActionResult> Import(Guid id, [FromBody] JsonElement body, CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(true, ct); await using (c) await using (t) { var found = await ScalarStringAsync(c, t, "select id::text from contracts where id=@id and onboarding_mode='import' for update", ct, P("id", id)); if (found is null) { await t.RollbackAsync(ct); return NotFound(); } var contract = body.ValueOr("contract", JsonInput.EmptyObject); var v = ContractSql.Version(contract, Guid.NewGuid(), 1, null, null); await ScalarStringAsync(c, t, "update contracts set versions=jsonb_build_array(@version::jsonb),initial_readings=@readings::jsonb,onboarding_gaps='[]' where id=@id", ct, P("id", id), P("version", v), P("readings", body.ValueOr("readings", JsonInput.EmptyObject).GetRawText())); await CommitAsync(t, ct); return await Get(id, ct); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
-    [HttpPost("{id:guid}/cancel-import")] public async Task<IActionResult> CancelImport(Guid id, [FromBody] JsonElement body, CancellationToken ct) { try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var x = await ScalarStringAsync(c, t, "update contracts set status='cancelled',ended_reason=@reason where id=@id and onboarding_mode='import' and jsonb_array_length(versions)=0 returning id::text", ct, P("id", id), P("reason", body.String("reason") ?? "Gỡ dữ liệu nhập")); if (x is null) { await t.RollbackAsync(ct); return NotFound(); } await CommitAsync(t, ct); return NoContent(); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
-    [HttpPost("{id:guid}/deposit/receipts")] public async Task<IActionResult> DepositReceipt(Guid id, [FromBody] JsonElement body, CancellationToken ct) { try { var (c, t, actor) = await BeginAsync(true, ct); await using (c) await using (t) { var owner = await ScalarStringAsync(c, t, "select user_id::text from contracts where id=@id for update", ct, P("id", id)); if (owner is null) { await t.RollbackAsync(ct); return NotFound(); } var amount = body.Decimal("amount") ?? 0; if (amount <= 0) throw new LeaseHttpException(422, "invalid_amount", "Tiền cọc phải lớn hơn 0."); var pay = body.ValueOr("payment", JsonInput.EmptyObject); var key = Request.Headers["Idempotency-Key"].ToString(); await Deposit(c, t, id, Guid.Parse(owner), amount, pay.String("methodCode") ?? "cash", pay.String("externalReference"), actor, key, Hash(body.GetRawText()), ct); await CommitAsync(t, ct); return Ok(new { contractId = id, amount }); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
-    [HttpPost("{id:guid}/checkout/preview")] public async Task<IActionResult> Preview(Guid id, [FromBody] JsonElement body, CancellationToken ct) { try { var (c, t, _) = await BeginAsync(true, ct); await using (c) await using (t) { var held = await ScalarStringAsync(c, t, "select coalesce(held,0)::text from v_deposit_balances where contract_id=@id", ct, P("id", id)) ?? "0"; var invoices = await JsonRowsAsync(c, t, "select jsonb_build_object('id',id,'outstandingAmount',outstanding_amount) from v_invoice_balances where contract_id=@id and outstanding_amount>0", ct, P("id", id)); var total = invoices.Sum(x => x.GetProperty("outstandingAmount").GetDecimal()); await t.RollbackAsync(ct); return Ok(new { depositHeld = decimal.Parse(held), outstandingInvoices = invoices, outstandingTotal = total, finalInvoice = new { totalAmount = 0, lines = Array.Empty<object>() }, policyNote = "Bản xem trước chưa phát hành hóa đơn. Endpoint checkout nhận finalLines đã tính ở server billing." }); } } catch (LeaseHttpException e) { return LeaseProblem(e); } catch (PostgresException e) { return DatabaseProblem(e); } }
+    [HttpPost("{id:guid}/contracts")]
+    public Task<IActionResult> Import(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
+    {
+        var raw = await Row(c, t, "select to_jsonb(c)::text from contracts c where id=@id and onboarding_mode='import' for update", ct, "id", id);
+        if (raw["versions"]!.AsArray().Any(x => x.Text("signedAt") is not null))
+            throw Invalid("Hợp đồng đã có bản ký.");
+        var b = Object(body);
+        var day = DateOnly.Parse(b.Text("effectiveFrom") ?? raw.Text("starts_on")!);
+        var file = b["signature"]!.Id("signedFileId");
+        await RoomsController.CheckFile(c, t, file, a, "contract_signed", ct);
+        var v = BuildVersion(b["contract"]!.AsObject(), day, a, file, b["signature"].Text("signedAt"));
+        await Execute(c, t, "update contracts set versions=@v::jsonb,initial_readings=@r::jsonb,onboarding_gaps='[]' where id=@id", ct, "id", id, "v", new JsonArray(v).ToJsonString(), "r", Readings(b["readings"], day, b["signature"].Text("signedAt")).ToJsonString());
+        return await Detail(c, t, id, ct);
+    }, ct);
+    [HttpPost("{id:guid}/cancel-import")]
+    public Task<IActionResult> Cancel(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
+    {
+        if (await Execute(c, t, "update contracts set status='cancelled',ended_reason=@reason where id=@id and onboarding_mode='import' and versions='[]'", ct, "id", id, "reason", body.String("reason")) == 0)
+            throw Invalid("Không gỡ khách khi đã có hợp đồng ký.");
+        return new
+        {
+            id
+        };
+    }, ct);
+    [HttpGet("{id:guid}/deposit")] public Task<IActionResult> Deposit(Guid id, CancellationToken ct) => Run(true, async (c, t, a) => await Row(c, t, "select to_jsonb(d)::text from v_deposit_balances d where contract_id=@id", ct, "id", id), ct);
+    [HttpPost("{id:guid}/deposit/receipts")]
+    public Task<IActionResult> DepositReceipt(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
+    {
+        var raw = await Row(c, t, "select to_jsonb(c)::text from contracts c where id=@id for update", ct, "id", id);
+        var b = Object(body);
+        var pay = b["payment"] ?? b;
+        return PaymentLedger.Dto(await PaymentLedger.Append(c, t, a, raw.Id("user_id"), id, null, "deposit_receipt", b.Number("amount"), pay.Text("methodCode") ?? "cash", pay.Text("externalReference"), new(), null, null, b.Text("notes"), DateTimeOffset.UtcNow, true, Request.Headers["Idempotency-Key"], PaymentLedger.Hash(b), ct));
+    }, ct);
+    [HttpPost("{id:guid}/checkout/preview")]
+    public Task<IActionResult> Preview(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
+    {
+        var result = await CheckoutService.Calculate(c, t, id, Object(body), ct);
+        result.Remove("invoiceData");
+        result.Remove("contractData");
+        return result;
+    }, ct);
     [HttpPost("{id:guid}/checkout")]
-    public async Task<IActionResult> Checkout(Guid id, [FromBody] JsonElement body, CancellationToken ct)
+    public Task<IActionResult> Checkout(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        var outOn = body.Date("moveOutOn"); if (outOn is null) return BadRequest(new { code = "move_out_required", message = "Cần ngày trả phòng." }); try
+        var previous = await Row(c, t, "select to_jsonb(c)::text from contracts c where id=@id for update", ct, "id", id);
+        if (previous.Text("status") == "ended")
         {
-            var (c, t, actor) = await BeginAsync(true, ct); await using (c) await using (t)
+            var summary = previous["checkout_summary"]!;
+            if (summary.Text("checkoutHash") is string hash && hash != PaymentLedger.Hash(Object(body)))
+                throw new LeaseHttpException(409, "idempotency_conflict", "H?p ??ng ?? tr? ph?ng v?i n?i dung kh?c.");
+            return new
             {
-                var state = await ScalarStringAsync(c, t, "select jsonb_build_object('userId',c.user_id,'startsOn',c.starts_on,'initial',c.initial_readings,'versions',c.versions,'roomId',c.room_id)::text from contracts c where c.id=@id and c.status='active' for update", ct, P("id", id)); if (state is null) { await t.RollbackAsync(ct); return NotFound(); }
-                using var doc = JsonDocument.Parse(state); var root = doc.RootElement; var owner = root.Guid("userId")!.Value; var starts = root.Date("startsOn")!.Value; var initial = root.GetProperty("initial"); var rates = root.GetProperty("versions").EnumerateArray().Where(x => x.String("signedAt") is not null).OrderBy(x => x.GetProperty("versionNo").GetInt32()).Last().GetProperty("rates");
-                var readings = body.ValueOr("readings", JsonInput.EmptyObject); var now = DateTimeOffset.UtcNow; var final = new Dictionary<string, object>(); var lines = new List<object>();
-                foreach (var rate in rates.EnumerateArray().Where(x => x.String("effectiveTo") is null))
-                {
-                    var category = rate.String("category") ?? "other"; var method = rate.String("method") ?? "fixed"; var price = rate.Decimal("unitPrice") ?? 0; var code = rate.String("code") ?? category.ToUpperInvariant(); var name = rate.String("name") ?? code; var unit = rate.String("unit") ?? "tháng"; decimal quantity = 0;
-                    if (category is "electricity" or "water") { if (method != "metered" || !initial.TryGetProperty(category, out var first) || !readings.TryGetProperty(category, out var last) || !last.TryGetDecimal(out var lastValue)) continue; var firstValue = first.GetProperty("value").GetDecimal(); if (lastValue < firstValue) throw new LeaseHttpException(422, "final_reading_invalid", "Chỉ số cuối không được nhỏ hơn chỉ số đầu."); quantity = lastValue - firstValue; final[category] = new { value = lastValue, observedAt = now }; }
-                    else if (category == "rent" && method == "fixed") { quantity = Math.Max(1, outOn.Value.DayNumber - starts.DayNumber); price = Math.Round(price / DateTime.DaysInMonth(outOn.Value.Year, outOn.Value.Month), 3); unit = "ngày"; }
-                    else if (method == "fixed") quantity = 1; else continue;
-                    lines.Add(new { id = Guid.NewGuid(), code, category, description = name, unit, quantity, unitPrice = price, sign = 1, numerator = 1, denominator = 1, sourceScope = "contract", sourceRateId = rate.String("id"), oneTime = false });
-                }
-                if (lines.Count == 0) lines.Add(new { id = Guid.NewGuid(), code = "FINAL", category = "other", description = "Quyết toán trả phòng", unit = "lần", quantity = 1, unitPrice = 0m, sign = 1, numerator = 1, denominator = 1, sourceScope = "contract", sourceRateId = "final", oneTime = false });
-                var previous = await ScalarStringAsync(c, t, "select max(service_to)::text from invoices where contract_id=@id and status='issued' and adjusts_invoice_id is null", ct, P("id", id)); var serviceFrom = DateOnly.TryParse(previous, out var p) ? p : starts; if (serviceFrom >= outOn) serviceFrom = outOn.Value.AddDays(-1);
-                var invoice = await ScalarStringAsync(c, t, """insert into invoices(code,contract_id,kind,status,service_from,service_to,lines,customer_snapshot,issued_on,due_on,issued_by,issued_at,metered_only,electricity_start,electricity_end,electricity_from_at,electricity_to_at,water_start,water_end,water_from_at,water_to_at) values(next_code('INV'),@contract,'final','issued',@from,@to,@lines::jsonb,'{}',@today,@today,@actor,now(),false,@es,@ee,@eat,@eat,@ws,@we,@wat,@wat) returning id::text""", ct, P("contract", id), P("from", serviceFrom), P("to", outOn), P("lines", Json(lines)), P("today", DateOnly.FromDateTime(DateTime.UtcNow)), P("actor", actor), P("es", initial.TryGetProperty("electricity", out var e0) ? e0.GetProperty("value").GetDecimal() : (object?)null), P("ee", final.TryGetValue("electricity", out var e1) ? ((dynamic)e1).value : (object?)null), P("eat", e0.ValueKind == JsonValueKind.Object ? e0.GetProperty("observedAt").GetString() : (object?)null), P("ws", initial.TryGetProperty("water", out var w0) ? w0.GetProperty("value").GetDecimal() : (object?)null), P("we", final.TryGetValue("water", out var w1) ? ((dynamic)w1).value : (object?)null), P("wat", w0.ValueKind == JsonValueKind.Object ? w0.GetProperty("observedAt").GetString() : (object?)null));
-                var debts = await JsonRowsAsync(c, t, "select id,outstanding_amount from v_invoice_balances where contract_id=@id and outstanding_amount>0 order by issued_on nulls last", ct, P("id", id)); var held = decimal.Parse((await ScalarStringAsync(c, t, "select coalesce(held,0)::text from v_deposit_balances where contract_id=@id", ct, P("id", id))) ?? "0"); var allocations = new List<object>(); var remaining = held; foreach (var debt in debts) { var take = Math.Min(remaining, debt.GetProperty("outstanding_amount").GetDecimal()); if (take > 0) { allocations.Add(new { invoiceId = debt.GetProperty("id").GetGuid(), amount = take }); remaining -= take; } }
-                if (allocations.Count > 0) { await using var offset = new NpgsqlCommand("insert into payments(code,user_id,contract_id,kind,status,amount,allocations,proof_file_ids,confirmed_by,confirmed_at,reason) values(next_code('PAY'),@user,@contract,'deposit_offset','confirmed',@amount,@alloc::jsonb,'[]',@actor,now(),'Bù trừ cọc khi trả phòng')", c, t); offset.Parameters.AddRange(new[] { P("user", owner), P("contract", id), P("amount", held - remaining), P("alloc", Json(allocations)), P("actor", actor) }); await offset.ExecuteNonQueryAsync(ct); }
-                if (remaining > 0) { var refund = body.ValueOr("refund", JsonInput.EmptyObject); await using var pay = new NpgsqlCommand("insert into payments(code,user_id,contract_id,kind,status,amount,method,external_reference,allocations,proof_file_ids,confirmed_by,confirmed_at,reason) values(next_code('PAY'),@user,@contract,'deposit_refund','confirmed',@amount,@method,@ref,'[]','[]',@actor,now(),'Hoàn cọc khi trả phòng')", c, t); pay.Parameters.AddRange(new[] { P("user", owner), P("contract", id), P("amount", remaining), P("method", refund.String("methodCode") ?? "cash"), P("ref", refund.String("externalReference")), P("actor", actor) }); await pay.ExecuteNonQueryAsync(ct); }
-                var totalDebt = decimal.Parse((await ScalarStringAsync(c, t, "select coalesce(sum(outstanding_amount),0)::text from v_invoice_balances where contract_id=@id", ct, P("id", id))) ?? "0"); if (totalDebt > 0 && string.IsNullOrWhiteSpace(body.String("remainingDebtReason"))) throw new LeaseHttpException(422, "remaining_debt_reason_required", "Cần nêu lý do khi còn nợ."); var occupants = await ScalarStringAsync(c, t, "select coalesce(jsonb_agg(jsonb_set(x,'{leftOn}',to_jsonb(@out::date))),'[]')::text from contracts c cross join lateral jsonb_array_elements(c.occupants)x where c.id=@id", ct, P("id", id), P("out", outOn));
-                await ScalarStringAsync(c, t, "update contracts set status='ended',move_out_on=@out,final_readings=@final::jsonb,checkout_handover=@handover::jsonb,checkout_summary=jsonb_build_object('finalInvoiceId',@invoice,'offset',@offset,'refund',@refund,'remainingDebt',@debt),occupants=@occupants::jsonb,ended_reason=@reason,remaining_debt_reason=@debtReason where id=@id", ct, P("id", id), P("out", outOn), P("final", Json(final)), P("handover", body.ValueOr("handover", JsonInput.EmptyObject).GetRawText()), P("invoice", invoice), P("offset", held - remaining), P("refund", remaining), P("debt", totalDebt), P("occupants", occupants), P("reason", body.String("terminationReason") ?? "Trả phòng"), P("debtReason", body.String("remainingDebtReason")));
-                await ScalarStringAsync(c, t, "update rooms set operating_status=@status,status_reason=nullif(@reason,'') where id=@room", ct, P("room", root.Guid("roomId")), P("status", body.String("roomStatusAfter") ?? "available"), P("reason", body.String("roomStatusAfter") == "maintenance" ? "Sau trả phòng" : null)); await CommitAsync(t, ct); return Ok(new { contractId = id, finalInvoiceId = invoice, depositRefund = remaining, remainingDebt = totalDebt });
-            }
+                contractId = id,
+                finalInvoiceId = summary.Text("finalInvoiceId"),
+                depositRefund = summary.Number("refund"),
+                remainingDebt = summary.Number("remainingDebt")
+            };
         }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
-    private static async Task Deposit(NpgsqlConnection c, NpgsqlTransaction t, Guid contract, Guid user, decimal amount, string method, string? reference, Guid actor, string key, string hash, CancellationToken ct) { await using var cmd = new NpgsqlCommand("insert into payments(code,user_id,contract_id,kind,status,amount,method,external_reference,allocations,proof_file_ids,confirmed_by,confirmed_at,idempotency_key,request_hash) values(next_code('PAY'),@user,@contract,'deposit_receipt','confirmed',@amount,@method,@ref,'[]','[]',@actor,now(),nullif(@key,''),@hash)", c, t); cmd.Parameters.AddRange(new[] { P("user", user), P("contract", contract), P("amount", amount), P("method", method), P("ref", reference), P("actor", actor), P("key", key), P("hash", hash) }); await cmd.ExecuteNonQueryAsync(ct); }
-    private static string Hash(string s) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(s))).ToLowerInvariant();
+        return await CheckoutService.Commit(c, t, a, id, Object(body), ct);
+    }, ct);
 }

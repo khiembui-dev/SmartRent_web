@@ -13,7 +13,7 @@ const SORTS = [
   { value: '-price', label: 'Giá cao trước' },
   { value: 'newest', label: 'Mới đăng' },
 ];
-const OPEN_STATUS = ['new', 'accepted', 'consulting', 'viewing', 'approved'];
+const OPEN_STATUS = ['new', 'accepted', 'consulting', 'scheduled', 'viewing', 'approved'];
 
 function myViewings(items) {
   const open = items.filter((q) => OPEN_STATUS.includes(q.status));

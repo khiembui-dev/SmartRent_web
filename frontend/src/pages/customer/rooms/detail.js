@@ -9,7 +9,7 @@ import { formatVnd } from '../../../utils/money.js';
 import { html, multiline, setHtml } from '../../../utils/html.js';
 import { availabilityLabel, availabilityText, viewingBadge } from '../common.js';
 
-const OPEN_STATUS = ['new', 'accepted', 'consulting', 'viewing', 'approved'];
+const OPEN_STATUS = ['new', 'accepted', 'consulting', 'scheduled', 'viewing', 'approved'];
 
 const feeValue = (fee) => {
   if (fee.unitPrice === 0) return 'Miễn phí';

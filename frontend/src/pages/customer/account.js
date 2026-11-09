@@ -3,6 +3,7 @@ import { toast } from '../../components/dialogs.js';
 import { bindForm, formAlert, renderFields } from '../../components/form.js';
 import { formModal } from '../../components/modal.js';
 import { errorState, icon, loadingBlock, note } from '../../components/ui.js';
+import { session } from '../../services/session.js';
 import { authApi, portalApi } from '../../services/api.js';
 import { formatPhone, initials } from '../../utils/format.js';
 import { html, setHtml } from '../../utils/html.js';
@@ -87,6 +88,8 @@ export default async function AccountPage(ctx) {
     },
     onSubmit: async ({ currentPassword, newPassword }) => {
       await authApi.changePassword({ currentPassword, newPassword });
+      session.clearLocal();
+      ctx.navigate('/login');
       form.reset();
       toast('Đã đổi mật khẩu');
     },

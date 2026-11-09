@@ -48,7 +48,7 @@ function receipt(inv) {
 
 function bankBox(bank, memo) {
   return html`<div class="cu-bank">
-    <div class="cu-qr">${icon('qr-code')}<span>Mã VietQR hiện ở đây khi kết nối ngân hàng</span></div>
+    <p class="cu-fine">${bank ? 'Chuyển khoản theo đúng tài khoản và nội dung bên dưới.' : 'Chủ trọ chưa cấu hình tài khoản nhận tiền. Vui lòng liên hệ chủ trọ trước khi chuyển khoản.'}</p>
     <dl>
       ${bank ? html`<div><dt>Ngân hàng</dt><dd>${bank.bankName}</dd></div><div><dt>Số tài khoản</dt><dd>${bank.accountNumberMasked}</dd></div><div><dt>Chủ tài khoản</dt><dd>${bank.accountName}</dd></div>` : ''}
       <div><dt>Nội dung</dt><dd><code>${memo}</code><button type="button" class="cu-copy" data-copy="${memo}" aria-label="Sao chép nội dung chuyển khoản">${icon('copy')}</button></dd></div>

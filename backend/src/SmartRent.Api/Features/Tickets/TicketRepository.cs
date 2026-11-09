@@ -21,7 +21,8 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
         ActorParameters(command, actor);
         command.Parameters.AddWithValue("id", id);
         var json = await command.ExecuteScalarAsync(ct) as string;
-        if (json is null) throw new TicketException(404, "not_found", "Không tìm thấy ticket.");
+        if (json is null)
+            throw new TicketException(404, "not_found", "Không tìm thấy ticket.");
         return JsonNode.Parse(json)!.AsObject();
     }
 
@@ -79,12 +80,19 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
             {
                 var item = JsonNode.Parse(reader.GetString(0))!.AsObject();
                 // Danh sách chỉ cần summary; tin nhắn/detail chỉ tải khi người dùng chọn ticket.
-                foreach (var key in new[] { "messages", "events", "files", "description", "resolutionNotes" }) item.Remove(key);
+                foreach (var key in new[] { "messages", "events", "files", "description", "resolutionNotes" })
+                    item.Remove(key);
                 items.Add(item);
             }
         await tx.CommitAsync(ct);
-        return new { items, page = query.Page, pageSize = query.PageSize, totalItems = total,
-            totalPages = (long)Math.Ceiling((double)total / query.PageSize) };
+        return new
+        {
+            items,
+            page = query.Page,
+            pageSize = query.PageSize,
+            totalItems = total,
+            totalPages = (long)Math.Ceiling((double)total / query.PageSize)
+        };
     }
 
     // Trả các phòng mà khách có quyền gửi ticket. Tên tenancyId cũ ánh xạ vào contract.id mới.
@@ -105,7 +113,8 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
         cmd.Parameters.AddWithValue("actor_id", actor.Id);
         var result = new List<JsonObject>();
         await using var reader = await cmd.ExecuteReaderAsync(ct);
-        while (await reader.ReadAsync(ct)) result.Add(JsonNode.Parse(reader.GetString(0))!.AsObject());
+        while (await reader.ReadAsync(ct))
+            result.Add(JsonNode.Parse(reader.GetString(0))!.AsObject());
         return result;
     }
 
@@ -121,7 +130,12 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
             await using var cmd = source.CreateCommand(
                 "SELECT id,display_name FROM smartrent.users WHERE role='admin' AND is_active");
             await using var reader = await cmd.ExecuteReaderAsync(ct);
-            while (await reader.ReadAsync(ct)) staff.Add(new { id=reader.GetGuid(0), displayName=reader.GetString(1) });
+            while (await reader.ReadAsync(ct))
+                staff.Add(new
+                {
+                    id = reader.GetGuid(0),
+                    displayName = reader.GetString(1)
+                });
         }
         // Các màn hình dùng chung /catalog: lấy danh mục từ database 13 bảng,
         // không dựng tài khoản ngân hàng hoặc phòng minh họa khi chưa cấu hình.
@@ -144,9 +158,15 @@ public sealed partial class TicketRepository(NpgsqlDataSource source)
                 'id',r.id,'code',r.code,'name',r.name,'propertyId',r.property_id,'propertyName',p.name))
                 FROM smartrent.rooms r JOIN smartrent.properties p ON p.id=r.property_id
                 WHERE r.operating_status='available' AND r.listing_status='published'
-                  AND NOT EXISTS(SELECT 1 FROM smartrent.contracts c WHERE c.room_id=r.id AND c.status IN ('reserved','active'))),'[]'))::text
+                  AND NOT EXISTS(SELECT 1 FROM smartrent.contracts c WHERE c.room_id=r.id AND c.status IN ('planned','active'))),'[]'))::text
             """);
         var catalog = JsonNode.Parse((string)(await catalogCommand.ExecuteScalarAsync(ct))!)!.AsObject();
+        var chargeTypes = catalog["chargeTypes"]!.AsArray();
+        foreach (var charge in SmartRent.Api.Common.BusinessData.Charges)
+            if (!chargeTypes.Any(x => x?["code"]?.GetValue<string>() == charge.Code))
+                chargeTypes.Add(new JsonObject { ["id"] = charge.Code, ["code"] = charge.Code, ["name"] = charge.Name, ["category"] = charge.Category, ["unitLabel"] = charge.Unit });
+        foreach (var amenity in catalog["amenities"]!.AsArray())
+            amenity!["id"] = amenity["code"]!.DeepClone();
         catalog["ticketCategories"] = System.Text.Json.JsonSerializer.SerializeToNode(categories);
         catalog["staff"] = System.Text.Json.JsonSerializer.SerializeToNode(staff);
         return catalog;

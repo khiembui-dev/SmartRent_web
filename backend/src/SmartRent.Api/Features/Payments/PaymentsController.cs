@@ -1,239 +1,70 @@
-using System;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using SmartRent.Api.Common;
-
+using static SmartRent.Api.Common.BusinessData;
 namespace SmartRent.Api.Features.Payments;
 
-[ApiController]
-[Route("api/v1/payments")]
-public sealed class PaymentsController(NpgsqlDataSource db) : LeasingController(db)
+[ApiController, Route("api/v1/payments")]
+public sealed class PaymentsController(NpgsqlDataSource db) : BusinessController(db)
 {
-    // 1. Tạo phiếu thu tiền / Ghi nhận thanh toán
+    [HttpGet] public Task<IActionResult> List(int page = 1, int pageSize = 30, CancellationToken ct = default) => Run(true, async (c, t, a) => Page((await Rows(c, t, "select to_jsonb(p)::text from payments p order by created_at desc", ct)).Select(PaymentLedger.Dto).ToList(), page, pageSize), ct);
+    [HttpGet("{id:guid}")] public Task<IActionResult> Get(Guid id, CancellationToken ct) => Run(true, async (c, t, a) => PaymentLedger.Dto(await Row(c, t, "select to_jsonb(p)::text from payments p where id=@id", ct, "id", id)), ct);
     [HttpPost]
-    public async Task<IActionResult> Create([FromBody] JsonElement body, CancellationToken ct = default)
+    public Task<IActionResult> Create(JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        try
-        {
-            var amount = body.TryGetProperty("amount", out var pAmt) ? pAmt.GetDecimal() : 0;
-            var method = body.String("methodCode") ?? body.String("method") ?? "cash";
-            var externalRef = body.TryGetProperty("externalReference", out var pRef) ? pRef.GetString() : null;
-            var notes = body.TryGetProperty("notes", out var pN) ? pN.GetString() : null;
-            var invoiceId = body.TryGetProperty("invoiceId", out var pInv) && pInv.TryGetGuid(out var invGuid) ? invGuid : (Guid?)null;
-
-            // Giao diện gửi allocations; bản API cũ gửi invoiceId. Hỗ trợ cùng
-            // một hóa đơn cho mỗi phiếu thu và giữ nguyên ràng buộc của SQL.
-            if (!invoiceId.HasValue && body.TryGetProperty("allocations", out var allocationInput))
-            {
-                if (allocationInput.ValueKind != JsonValueKind.Array || allocationInput.GetArrayLength() != 1)
-                    return BadRequest(new { code = "single_invoice_required", detail = "Mỗi phiếu thu cần đúng một hóa đơn." });
-                invoiceId = allocationInput[0].Guid("invoiceId");
-                if (allocationInput[0].Decimal("amount") != amount)
-                    return BadRequest(new { code = "allocation_amount_mismatch", detail = "Số tiền phân bổ phải bằng số tiền thu." });
-            }
-            if (method is not ("cash" or "bank_transfer"))
-                return BadRequest(new { code = "invalid_method", detail = "Phương thức thanh toán không hợp lệ." });
-
-            if (amount <= 0)
-            {
-                return BadRequest(new { code = "validation_failed", message = "Số tiền thanh toán phải lớn hơn 0." });
-            }
-
-            var (c, t, actor) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                Guid userId = Guid.Empty;
-                Guid? contractId = null;
-
-                if (invoiceId.HasValue)
-                {
-                    var invSql = @"
-                        select ct.user_id, ct.id
-                        from invoices i
-                        join contracts ct on ct.id = i.contract_id
-                        where i.id = @inv";
-
-                    await using var cmd = new NpgsqlCommand(invSql, c, t);
-                    cmd.Parameters.AddWithValue("inv", invoiceId.Value);
-                    await using var reader = await cmd.ExecuteReaderAsync(ct);
-
-                    if (await reader.ReadAsync(ct))
-                    {
-                        userId = reader.GetGuid(0);
-                        contractId = reader.GetGuid(1);
-                    }
-                    await reader.CloseAsync();
-                }
-
-                if (userId == Guid.Empty)
-                {
-                    await t.RollbackAsync(ct);
-                    return BadRequest(new { code = "invoice_required", message = "Cần chọn hóa đơn hợp lệ để ghi nhận thanh toán." });
-                }
-
-                var codeStr = await ScalarStringAsync(c, t, "select next_code('PT')", ct) ?? $"PT-{DateTime.UtcNow:yyMMddHHmmss}";
-
-                var allocations = invoiceId.HasValue
-                    ? JsonSerializer.Serialize(new[] { new { invoiceId = invoiceId.Value, amount } })
-                    : "[]";
-
-                var insertSql = @"
-                    insert into payments(code, user_id, contract_id, intended_invoice_id, kind, status,
-                                        amount, method, external_reference, allocations, submitted_by,
-                                        confirmed_by, confirmed_at, notes, received_at)
-                    values(@code, @user, @contract, @inv, 'receipt', 'confirmed',
-                           @amount, @method, @extRef, @alloc::jsonb, @actor,
-                           @actor, now(), @notes, now())
-                    returning jsonb_build_object(
-                        'id', id,
-                        'code', code,
-                        'amount', amount,
-                        'status', status,
-                        'methodCode', method,
-                        'method', method,
-                        'confirmedAt', confirmed_at
-                    )::text";
-
-                var json = await ScalarStringAsync(c, t, insertSql, ct,
-                    P("code", codeStr), P("user", userId), P("contract", contractId),
-                    P("inv", invoiceId), P("amount", amount), P("method", method),
-                    P("extRef", externalRef), P("alloc", allocations), P("actor", actor), P("notes", notes));
-
-                await CommitAsync(t, ct);
-                return Content(json!, "application/json");
-            }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
-
-    // 2. Chi tiết phiếu thu
-    [HttpGet("{id:guid}")]
-    public async Task<IActionResult> Get(Guid id, CancellationToken ct)
-    {
-        try
-        {
-            var (c, t, _) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                var sql = @"
-                    select jsonb_build_object(
-                        'id', p.id,
-                        'code', p.code,
-                        'amount', p.amount,
-                        'status', p.status,
-                        'kind', p.kind,
-                        'methodCode', p.method,
-                        'method', p.method,
-                        'externalReference', p.external_reference,
-                        'notes', p.notes,
-                        'allocations', p.allocations,
-                        'receivedAt', p.received_at,
-                        'confirmedAt', p.confirmed_at
-                    )::text
-                    from payments p
-                    where p.id = @id";
-
-                var json = await ScalarStringAsync(c, t, sql, ct, P("id", id));
-                await t.RollbackAsync(ct);
-                return json == null ? NotFound() : Content(json, "application/json");
-            }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
-
-    // 3. Xác nhận duyệt thanh toán (Confirm)
+        var b = Object(body);
+        var allocations = b["allocations"]?.DeepClone().AsArray() ?? new JsonArray();
+        if (allocations.Count == 0 && b["invoiceId"] is not null)
+            allocations.Add(new JsonObject { ["invoiceId"] = b.Text("invoiceId"), ["amount"] = b.Number("amount") });
+        if (allocations.Count != 1 || allocations[0].Number("amount") != b.Number("amount"))
+            throw Invalid("Chọn một hóa đơn, số phân bổ bằng số tiền thu.");
+        var invoice = allocations[0].Id("invoiceId");
+        var target = await Row(c, t, "select jsonb_build_object('user',ct.user_id,'contract',ct.id)::text from invoices i join contracts ct on ct.id=i.contract_id where i.id=@id and i.status='issued'", ct, "id", invoice);
+        var row = await PaymentLedger.Append(c, t, a, target.Id("user"), target.Id("contract"), invoice, "receipt", b.Number("amount"), b.Text("methodCode") ?? b.Text("method") ?? "cash", b.Text("externalReference"), allocations, null, null, b.Text("notes"), DateTimeOffset.Parse(b.Text("receivedAt") ?? DateTimeOffset.UtcNow.ToString("O")), true, Request.Headers["Idempotency-Key"], PaymentLedger.Hash(b), ct);
+        return PaymentLedger.Dto(row);
+    }, ct);
     [HttpPost("{id:guid}/confirm")]
-    public async Task<IActionResult> Confirm(Guid id, [FromBody] JsonElement body, CancellationToken ct)
+    public Task<IActionResult> Confirm(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        try
-        {
-            var (c, t, actor) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                var status = await ScalarStringAsync(c, t,
-                    "select status from payments where id=@id for update", ct, P("id", id));
-
-                if (status == null)
-                {
-                    await t.RollbackAsync(ct);
-                    return NotFound();
-                }
-
-                if (status != "pending")
-                {
-                    await t.RollbackAsync(ct);
-                    return Conflict(new { code = "payment_not_pending", message = "Khoản thanh toán này không ở trạng thái chờ duyệt." });
-                }
-
-                var updateSql = @"
-                    update payments
-                    set status='confirmed',
-                        confirmed_at=now(),
-                        confirmed_by=@actor
-                    where id=@id
-                    returning jsonb_build_object('id', id, 'code', code, 'status', status, 'confirmedAt', confirmed_at)::text";
-
-                var json = await ScalarStringAsync(c, t, updateSql, ct, P("actor", actor), P("id", id));
-                await CommitAsync(t, ct);
-                return Content(json!, "application/json");
-            }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
-
-    // 4. Từ chối thanh toán (Reject)
+        var p = await Row(c, t, "select to_jsonb(p)::text from payments p where id=@id for update", ct, "id", id);
+        if (p.Text("status") == "confirmed")
+            return PaymentLedger.Dto(p);
+        if (p.Text("status") != "pending")
+            throw new LeaseHttpException(409, "payment_not_pending", "Khoản thu không còn chờ xác minh.");
+        var b = Object(body);
+        var allocations = new JsonArray((b["allocations"] ?? p["allocations"]!).AsArray().Where(x => x.Number("amount") > 0).Select(x => x!.DeepClone()).ToArray());
+        if (allocations.AsArray().Sum(x => x.Number("amount")) > p.Number("amount"))
+            throw Invalid("Phân bổ vượt số tiền nhận.");
+        await Execute(c, t, "update payments set status='confirmed',confirmed_by=@a,confirmed_at=now(),allocations=@alloc::jsonb where id=@id", ct, "id", id, "a", a, "alloc", allocations.ToJsonString());
+        return PaymentLedger.Dto(await Row(c, t, "select to_jsonb(p)::text from payments p where id=@id", ct, "id", id));
+    }, ct);
     [HttpPost("{id:guid}/reject")]
-    public async Task<IActionResult> Reject(Guid id, [FromBody] JsonElement body, CancellationToken ct)
+    public Task<IActionResult> Reject(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        try
+        var reason = body.String("reason");
+        if (string.IsNullOrWhiteSpace(reason))
+            throw Invalid("Cần lý do từ chối.");
+        if (await Execute(c, t, "update payments set status='rejected',reason=@reason where id=@id and status='pending'", ct, "id", id, "reason", reason) == 0)
+            throw new LeaseHttpException(409, "payment_not_pending", "Khoản thu không còn chờ xác minh.");
+        return new
         {
-            var reason = body.TryGetProperty("reason", out var pR) ? pR.GetString() : null;
-            if (string.IsNullOrWhiteSpace(reason))
-            {
-                return BadRequest(new { code = "reason_required", message = "Cần nhập lý do từ chối khoản thanh toán." });
-            }
-
-            var (c, t, actor) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                var status = await ScalarStringAsync(c, t,
-                    "select status from payments where id=@id for update", ct, P("id", id));
-
-                if (status == null)
-                {
-                    await t.RollbackAsync(ct);
-                    return NotFound();
-                }
-
-                if (status != "pending")
-                {
-                    await t.RollbackAsync(ct);
-                    return Conflict(new { code = "payment_not_pending", message = "Khoản thanh toán này không ở trạng thái chờ duyệt." });
-                }
-
-                var updateSql = @"
-                    update payments
-                    set status='rejected',
-                        reason=@reason,
-                        confirmed_at=now(),
-                        confirmed_by=@actor
-                    where id=@id
-                    returning jsonb_build_object('id', id, 'code', code, 'status', status, 'reason', reason)::text";
-
-                var json = await ScalarStringAsync(c, t, updateSql, ct,
-                    P("reason", reason), P("actor", actor), P("id", id));
-
-                await CommitAsync(t, ct);
-                return Content(json!, "application/json");
-            }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
+            id,
+            status = "rejected"
+        };
+    }, ct);
+    [HttpPost("{id:guid}/reversals")] public Task<IActionResult> Reverse(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) => await ReverseReceipt(c, t, a, id, body.String("reason"), ct), ct);
+    internal static async Task<object> ReverseReceipt(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, Guid id, string? reason, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw Invalid("Cần lý do hoàn tác.");
+        var p = await Row(c, t, "select to_jsonb(p)::text from payments p where id=@id for update", ct, "id", id);
+        if (p.Text("status") != "confirmed" || p.Text("kind") != "receipt")
+            throw Invalid("Chỉ hoàn tác phiếu thu đã xác nhận.");
+        if (await Scalar(c, t, "select id::text from payments where reverses_id=@id", ct, "id", id) is not null)
+            throw new LeaseHttpException(409, "already_reversed", "Phiếu thu đã hoàn tác.");
+        var row = await PaymentLedger.Append(c, t, actor, p.Id("user_id"), p.Id("contract_id"), null, "receipt_reversal", p.Number("amount"), p.Text("method"), p.Text("external_reference"), p["allocations"]!.DeepClone().AsArray(), null, reason, null, DateTimeOffset.UtcNow, true, null, "reverse:" + id, ct, id);
+        return PaymentLedger.Dto(row);
     }
 }

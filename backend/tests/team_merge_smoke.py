@@ -44,7 +44,7 @@ def request(path, actor="admin", method="GET", body=None, expected=200, token=No
 
 def sql(statement):
     r = subprocess.run(["docker", "compose", "exec", "-T", "db", "psql", "-U", "postgres",
-                        "-d", "smartrent", "-v", "ON_ERROR_STOP=1", "-At"],
+                        "-d", os.environ.get("SMARTRENT_TEST_DATABASE","smartrent"), "-v", "ON_ERROR_STOP=1", "-At"],
                        input=statement, text=True, capture_output=True, cwd=root, encoding="utf-8")
     assert r.returncode == 0, r.stderr
     return r.stdout.strip()

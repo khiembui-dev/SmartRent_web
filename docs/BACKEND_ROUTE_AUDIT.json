@@ -1,0 +1,1811 @@
+{
+  "implementedOperations": 142,
+  "serviceCalls": 191,
+  "serviceCallsWithRoutes": 136,
+  "calls": [
+    {
+      "service": "authApi.login",
+      "method": "POST",
+      "path": "/api/v1/auth/login",
+      "implemented": true,
+      "apiLine": 9,
+      "usedBy": [
+        "frontend/src/services/session.js:105"
+      ]
+    },
+    {
+      "service": "authApi.register",
+      "method": "POST",
+      "path": "/api/v1/auth/register",
+      "implemented": true,
+      "apiLine": 10,
+      "usedBy": [
+        "frontend/src/services/session.js:112"
+      ]
+    },
+    {
+      "service": "authApi.logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "implemented": true,
+      "apiLine": 11,
+      "usedBy": [
+        "frontend/src/services/session.js:120"
+      ]
+    },
+    {
+      "service": "authApi.forgotPassword",
+      "method": "POST",
+      "path": "/api/v1/auth/forgot-password",
+      "implemented": true,
+      "apiLine": 12,
+      "usedBy": [
+        "frontend/src/pages/auth/forgot.js:20"
+      ]
+    },
+    {
+      "service": "authApi.resetPassword",
+      "method": "POST",
+      "path": "/api/v1/auth/reset-password",
+      "implemented": true,
+      "apiLine": 13,
+      "usedBy": [
+        "frontend/src/pages/auth/reset.js:23"
+      ]
+    },
+    {
+      "service": "authApi.me",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "implemented": true,
+      "apiLine": 14,
+      "usedBy": [
+        "frontend/src/services/session.js:97"
+      ]
+    },
+    {
+      "service": "authApi.changePassword",
+      "method": "POST",
+      "path": "/api/v1/me/change-password",
+      "implemented": true,
+      "apiLine": 15,
+      "usedBy": [
+        "frontend/src/pages/admin/settings.js:135",
+        "frontend/src/pages/customer/account.js:89"
+      ]
+    },
+    {
+      "service": "authApi.updateProfile",
+      "method": "PUT",
+      "path": "/api/v1/me/profile",
+      "implemented": true,
+      "apiLine": 16,
+      "usedBy": [
+        "frontend/src/pages/admin/settings.js:123"
+      ]
+    },
+    {
+      "service": "authApi.sessions",
+      "method": "GET",
+      "path": "/api/v1/me/sessions",
+      "implemented": true,
+      "apiLine": 17,
+      "usedBy": []
+    },
+    {
+      "service": "authApi.revokeSession",
+      "method": "DELETE",
+      "path": "/api/v1/me/sessions/{param}",
+      "implemented": true,
+      "apiLine": 18,
+      "usedBy": []
+    },
+    {
+      "service": "publicApi.filters",
+      "method": "GET",
+      "path": "/api/v1/public/filters",
+      "implemented": true,
+      "apiLine": 22,
+      "usedBy": [
+        "frontend/src/pages/customer/home/index.js:107",
+        "frontend/src/pages/customer/rooms/list.js:102"
+      ]
+    },
+    {
+      "service": "publicApi.rooms",
+      "method": "GET",
+      "path": "/api/v1/public/rooms",
+      "implemented": true,
+      "apiLine": 23,
+      "usedBy": [
+        "frontend/src/pages/customer/home/index.js:107",
+        "frontend/src/pages/customer/rooms/list.js:65"
+      ]
+    },
+    {
+      "service": "publicApi.room",
+      "method": "GET",
+      "path": "/api/v1/public/rooms/{param}",
+      "implemented": true,
+      "apiLine": 24,
+      "usedBy": [
+        "frontend/src/pages/customer/rooms/detail.js:66"
+      ]
+    },
+    {
+      "service": "publicApi.contactInfo",
+      "method": "GET",
+      "path": "/api/v1/public/contact-info",
+      "implemented": true,
+      "apiLine": 25,
+      "usedBy": [
+        "frontend/src/components/shells.js:256",
+        "frontend/src/pages/customer/contact.js:30"
+      ]
+    },
+    {
+      "service": "dashboardApi.get",
+      "method": "GET",
+      "path": "/api/v1/dashboard",
+      "implemented": true,
+      "apiLine": 29,
+      "usedBy": [
+        "frontend/src/components/shells.js:189",
+        "frontend/src/pages/admin/dashboard.js:166"
+      ]
+    },
+    {
+      "service": "catalogApi.get",
+      "method": "GET",
+      "path": "/api/v1/catalog",
+      "implemented": true,
+      "apiLine": 33,
+      "usedBy": [
+        "frontend/src/pages/admin/common.js:15"
+      ]
+    },
+    {
+      "service": "catalogApi.create",
+      "method": "POST",
+      "path": "/api/v1/catalog/{param}",
+      "implemented": true,
+      "apiLine": 34,
+      "usedBy": [
+        "frontend/src/pages/admin/room-form.js:204"
+      ],
+      "resolvedPath": "/api/v1/catalog/amenities",
+      "resolution": "The current room form passes the literal kind amenities."
+    },
+    {
+      "service": "catalogApi.update",
+      "method": "PUT",
+      "path": "/api/v1/catalog/{param}/{param}",
+      "implemented": false,
+      "apiLine": 35,
+      "usedBy": []
+    },
+    {
+      "service": "propertiesApi.list",
+      "method": "GET",
+      "path": "/api/v1/properties",
+      "implemented": true,
+      "apiLine": 39,
+      "usedBy": [
+        "frontend/src/pages/admin/properties.js:54"
+      ]
+    },
+    {
+      "service": "propertiesApi.get",
+      "method": "GET",
+      "path": "/api/v1/properties/{param}",
+      "implemented": true,
+      "apiLine": 40,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:154",
+        "frontend/src/pages/admin/contract-new.js:213",
+        "frontend/src/pages/admin/property-detail.js:22",
+        "frontend/src/pages/admin/property-form.js:19",
+        "frontend/src/pages/admin/room-form.js:163"
+      ]
+    },
+    {
+      "service": "propertiesApi.create",
+      "method": "POST",
+      "path": "/api/v1/properties",
+      "implemented": true,
+      "apiLine": 41,
+      "usedBy": [
+        "frontend/src/pages/admin/property-form.js:63"
+      ]
+    },
+    {
+      "service": "propertiesApi.update",
+      "method": "PUT",
+      "path": "/api/v1/properties/{param}",
+      "implemented": true,
+      "apiLine": 42,
+      "usedBy": [
+        "frontend/src/pages/admin/property-form.js:63"
+      ]
+    },
+    {
+      "service": "propertiesApi.deactivate",
+      "method": "POST",
+      "path": "/api/v1/properties/{param}/deactivate",
+      "implemented": true,
+      "apiLine": 43,
+      "usedBy": [
+        "frontend/src/pages/admin/property-detail.js:74"
+      ]
+    },
+    {
+      "service": "propertiesApi.activate",
+      "method": "POST",
+      "path": "/api/v1/properties/{param}/activate",
+      "implemented": true,
+      "apiLine": 44,
+      "usedBy": [
+        "frontend/src/pages/admin/property-detail.js:77"
+      ]
+    },
+    {
+      "service": "propertiesApi.remove",
+      "method": "DELETE",
+      "path": "/api/v1/properties/{param}",
+      "implemented": true,
+      "apiLine": 45,
+      "usedBy": [
+        "frontend/src/pages/admin/properties.js:75",
+        "frontend/src/pages/admin/property-detail.js:66"
+      ]
+    },
+    {
+      "service": "propertiesApi.changeRate",
+      "method": "POST",
+      "path": "/api/v1/properties/{param}/rates",
+      "implemented": false,
+      "apiLine": 46,
+      "usedBy": []
+    },
+    {
+      "service": "propertiesApi.previewRate",
+      "method": "POST",
+      "path": "/api/v1/properties/{param}/rates/preview",
+      "implemented": false,
+      "apiLine": 47,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.list",
+      "method": "GET",
+      "path": "/api/v1/rooms",
+      "implemented": true,
+      "apiLine": 51,
+      "usedBy": [
+        "frontend/src/components/select.js:13",
+        "frontend/src/pages/admin/contract-new.js:154",
+        "frontend/src/pages/admin/property-detail.js:22",
+        "frontend/src/pages/admin/rooms.js:48"
+      ]
+    },
+    {
+      "service": "roomsApi.get",
+      "method": "GET",
+      "path": "/api/v1/rooms/{param}",
+      "implemented": true,
+      "apiLine": 52,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:32",
+        "frontend/src/pages/admin/contract-new.js:161",
+        "frontend/src/pages/admin/room-detail.js:23",
+        "frontend/src/pages/admin/room-form.js:32"
+      ]
+    },
+    {
+      "service": "roomsApi.create",
+      "method": "POST",
+      "path": "/api/v1/rooms",
+      "implemented": true,
+      "apiLine": 53,
+      "usedBy": [
+        "frontend/src/pages/admin/room-form.js:259"
+      ]
+    },
+    {
+      "service": "roomsApi.update",
+      "method": "PUT",
+      "path": "/api/v1/rooms/{param}",
+      "implemented": true,
+      "apiLine": 54,
+      "usedBy": [
+        "frontend/src/pages/admin/room-form.js:259"
+      ]
+    },
+    {
+      "service": "roomsApi.remove",
+      "method": "DELETE",
+      "path": "/api/v1/rooms/{param}",
+      "implemented": true,
+      "apiLine": 55,
+      "usedBy": [
+        "frontend/src/pages/admin/room-detail.js:103",
+        "frontend/src/pages/admin/rooms.js:58"
+      ]
+    },
+    {
+      "service": "roomsApi.setStatus",
+      "method": "POST",
+      "path": "/api/v1/rooms/{param}/status",
+      "implemented": true,
+      "apiLine": 56,
+      "usedBy": [
+        "frontend/src/pages/admin/room-detail.js:113",
+        "frontend/src/pages/admin/room-form.js:263",
+        "frontend/src/pages/admin/rooms.js:69"
+      ]
+    },
+    {
+      "service": "roomsApi.saveListing",
+      "method": "PUT",
+      "path": "/api/v1/rooms/{param}/listing",
+      "implemented": true,
+      "apiLine": 57,
+      "usedBy": [
+        "frontend/src/pages/admin/room-detail.js:118"
+      ]
+    },
+    {
+      "service": "roomsApi.addImage",
+      "method": "POST",
+      "path": "/api/v1/rooms/{param}/images",
+      "implemented": false,
+      "apiLine": 58,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.arrangeImages",
+      "method": "PATCH",
+      "path": "/api/v1/rooms/{param}/images",
+      "implemented": true,
+      "apiLine": 59,
+      "usedBy": [
+        "frontend/src/pages/admin/room-form.js:228"
+      ]
+    },
+    {
+      "service": "roomsApi.removeImage",
+      "method": "DELETE",
+      "path": "/api/v1/rooms/{param}/images/{param}",
+      "implemented": true,
+      "apiLine": 60,
+      "usedBy": [
+        "frontend/src/pages/admin/room-form.js:232"
+      ]
+    },
+    {
+      "service": "roomsApi.addAsset",
+      "method": "POST",
+      "path": "/api/v1/rooms/{param}/assets",
+      "implemented": false,
+      "apiLine": 61,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.updateAsset",
+      "method": "PUT",
+      "path": "/api/v1/rooms/{param}/assets/{param}",
+      "implemented": false,
+      "apiLine": 62,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.changeRate",
+      "method": "POST",
+      "path": "/api/v1/rooms/{param}/rates",
+      "implemented": false,
+      "apiLine": 63,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.endRate",
+      "method": "POST",
+      "path": "/api/v1/rooms/{param}/rates/{param}/end",
+      "implemented": false,
+      "apiLine": 64,
+      "usedBy": []
+    },
+    {
+      "service": "roomsApi.availability",
+      "method": "GET",
+      "path": "/api/v1/rooms/{param}/availability",
+      "implemented": false,
+      "apiLine": 65,
+      "usedBy": []
+    },
+    {
+      "service": "inquiriesApi.list",
+      "method": "GET",
+      "path": "/api/v1/inquiries",
+      "implemented": true,
+      "apiLine": 69,
+      "usedBy": [
+        "frontend/src/pages/admin/viewings.js:108"
+      ]
+    },
+    {
+      "service": "inquiriesApi.get",
+      "method": "GET",
+      "path": "/api/v1/inquiries/{param}",
+      "implemented": true,
+      "apiLine": 70,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:31"
+      ]
+    },
+    {
+      "service": "inquiriesApi.create",
+      "method": "POST",
+      "path": "/api/v1/inquiries",
+      "implemented": false,
+      "apiLine": 71,
+      "usedBy": []
+    },
+    {
+      "service": "inquiriesApi.transition",
+      "method": "POST",
+      "path": "/api/v1/inquiries/{param}/transitions",
+      "implemented": true,
+      "apiLine": 72,
+      "usedBy": [
+        "frontend/src/pages/admin/viewings.js:158"
+      ]
+    },
+    {
+      "service": "inquiriesApi.addEvent",
+      "method": "POST",
+      "path": "/api/v1/inquiries/{param}/events",
+      "implemented": false,
+      "apiLine": 73,
+      "usedBy": []
+    },
+    {
+      "service": "inquiriesApi.assign",
+      "method": "PUT",
+      "path": "/api/v1/inquiries/{param}/assign",
+      "implemented": false,
+      "apiLine": 74,
+      "usedBy": []
+    },
+    {
+      "service": "inquiriesApi.scheduleViewing",
+      "method": "POST",
+      "path": "/api/v1/inquiries/{param}/viewings",
+      "implemented": true,
+      "apiLine": 75,
+      "usedBy": [
+        "frontend/src/pages/admin/viewings.js:148"
+      ]
+    },
+    {
+      "service": "inquiriesApi.linkTenant",
+      "method": "POST",
+      "path": "/api/v1/inquiries/{param}/tenant",
+      "implemented": true,
+      "apiLine": 76,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:194"
+      ]
+    },
+    {
+      "service": "viewingsApi.list",
+      "method": "GET",
+      "path": "/api/v1/viewings",
+      "implemented": true,
+      "apiLine": 80,
+      "usedBy": [
+        "frontend/src/pages/admin/viewings.js:108"
+      ]
+    },
+    {
+      "service": "viewingsApi.result",
+      "method": "POST",
+      "path": "/api/v1/viewings/{param}/result",
+      "implemented": true,
+      "apiLine": 81,
+      "usedBy": [
+        "frontend/src/pages/admin/viewings.js:168"
+      ]
+    },
+    {
+      "service": "reservationsApi.list",
+      "method": "GET",
+      "path": "/api/v1/reservations",
+      "implemented": false,
+      "apiLine": 85,
+      "usedBy": []
+    },
+    {
+      "service": "reservationsApi.get",
+      "method": "GET",
+      "path": "/api/v1/reservations/{param}",
+      "implemented": false,
+      "apiLine": 86,
+      "usedBy": []
+    },
+    {
+      "service": "reservationsApi.create",
+      "method": "POST",
+      "path": "/api/v1/reservations",
+      "implemented": false,
+      "apiLine": 87,
+      "usedBy": []
+    },
+    {
+      "service": "reservationsApi.cancel",
+      "method": "POST",
+      "path": "/api/v1/reservations/{param}/cancel",
+      "implemented": true,
+      "apiLine": 88,
+      "usedBy": [
+        "frontend/src/pages/admin/room-detail.js:129"
+      ]
+    },
+    {
+      "service": "reservationsApi.extend",
+      "method": "POST",
+      "path": "/api/v1/reservations/{param}/extend",
+      "implemented": false,
+      "apiLine": 89,
+      "usedBy": []
+    },
+    {
+      "service": "tenantsApi.list",
+      "method": "GET",
+      "path": "/api/v1/tenants",
+      "implemented": true,
+      "apiLine": 93,
+      "usedBy": [
+        "frontend/src/components/select.js:12",
+        "frontend/src/pages/admin/tenants.js:44"
+      ]
+    },
+    {
+      "service": "tenantsApi.get",
+      "method": "GET",
+      "path": "/api/v1/tenants/{param}",
+      "implemented": true,
+      "apiLine": 94,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:33",
+        "frontend/src/pages/admin/contract-new.js:226",
+        "frontend/src/pages/admin/tenant-detail.js:28"
+      ]
+    },
+    {
+      "service": "tenantsApi.create",
+      "method": "POST",
+      "path": "/api/v1/tenants",
+      "implemented": true,
+      "apiLine": 95,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-dialogs.js:25",
+        "frontend/src/pages/admin/tenant-dialogs.js:30"
+      ]
+    },
+    {
+      "service": "tenantsApi.update",
+      "method": "PUT",
+      "path": "/api/v1/tenants/{param}",
+      "implemented": true,
+      "apiLine": 96,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-dialogs.js:23"
+      ]
+    },
+    {
+      "service": "tenantsApi.duplicates",
+      "method": "GET",
+      "path": "/api/v1/tenants/duplicates",
+      "implemented": true,
+      "apiLine": 97,
+      "usedBy": []
+    },
+    {
+      "service": "tenantsApi.addIdentityDocument",
+      "method": "POST",
+      "path": "/api/v1/tenants/{param}/identity-documents",
+      "implemented": false,
+      "apiLine": 98,
+      "usedBy": []
+    },
+    {
+      "service": "tenantsApi.verifyIdentityDocument",
+      "method": "POST",
+      "path": "/api/v1/tenants/{param}/identity-documents/{param}/verify",
+      "implemented": false,
+      "apiLine": 99,
+      "usedBy": []
+    },
+    {
+      "service": "tenantsApi.invitePortal",
+      "method": "POST",
+      "path": "/api/v1/tenants/{param}/portal-invitation",
+      "implemented": true,
+      "apiLine": 100,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-detail.js:111"
+      ]
+    },
+    {
+      "service": "tenantsApi.sendPasswordReset",
+      "method": "POST",
+      "path": "/api/v1/tenants/{param}/password-reset-link",
+      "implemented": false,
+      "apiLine": 101,
+      "usedBy": []
+    },
+    {
+      "service": "tenantsApi.setPassword",
+      "method": "POST",
+      "path": "/api/v1/tenants/{param}/password",
+      "implemented": true,
+      "apiLine": 102,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-dialogs.js:45"
+      ]
+    },
+    {
+      "service": "profileRequestsApi.list",
+      "method": "GET",
+      "path": "/api/v1/profile-change-requests",
+      "implemented": true,
+      "apiLine": 106,
+      "usedBy": []
+    },
+    {
+      "service": "profileRequestsApi.approve",
+      "method": "POST",
+      "path": "/api/v1/profile-change-requests/{param}/approve",
+      "implemented": true,
+      "apiLine": 107,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-detail.js:118"
+      ]
+    },
+    {
+      "service": "profileRequestsApi.reject",
+      "method": "POST",
+      "path": "/api/v1/profile-change-requests/{param}/reject",
+      "implemented": true,
+      "apiLine": 108,
+      "usedBy": [
+        "frontend/src/pages/admin/tenant-detail.js:128"
+      ]
+    },
+    {
+      "service": "tenanciesApi.list",
+      "method": "GET",
+      "path": "/api/v1/tenancies",
+      "implemented": false,
+      "apiLine": 112,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.get",
+      "method": "GET",
+      "path": "/api/v1/tenancies/{param}",
+      "implemented": true,
+      "apiLine": 113,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:34"
+      ]
+    },
+    {
+      "service": "tenanciesApi.checkIn",
+      "method": "POST",
+      "path": "/api/v1/tenancies/check-in",
+      "implemented": true,
+      "apiLine": 114,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:249"
+      ]
+    },
+    {
+      "service": "tenanciesApi.addResident",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/residents",
+      "implemented": false,
+      "apiLine": 115,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.residentLeave",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/residents/{param}/leave",
+      "implemented": false,
+      "apiLine": 116,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.resolveGap",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/onboarding-gaps/{param}/resolve",
+      "implemented": false,
+      "apiLine": 117,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.importContract",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/contracts",
+      "implemented": true,
+      "apiLine": 118,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-new.js:248"
+      ]
+    },
+    {
+      "service": "tenanciesApi.cancelImport",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/cancel-import",
+      "implemented": true,
+      "apiLine": 119,
+      "usedBy": [
+        "frontend/src/pages/admin/room-detail.js:122"
+      ]
+    },
+    {
+      "service": "tenanciesApi.transfer",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/transfer",
+      "implemented": false,
+      "apiLine": 120,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.checkoutPreview",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/checkout/preview",
+      "implemented": true,
+      "apiLine": 121,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:218"
+      ]
+    },
+    {
+      "service": "tenanciesApi.checkout",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/checkout",
+      "implemented": true,
+      "apiLine": 122,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:247"
+      ]
+    },
+    {
+      "service": "tenanciesApi.deposit",
+      "method": "GET",
+      "path": "/api/v1/tenancies/{param}/deposit",
+      "implemented": true,
+      "apiLine": 123,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.depositReceipt",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/deposit/receipts",
+      "implemented": true,
+      "apiLine": 124,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:160"
+      ]
+    },
+    {
+      "service": "tenanciesApi.depositRefund",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/deposit/refunds",
+      "implemented": false,
+      "apiLine": 125,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.depositOffset",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/deposit/offsets",
+      "implemented": false,
+      "apiLine": 126,
+      "usedBy": []
+    },
+    {
+      "service": "tenanciesApi.depositTransfer",
+      "method": "POST",
+      "path": "/api/v1/tenancies/{param}/deposit/transfers",
+      "implemented": false,
+      "apiLine": 127,
+      "usedBy": []
+    },
+    {
+      "service": "tenancyRequestsApi.list",
+      "method": "GET",
+      "path": "/api/v1/tenancy-requests",
+      "implemented": true,
+      "apiLine": 131,
+      "usedBy": []
+    },
+    {
+      "service": "tenancyRequestsApi.approve",
+      "method": "POST",
+      "path": "/api/v1/tenancy-requests/{param}/approve",
+      "implemented": true,
+      "apiLine": 132,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:200"
+      ]
+    },
+    {
+      "service": "tenancyRequestsApi.reject",
+      "method": "POST",
+      "path": "/api/v1/tenancy-requests/{param}/reject",
+      "implemented": true,
+      "apiLine": 133,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:204"
+      ]
+    },
+    {
+      "service": "contractsApi.list",
+      "method": "GET",
+      "path": "/api/v1/contracts",
+      "implemented": true,
+      "apiLine": 137,
+      "usedBy": [
+        "frontend/src/pages/admin/contracts.js:42",
+        "frontend/src/pages/admin/room-detail.js:23",
+        "frontend/src/pages/admin/tenant-detail.js:28"
+      ]
+    },
+    {
+      "service": "contractsApi.get",
+      "method": "GET",
+      "path": "/api/v1/contracts/{param}",
+      "implemented": true,
+      "apiLine": 138,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:30"
+      ]
+    },
+    {
+      "service": "contractsApi.createVersion",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/versions",
+      "implemented": true,
+      "apiLine": 139,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:188"
+      ]
+    },
+    {
+      "service": "contractsApi.updateVersion",
+      "method": "PUT",
+      "path": "/api/v1/contracts/{param}/versions/{param}",
+      "implemented": true,
+      "apiLine": 140,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:188"
+      ]
+    },
+    {
+      "service": "contractsApi.deleteVersion",
+      "method": "DELETE",
+      "path": "/api/v1/contracts/{param}/versions/{param}",
+      "implemented": true,
+      "apiLine": 141,
+      "usedBy": []
+    },
+    {
+      "service": "contractsApi.addVersionFile",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/versions/{param}/files",
+      "implemented": false,
+      "apiLine": 142,
+      "usedBy": []
+    },
+    {
+      "service": "contractsApi.signVersion",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/versions/{param}/sign",
+      "implemented": true,
+      "apiLine": 143,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:190"
+      ]
+    },
+    {
+      "service": "contractsApi.terminate",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/terminate",
+      "implemented": false,
+      "apiLine": 144,
+      "usedBy": []
+    },
+    {
+      "service": "contractsApi.archive",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/archive",
+      "implemented": true,
+      "apiLine": 145,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:196"
+      ]
+    },
+    {
+      "service": "contractsApi.remove",
+      "method": "DELETE",
+      "path": "/api/v1/contracts/{param}",
+      "implemented": false,
+      "apiLine": 146,
+      "usedBy": []
+    },
+    {
+      "service": "contractsApi.successor",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/successor",
+      "implemented": false,
+      "apiLine": 147,
+      "usedBy": []
+    },
+    {
+      "service": "contractsApi.addAttachment",
+      "method": "POST",
+      "path": "/api/v1/contracts/{param}/attachments",
+      "implemented": true,
+      "apiLine": 148,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:141",
+        "frontend/src/pages/admin/contract-new.js:251"
+      ]
+    },
+    {
+      "service": "contractsApi.removeAttachment",
+      "method": "DELETE",
+      "path": "/api/v1/contracts/{param}/attachments/{param}",
+      "implemented": true,
+      "apiLine": 149,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:149"
+      ]
+    },
+    {
+      "service": "periodsApi.list",
+      "method": "GET",
+      "path": "/api/v1/billing-periods",
+      "implemented": true,
+      "apiLine": 153,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:269"
+      ]
+    },
+    {
+      "service": "periodsApi.get",
+      "method": "GET",
+      "path": "/api/v1/billing-periods/{param}",
+      "implemented": true,
+      "apiLine": 154,
+      "usedBy": []
+    },
+    {
+      "service": "periodsApi.create",
+      "method": "POST",
+      "path": "/api/v1/billing-periods",
+      "implemented": true,
+      "apiLine": 155,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:274"
+      ]
+    },
+    {
+      "service": "periodsApi.worksheet",
+      "method": "GET",
+      "path": "/api/v1/billing-periods/{param}/worksheet",
+      "implemented": true,
+      "apiLine": 156,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:259"
+      ]
+    },
+    {
+      "service": "periodsApi.lock",
+      "method": "POST",
+      "path": "/api/v1/billing-periods/{param}/lock",
+      "implemented": true,
+      "apiLine": 157,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:469"
+      ]
+    },
+    {
+      "service": "periodsApi.unlock",
+      "method": "POST",
+      "path": "/api/v1/billing-periods/{param}/unlock",
+      "implemented": true,
+      "apiLine": 158,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:476"
+      ]
+    },
+    {
+      "service": "metersApi.list",
+      "method": "GET",
+      "path": "/api/v1/meters",
+      "implemented": false,
+      "apiLine": 162,
+      "usedBy": []
+    },
+    {
+      "service": "metersApi.readings",
+      "method": "GET",
+      "path": "/api/v1/meters/{param}/readings",
+      "implemented": false,
+      "apiLine": 163,
+      "usedBy": []
+    },
+    {
+      "service": "metersApi.record",
+      "method": "POST",
+      "path": "/api/v1/meter-readings",
+      "implemented": false,
+      "apiLine": 164,
+      "usedBy": []
+    },
+    {
+      "service": "metersApi.recordBatch",
+      "method": "POST",
+      "path": "/api/v1/meter-readings/batch",
+      "implemented": true,
+      "apiLine": 165,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:306"
+      ]
+    },
+    {
+      "service": "metersApi.correct",
+      "method": "POST",
+      "path": "/api/v1/meter-readings/{param}/correct",
+      "implemented": true,
+      "apiLine": 166,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:456"
+      ]
+    },
+    {
+      "service": "metersApi.replace",
+      "method": "POST",
+      "path": "/api/v1/meters/{param}/replace",
+      "implemented": false,
+      "apiLine": 167,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.list",
+      "method": "GET",
+      "path": "/api/v1/invoices",
+      "implemented": true,
+      "apiLine": 171,
+      "usedBy": [
+        "frontend/src/pages/admin/invoices.js:47"
+      ]
+    },
+    {
+      "service": "invoicesApi.get",
+      "method": "GET",
+      "path": "/api/v1/invoices/{param}",
+      "implemented": true,
+      "apiLine": 172,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:49"
+      ]
+    },
+    {
+      "service": "invoicesApi.createDraft",
+      "method": "POST",
+      "path": "/api/v1/invoices/drafts",
+      "implemented": false,
+      "apiLine": 173,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.recompute",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/recompute",
+      "implemented": true,
+      "apiLine": 174,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:168"
+      ]
+    },
+    {
+      "service": "invoicesApi.updateDraft",
+      "method": "PUT",
+      "path": "/api/v1/invoices/{param}",
+      "implemented": false,
+      "apiLine": 175,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.removeDraft",
+      "method": "DELETE",
+      "path": "/api/v1/invoices/{param}",
+      "implemented": true,
+      "apiLine": 176,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:173"
+      ]
+    },
+    {
+      "service": "invoicesApi.issue",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/issue",
+      "implemented": true,
+      "apiLine": 177,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:169"
+      ]
+    },
+    {
+      "service": "invoicesApi.void",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/void",
+      "implemented": true,
+      "apiLine": 178,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:164"
+      ]
+    },
+    {
+      "service": "invoicesApi.adjust",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/adjustments",
+      "implemented": false,
+      "apiLine": 179,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.replacement",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/replacement",
+      "implemented": false,
+      "apiLine": 180,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.send",
+      "method": "POST",
+      "path": "/api/v1/invoices/{param}/send",
+      "implemented": false,
+      "apiLine": 181,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.createBatch",
+      "method": "POST",
+      "path": "/api/v1/invoice-batches",
+      "implemented": true,
+      "apiLine": 182,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:327"
+      ]
+    },
+    {
+      "service": "invoicesApi.getBatch",
+      "method": "GET",
+      "path": "/api/v1/invoice-batches/{param}",
+      "implemented": false,
+      "apiLine": 183,
+      "usedBy": []
+    },
+    {
+      "service": "invoicesApi.retryBatch",
+      "method": "POST",
+      "path": "/api/v1/invoice-batches/{param}/retry",
+      "implemented": false,
+      "apiLine": 184,
+      "usedBy": []
+    },
+    {
+      "service": "paymentsApi.list",
+      "method": "GET",
+      "path": "/api/v1/payments",
+      "implemented": true,
+      "apiLine": 188,
+      "usedBy": []
+    },
+    {
+      "service": "paymentsApi.get",
+      "method": "GET",
+      "path": "/api/v1/payments/{param}",
+      "implemented": true,
+      "apiLine": 189,
+      "usedBy": []
+    },
+    {
+      "service": "paymentsApi.create",
+      "method": "POST",
+      "path": "/api/v1/payments",
+      "implemented": true,
+      "apiLine": 190,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:141"
+      ]
+    },
+    {
+      "service": "paymentsApi.confirm",
+      "method": "POST",
+      "path": "/api/v1/payments/{param}/confirm",
+      "implemented": true,
+      "apiLine": 191,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:152"
+      ]
+    },
+    {
+      "service": "paymentsApi.reject",
+      "method": "POST",
+      "path": "/api/v1/payments/{param}/reject",
+      "implemented": true,
+      "apiLine": 192,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:156"
+      ]
+    },
+    {
+      "service": "paymentsApi.allocate",
+      "method": "POST",
+      "path": "/api/v1/payments/{param}/allocations",
+      "implemented": false,
+      "apiLine": 193,
+      "usedBy": []
+    },
+    {
+      "service": "paymentsApi.reverseAllocation",
+      "method": "POST",
+      "path": "/api/v1/payment-allocations/{param}/reverse",
+      "implemented": true,
+      "apiLine": 194,
+      "usedBy": [
+        "frontend/src/pages/admin/invoice-detail.js:160"
+      ]
+    },
+    {
+      "service": "paymentsApi.reverse",
+      "method": "POST",
+      "path": "/api/v1/payments/{param}/reversals",
+      "implemented": true,
+      "apiLine": 195,
+      "usedBy": []
+    },
+    {
+      "service": "exportsApi.list",
+      "method": "GET",
+      "path": "/api/v1/exports",
+      "implemented": false,
+      "apiLine": 199,
+      "usedBy": []
+    },
+    {
+      "service": "exportsApi.create",
+      "method": "POST",
+      "path": "/api/v1/exports",
+      "implemented": true,
+      "apiLine": 200,
+      "usedBy": [
+        "frontend/src/components/export.js:20"
+      ]
+    },
+    {
+      "service": "ticketsApi.list",
+      "method": "GET",
+      "path": "/api/v1/tickets",
+      "implemented": true,
+      "apiLine": 204,
+      "usedBy": [
+        "frontend/src/pages/admin/tickets.js:57"
+      ]
+    },
+    {
+      "service": "ticketsApi.get",
+      "method": "GET",
+      "path": "/api/v1/tickets/{param}",
+      "implemented": true,
+      "apiLine": 205,
+      "usedBy": [
+        "frontend/src/pages/admin/tickets.js:132"
+      ]
+    },
+    {
+      "service": "ticketsApi.create",
+      "method": "POST",
+      "path": "/api/v1/tickets",
+      "implemented": true,
+      "apiLine": 206,
+      "usedBy": []
+    },
+    {
+      "service": "ticketsApi.message",
+      "method": "POST",
+      "path": "/api/v1/tickets/{param}/messages",
+      "implemented": true,
+      "apiLine": 207,
+      "usedBy": [
+        "frontend/src/pages/admin/tickets.js:113"
+      ]
+    },
+    {
+      "service": "ticketsApi.assign",
+      "method": "POST",
+      "path": "/api/v1/tickets/{param}/assign",
+      "implemented": true,
+      "apiLine": 208,
+      "usedBy": [
+        "frontend/src/pages/admin/tickets.js:219"
+      ]
+    },
+    {
+      "service": "ticketsApi.transition",
+      "method": "POST",
+      "path": "/api/v1/tickets/{param}/transitions",
+      "implemented": true,
+      "apiLine": 209,
+      "usedBy": [
+        "frontend/src/pages/admin/tickets.js:182",
+        "frontend/src/pages/admin/tickets.js:200"
+      ]
+    },
+    {
+      "service": "notificationsApi.list",
+      "method": "GET",
+      "path": "/api/v1/notifications",
+      "implemented": true,
+      "apiLine": 213,
+      "usedBy": [
+        "frontend/src/components/shells.js:81",
+        "frontend/src/pages/shared/notifications.js:40"
+      ]
+    },
+    {
+      "service": "notificationsApi.unreadCount",
+      "method": "GET",
+      "path": "/api/v1/notifications/unread-count",
+      "implemented": true,
+      "apiLine": 214,
+      "usedBy": [
+        "frontend/src/components/shells.js:71"
+      ]
+    },
+    {
+      "service": "notificationsApi.read",
+      "method": "POST",
+      "path": "/api/v1/notifications/{param}/read",
+      "implemented": true,
+      "apiLine": 215,
+      "usedBy": [
+        "frontend/src/components/shells.js:94",
+        "frontend/src/pages/shared/notifications.js:74"
+      ]
+    },
+    {
+      "service": "notificationsApi.readAll",
+      "method": "POST",
+      "path": "/api/v1/notifications/read-all",
+      "implemented": true,
+      "apiLine": 216,
+      "usedBy": [
+        "frontend/src/components/shells.js:99",
+        "frontend/src/pages/shared/notifications.js:66"
+      ]
+    },
+    {
+      "service": "settingsApi.organization",
+      "method": "GET",
+      "path": "/api/v1/settings/organization",
+      "implemented": true,
+      "apiLine": 220,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.saveOrganization",
+      "method": "PUT",
+      "path": "/api/v1/settings/organization",
+      "implemented": true,
+      "apiLine": 221,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.billingSchedule",
+      "method": "GET",
+      "path": "/api/v1/settings/billing-schedule",
+      "implemented": true,
+      "apiLine": 222,
+      "usedBy": [
+        "frontend/src/pages/admin/billing.js:488",
+        "frontend/src/pages/admin/settings.js:20"
+      ]
+    },
+    {
+      "service": "settingsApi.saveBillingSchedule",
+      "method": "PUT",
+      "path": "/api/v1/settings/billing-schedule",
+      "implemented": true,
+      "apiLine": 223,
+      "usedBy": [
+        "frontend/src/pages/admin/settings.js:147"
+      ]
+    },
+    {
+      "service": "settingsApi.email",
+      "method": "GET",
+      "path": "/api/v1/settings/email",
+      "implemented": true,
+      "apiLine": 224,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.saveEmail",
+      "method": "PUT",
+      "path": "/api/v1/settings/email",
+      "implemented": true,
+      "apiLine": 225,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.testEmail",
+      "method": "POST",
+      "path": "/api/v1/settings/email/test",
+      "implemented": true,
+      "apiLine": 226,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.templates",
+      "method": "GET",
+      "path": "/api/v1/settings/templates",
+      "implemented": true,
+      "apiLine": 227,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.saveTemplate",
+      "method": "PUT",
+      "path": "/api/v1/settings/templates/{param}",
+      "implemented": false,
+      "apiLine": 228,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.reminderRules",
+      "method": "GET",
+      "path": "/api/v1/settings/reminder-rules",
+      "implemented": false,
+      "apiLine": 229,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.createReminderRule",
+      "method": "POST",
+      "path": "/api/v1/settings/reminder-rules",
+      "implemented": false,
+      "apiLine": 230,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.updateReminderRule",
+      "method": "PUT",
+      "path": "/api/v1/settings/reminder-rules/{param}",
+      "implemented": false,
+      "apiLine": 231,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.jobs",
+      "method": "GET",
+      "path": "/api/v1/jobs",
+      "implemented": false,
+      "apiLine": 232,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.runJob",
+      "method": "POST",
+      "path": "/api/v1/jobs/{param}/run",
+      "implemented": false,
+      "apiLine": 233,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.deliveries",
+      "method": "GET",
+      "path": "/api/v1/deliveries",
+      "implemented": false,
+      "apiLine": 234,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.retryDelivery",
+      "method": "POST",
+      "path": "/api/v1/deliveries/{param}/retry",
+      "implemented": false,
+      "apiLine": 235,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.integrations",
+      "method": "GET",
+      "path": "/api/v1/integrations",
+      "implemented": false,
+      "apiLine": 236,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.saveIntegration",
+      "method": "PUT",
+      "path": "/api/v1/integrations/{param}",
+      "implemented": false,
+      "apiLine": 237,
+      "usedBy": []
+    },
+    {
+      "service": "settingsApi.testIntegration",
+      "method": "POST",
+      "path": "/api/v1/integrations/{param}/test",
+      "implemented": false,
+      "apiLine": 238,
+      "usedBy": []
+    },
+    {
+      "service": "filesApi.upload",
+      "method": "POST",
+      "path": "/api/v1/files",
+      "implemented": true,
+      "apiLine": 248,
+      "usedBy": [
+        "frontend/src/components/uploader.js:64",
+        "frontend/src/pages/admin/settings.js:101"
+      ]
+    },
+    {
+      "service": "filesApi.downloadUrl",
+      "method": "GET",
+      "path": "/api/v1/files/{param}/download-url",
+      "implemented": true,
+      "apiLine": 250,
+      "usedBy": [
+        "frontend/src/pages/admin/contract-detail.js:127",
+        "frontend/src/pages/admin/tickets.js:230",
+        "frontend/src/pages/customer/contract.js:160",
+        "frontend/src/pages/customer/tickets/detail.js:94"
+      ]
+    },
+    {
+      "service": "portalApi.overview",
+      "method": "GET",
+      "path": "/api/v1/portal/overview",
+      "implemented": true,
+      "apiLine": 254,
+      "usedBy": [
+        "frontend/src/pages/customer/invoices/list.js:66"
+      ]
+    },
+    {
+      "service": "portalApi.inquiries",
+      "method": "GET",
+      "path": "/api/v1/portal/inquiries",
+      "implemented": true,
+      "apiLine": 255,
+      "usedBy": [
+        "frontend/src/pages/customer/rooms/detail.js:66",
+        "frontend/src/pages/customer/rooms/list.js:103"
+      ]
+    },
+    {
+      "service": "portalApi.createInquiry",
+      "method": "POST",
+      "path": "/api/v1/portal/inquiries",
+      "implemented": true,
+      "apiLine": 256,
+      "usedBy": [
+        "frontend/src/pages/customer/rooms/detail.js:170"
+      ]
+    },
+    {
+      "service": "portalApi.profile",
+      "method": "GET",
+      "path": "/api/v1/portal/profile",
+      "implemented": true,
+      "apiLine": 257,
+      "usedBy": [
+        "frontend/src/pages/customer/account.js:23"
+      ]
+    },
+    {
+      "service": "portalApi.requestProfileChange",
+      "method": "POST",
+      "path": "/api/v1/portal/profile-change-requests",
+      "implemented": true,
+      "apiLine": 258,
+      "usedBy": [
+        "frontend/src/pages/customer/account.js:62"
+      ]
+    },
+    {
+      "service": "portalApi.cancelProfileChange",
+      "method": "POST",
+      "path": "/api/v1/portal/profile-change-requests/{param}/cancel",
+      "implemented": true,
+      "apiLine": 259,
+      "usedBy": [
+        "frontend/src/pages/customer/account.js:72"
+      ]
+    },
+    {
+      "service": "portalApi.tenancies",
+      "method": "GET",
+      "path": "/api/v1/portal/tenancies",
+      "implemented": true,
+      "apiLine": 260,
+      "usedBy": [
+        "frontend/src/pages/customer/common.js:81"
+      ]
+    },
+    {
+      "service": "portalApi.tenancy",
+      "method": "GET",
+      "path": "/api/v1/portal/tenancies/{param}",
+      "implemented": true,
+      "apiLine": 261,
+      "usedBy": [
+        "frontend/src/pages/customer/contract.js:92"
+      ]
+    },
+    {
+      "service": "portalApi.invoices",
+      "method": "GET",
+      "path": "/api/v1/portal/invoices",
+      "implemented": true,
+      "apiLine": 262,
+      "usedBy": [
+        "frontend/src/pages/customer/invoices/list.js:97"
+      ]
+    },
+    {
+      "service": "portalApi.invoice",
+      "method": "GET",
+      "path": "/api/v1/portal/invoices/{param}",
+      "implemented": true,
+      "apiLine": 263,
+      "usedBy": [
+        "frontend/src/pages/customer/invoices/detail.js:74"
+      ]
+    },
+    {
+      "service": "portalApi.payments",
+      "method": "GET",
+      "path": "/api/v1/portal/payments",
+      "implemented": true,
+      "apiLine": 264,
+      "usedBy": []
+    },
+    {
+      "service": "portalApi.reportPayment",
+      "method": "POST",
+      "path": "/api/v1/portal/payments",
+      "implemented": true,
+      "apiLine": 265,
+      "usedBy": [
+        "frontend/src/pages/customer/invoices/detail.js:151"
+      ]
+    },
+    {
+      "service": "portalApi.tickets",
+      "method": "GET",
+      "path": "/api/v1/portal/tickets",
+      "implemented": true,
+      "apiLine": 266,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/list.js:66"
+      ]
+    },
+    {
+      "service": "portalApi.ticket",
+      "method": "GET",
+      "path": "/api/v1/portal/tickets/{param}",
+      "implemented": true,
+      "apiLine": 267,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/detail.js:21"
+      ]
+    },
+    {
+      "service": "portalApi.createTicket",
+      "method": "POST",
+      "path": "/api/v1/portal/tickets",
+      "implemented": true,
+      "apiLine": 268,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/new.js:71"
+      ]
+    },
+    {
+      "service": "portalApi.messageTicket",
+      "method": "POST",
+      "path": "/api/v1/portal/tickets/{param}/messages",
+      "implemented": true,
+      "apiLine": 269,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/detail.js:71"
+      ]
+    },
+    {
+      "service": "portalApi.confirmTicket",
+      "method": "POST",
+      "path": "/api/v1/portal/tickets/{param}/confirm",
+      "implemented": true,
+      "apiLine": 270,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/detail.js:84"
+      ]
+    },
+    {
+      "service": "portalApi.reopenTicket",
+      "method": "POST",
+      "path": "/api/v1/portal/tickets/{param}/reopen",
+      "implemented": true,
+      "apiLine": 271,
+      "usedBy": [
+        "frontend/src/pages/customer/tickets/detail.js:87"
+      ]
+    },
+    {
+      "service": "portalApi.requests",
+      "method": "GET",
+      "path": "/api/v1/portal/requests",
+      "implemented": true,
+      "apiLine": 272,
+      "usedBy": [
+        "frontend/src/pages/customer/contract.js:92"
+      ]
+    },
+    {
+      "service": "portalApi.createRequest",
+      "method": "POST",
+      "path": "/api/v1/portal/requests",
+      "implemented": true,
+      "apiLine": 273,
+      "usedBy": [
+        "frontend/src/pages/customer/contract.js:142"
+      ]
+    },
+    {
+      "service": "portalApi.cancelRequest",
+      "method": "POST",
+      "path": "/api/v1/portal/requests/{param}/cancel",
+      "implemented": true,
+      "apiLine": 274,
+      "usedBy": [
+        "frontend/src/pages/customer/contract.js:156"
+      ]
+    },
+    {
+      "service": "portalApi.catalog",
+      "method": "GET",
+      "path": "/api/v1/portal/catalog",
+      "implemented": true,
+      "apiLine": 275,
+      "usedBy": [
+        "frontend/src/pages/customer/invoices/detail.js:74",
+        "frontend/src/pages/customer/tickets/new.js:25"
+      ]
+    }
+  ],
+  "missingActiveServiceCalls": 0,
+  "stage": "after_completion",
+  "note": "Only service methods referenced by current pages are required for page coverage; unused legacy methods are kept separately."
+}

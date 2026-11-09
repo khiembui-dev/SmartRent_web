@@ -17,7 +17,10 @@ public class LoginRequest
     /// <summary>
     /// Khu vực đăng nhập: 'admin' (chủ trọ) hoặc 'customer' (khách thuê)
     /// </summary>
-    public string? Audience { get; set; }
+    public string? Audience
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -27,7 +30,10 @@ public class LoginResponse
 {
     public string AccessToken { get; set; } = null!;
     public string RefreshToken { get; set; } = null!;
-    public DateTime ExpiresAt { get; set; }
+    public DateTime ExpiresAt
+    {
+        get; set;
+    }
     public UserInfoDto User { get; set; } = null!;
 }
 
@@ -36,12 +42,24 @@ public class LoginResponse
 /// </summary>
 public class UserInfoDto
 {
-    public Guid Id { get; set; }
-    public string? Email { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
+    public string? Email
+    {
+        get; set;
+    }
     public string DisplayName { get; set; } = null!;
     public string Role { get; set; } = null!;
-    public string? Phone { get; set; }
-    public Guid? AvatarFileId { get; set; }
+    public string? Phone
+    {
+        get; set;
+    }
+    public Guid? AvatarFileId
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -61,8 +79,14 @@ public class RegisterRequest
     [System.Text.Json.Serialization.JsonPropertyName("fullName")]
     public string DisplayName { get; set; } = null!;
 
-    public string? Phone { get; set; }
-    public bool AcceptedTerms { get; set; }
+    public string? Phone
+    {
+        get; set;
+    }
+    public bool AcceptedTerms
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -70,7 +94,10 @@ public class RegisterRequest
 /// </summary>
 public class RefreshTokenRequest
 {
-    public string? RefreshToken { get; set; }
+    public string? RefreshToken
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -92,11 +119,29 @@ public class ChangePasswordRequest
 public class UpdateProfileRequest
 {
     [Required(ErrorMessage = "Họ tên không được để trống")]
-    [System.Text.Json.Serialization.JsonPropertyName("fullName")]
+    [System.Text.Json.Serialization.JsonPropertyName("displayName")]
     public string DisplayName { get; set; } = null!;
 
-    public string? Phone { get; set; }
-    public Guid? AvatarFileId { get; set; }
+    public string? FullName
+    {
+        set
+        {
+            if (value is not null)
+                DisplayName = value;
+        }
+    }
+    public string? Email
+    {
+        get; set;
+    }
+    public string? Phone
+    {
+        get; set;
+    }
+    public Guid? AvatarFileId
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -127,12 +172,30 @@ public class ResetPasswordRequest
 /// </summary>
 public class SessionDto
 {
-    public Guid Id { get; set; }
-    public string? UserAgent { get; set; }
-    public string? IpAddress { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
-    public bool IsCurrent { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
+    public string? UserAgent
+    {
+        get; set;
+    }
+    public string? IpAddress
+    {
+        get; set;
+    }
+    public DateTime CreatedAt
+    {
+        get; set;
+    }
+    public DateTime ExpiresAt
+    {
+        get; set;
+    }
+    public bool IsCurrent
+    {
+        get; set;
+    }
 }
 
 /// <summary>
@@ -147,23 +210,44 @@ public class MeResponse
 
 public class MeUserDto
 {
-    public Guid Id { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
     public string Role { get; set; } = null!;
     public string DisplayName { get; set; } = null!;
-    public string? Email { get; set; }
-    public string? Phone { get; set; }
-    public bool TwoFactorEnabled { get; set; }
-    public Guid? AvatarFileId { get; set; }
-    public string? AvatarUrl { get; set; }
+    public string? Email
+    {
+        get; set;
+    }
+    public string? Phone
+    {
+        get; set;
+    }
+    public bool TwoFactorEnabled
+    {
+        get; set;
+    }
+    public Guid? AvatarFileId
+    {
+        get; set;
+    }
+    public string? AvatarUrl => AvatarFileId is Guid id ? $"/api/v1/files/{id}/public" : null;
 }
 
 public class MeOrganizationDto
 {
-    public Guid Id { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
     public string Code { get; set; } = "SR";
     public string Name { get; set; } = null!;
     public bool IsActive { get; set; } = true;
-    public Guid MembershipId { get; set; }
+    public Guid MembershipId
+    {
+        get; set;
+    }
     public string Status { get; set; } = "active";
     public List<string> Permissions { get; set; } = [];
     public string PropertyScope { get; set; } = "all";
@@ -172,15 +256,24 @@ public class MeOrganizationDto
 
 public class MePropertyDto
 {
-    public Guid Id { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
     public string Code { get; set; } = null!;
     public string Name { get; set; } = null!;
 }
 
 public class MeTenantProfileDto
 {
-    public Guid TenantId { get; set; }
-    public Guid OrganizationId { get; set; }
+    public Guid TenantId
+    {
+        get; set;
+    }
+    public Guid OrganizationId
+    {
+        get; set;
+    }
     public string OrganizationName { get; set; } = null!;
     public string FullName { get; set; } = null!;
     public List<MeTenancyDto> Tenancies { get; set; } = [];
@@ -188,7 +281,10 @@ public class MeTenantProfileDto
 
 public class MeTenancyDto
 {
-    public Guid TenancyId { get; set; }
+    public Guid TenancyId
+    {
+        get; set;
+    }
     public string Role { get; set; } = "representative";
     public string Status { get; set; } = "active";
     public MeRoomRefDto Room { get; set; } = null!;
@@ -196,7 +292,10 @@ public class MeTenancyDto
 
 public class MeRoomRefDto
 {
-    public Guid Id { get; set; }
+    public Guid Id
+    {
+        get; set;
+    }
     public string Code { get; set; } = null!;
     public string Name { get; set; } = null!;
     public string PropertyName { get; set; } = null!;

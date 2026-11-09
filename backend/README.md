@@ -1,8 +1,9 @@
-> Bản ghép nhóm 06/11/2026: xem [nguồn code, kiểm tra và phần còn thiếu](../docs/TEAM_INTEGRATION.md).
+> Bản hoàn thiện 07/11/2026: xem [các trang, file, kiểm tra và email local](../docs/BACKEND_COMPLETION.md).
+> Trước khi deploy: xem [các việc production còn thiếu](../docs/DEPLOY_READINESS.md). Hoàn thiện luồng local chưa đồng nghĩa đã sẵn sàng mở công khai.
 
 # SmartRent backend
 
-ASP.NET Core kết nối PostgreSQL qua Npgsql. Đăng nhập, `/api/v1/me`, Dashboard và Ticket admin/khách đã gọi SQL thật. Ticket gồm ảnh private, trao đổi, ghi chú nội bộ, xử lý, xác nhận/mở lại và thông báo. Các module nghiệp vụ khác vẫn đang được triển khai. Frontend local chọn `mock` hoặc `api` qua `VITE_DATA_SOURCE`.
+ASP.NET Core kết nối PostgreSQL qua Npgsql. Đăng nhập, `/api/v1/me`, Dashboard và Ticket admin/khách đã gọi SQL thật. Ticket gồm ảnh private, trao đổi, ghi chú nội bộ, xử lý, xác nhận/mở lại và thông báo. Các trang Cơ sở, Phòng, tin đăng/tìm phòng, lịch xem, khách thuê, hợp đồng, tính tiền, hóa đơn, thanh toán và Cài đặt đã nối SQL. Frontend local chọn `mock` hoặc `api` qua `VITE_DATA_SOURCE`.
 
 Database mới có **13 bảng**, chỉ admin/user. Bắt đầu từ [bộ cài](../database/README.md), [bàn giao API](../docs/BACKEND_HANDOFF.md), [JSONB](../database/JSON_DATA.md), [đối chiếu trang](../database/DOI_CHIEU_TUNG_TRANG.md).
 
@@ -18,7 +19,7 @@ Chạy trong thư mục backend: `dotnet build SmartRent.sln`, `dotnet run --pro
 4. Đặt `VITE_DATA_SOURCE=api` và `VITE_DEV_API_PROXY=http://127.0.0.1:5080` trong `frontend/.env.local`, rồi chạy `npm run dev` trong `frontend`.
 5. Vào `http://localhost:5174/admin`, đăng nhập bằng email admin trong bảng `users` và mật khẩu vừa đặt. Trang gọi `GET /api/v1/dashboard?month=YYYY-MM&propertyId=UUID` với token admin. API từ chối khách và người chưa đăng nhập.
 
-`room-stats-dev` và `dev/database-check` chỉ dùng để kiểm tra local. Ticket và chuông thông báo đã có API; những trang quản trị khác còn cần API tương ứng. Xem [bản đồ file Ticket](TICKET_FILES.md) và [cách chạy/đọc code](HUONG_DAN_TICKET_ADMIN_KHACH.md).
+`room-stats-dev` và `dev/database-check` chỉ dùng để kiểm tra local. Ticket và chuông thông báo đã có API; các trang quản trị còn lại đã có API tương ứng. Xem [bản đồ file Ticket](TICKET_FILES.md) và [cách chạy/đọc code](HUONG_DAN_TICKET_ADMIN_KHACH.md).
 
 Map entity theo [từ điển](../database/TU_DIEN_DU_LIEU.md). SQL sở hữu schema. users chứa cả hồ sơ khách và thông tin đăng nhập; không sinh thêm bảng tài khoản/hồ sơ/phân quyền. Các danh sách ảnh/giá/bản ký/dòng tiền/tin nhắn nằm trong JSONB.
 
@@ -26,4 +27,4 @@ Map entity theo [từ điển](../database/TU_DIEN_DU_LIEU.md). SQL sở hữu s
 
 [Hướng dẫn code Ticket admin và khách](HUONG_DAN_TICKET_ADMIN_KHACH.md) đi theo từng API, DTO, truy vấn PostgreSQL, quyền truy cập và bước kiểm tra.
 
-Đọc [quy tắc transaction](../database/THIET_KE_DATABASE.md), kiểm tra SQL, rồi thêm integration tests API. Chỉ khi API hoàn chỉnh mới đặt VITE_DATA_SOURCE=api và VITE_DEV_API_PROXY=http://localhost:5080 trong frontend local. Không đặt connection string hoặc mật khẩu trong biến VITE.
+Đọc [quy tắc transaction](../database/THIET_KE_DATABASE.md), kiểm tra SQL, rồi thêm integration tests API. Khi dùng backend SQL, đặt VITE_DATA_SOURCE=api và VITE_DEV_API_PROXY=http://localhost:5080 trong frontend local. Không đặt connection string hoặc mật khẩu trong biến VITE.

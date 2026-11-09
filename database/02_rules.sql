@@ -106,7 +106,8 @@ BEGIN
    PERFORM require_files(jsonb_build_array(img->>'fileId'),true);
    IF coalesce((img->>'sortOrder')::int,0)<0 THEN RAISE EXCEPTION 'invalid_image_order' USING ERRCODE='23514'; END IF;
   END LOOP;
-  IF NEW.listing_status='published' AND jsonb_array_length(NEW.images)=0 THEN RAISE EXCEPTION 'published_room_needs_photo' USING ERRCODE='23514'; END IF;
+  -- Ảnh có thể bổ sung sau. Trang khách hiển thị khung chưa có ảnh khi tin đã đăng.
+  -- Các ảnh được gắn vào phòng vẫn phải qua require_files ở phía trên.
   IF NEW.operating_status<>'available' AND EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.id AND status IN ('active','planned')) THEN
    RAISE EXCEPTION 'room_has_occupants' USING ERRCODE='23514'; END IF;
   IF TG_OP='UPDATE' AND NEW.operating_status<>OLD.operating_status THEN
@@ -136,7 +137,8 @@ BEGIN
   SELECT * INTO c FROM contracts WHERE id=NEW.contract_id;
   IF c.user_id IS DISTINCT FROM NEW.user_id THEN RAISE EXCEPTION 'request_not_representative' USING ERRCODE='23514'; END IF;
  END IF;
- IF NEW.reviewed_by IS NOT NULL THEN PERFORM require_admin(NEW.reviewed_by); END IF;
+ -- Người duyệt cũ là lịch sử; chỉ xác minh role khi ghi một người duyệt mới.
+ IF NEW.reviewed_by IS NOT NULL AND (TG_OP='INSERT' OR NEW.reviewed_by IS DISTINCT FROM OLD.reviewed_by) THEN PERFORM require_admin(NEW.reviewed_by); END IF;
  IF NEW.kind<>'viewing' AND NEW.status IN ('approved','rejected') AND NEW.reviewed_by IS NULL THEN RAISE EXCEPTION 'request_needs_reviewer' USING ERRCODE='23514'; END IF;
  PERFORM unique_json_keys(NEW.appointments,'id');
  IF NEW.kind<>'viewing' AND NEW.appointments<>'[]' THEN RAISE EXCEPTION 'appointments_require_viewing' USING ERRCODE='23514'; END IF;
@@ -145,7 +147,11 @@ BEGIN
   PERFORM require_json_fields(x,ARRAY['startsAt','endsAt','status','hostId']);
   IF NOT x ?& ARRAY['startsAt','endsAt','status','hostId'] OR (x->>'endsAt')::timestamptz<=(x->>'startsAt')::timestamptz
    OR x->>'status' NOT IN ('scheduled','completed','no_show','cancelled') THEN RAISE EXCEPTION 'invalid_appointment' USING ERRCODE='23514'; END IF;
-  PERFORM require_admin((x->>'hostId')::uuid);
+  -- Đổi chủ trọ không làm mất hiệu lực lịch cũ. Host mới vẫn phải là admin hiện tại.
+  IF TG_OP='INSERT' OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(OLD.appointments) previous
+    WHERE previous->>'id'=x->>'id' AND previous->>'hostId'=x->>'hostId') THEN
+   PERFORM require_admin((x->>'hostId')::uuid);
+  END IF;
  END LOOP;
  IF NEW.hold_status='holding' THEN
   PERFORM 1 FROM rooms WHERE id=NEW.room_id FOR UPDATE;
@@ -210,7 +216,10 @@ BEGIN
   PERFORM validate_rates(v->'rates');
   PERFORM require_files(v->'fileIds');
   IF nullif(v->>'signedAt','') IS NOT NULL THEN
-   PERFORM require_admin((v->>'signedBy')::uuid);
+   -- Bản đã ký giữ nguyên người ký dù tài khoản đó chuyển role về sau.
+   IF TG_OP='INSERT' OR NOT OLD.versions @> jsonb_build_array(v) THEN
+    PERFORM require_admin((v->>'signedBy')::uuid);
+   END IF;
    IF jsonb_array_length(v->'fileIds')=0 OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(v->'rates') x WHERE x->>'category'='rent' AND (x->>'unitPrice')::numeric>0) THEN RAISE EXCEPTION 'signed_version_needs_file_and_rent' USING ERRCODE='23514'; END IF;
   END IF;
  END LOOP;
@@ -248,7 +257,7 @@ CREATE TRIGGER contract_booking AFTER INSERT ON contracts FOR EACH ROW EXECUTE F
 CREATE FUNCTION guard_period() RETURNS trigger LANGUAGE plpgsql AS $$
 #variable_conflict use_column
 BEGIN
- IF NEW.locked_by IS NOT NULL THEN PERFORM require_admin(NEW.locked_by); END IF;
+ IF NEW.locked_by IS NOT NULL AND (TG_OP='INSERT' OR NEW.locked_by IS DISTINCT FROM OLD.locked_by) THEN PERFORM require_admin(NEW.locked_by); END IF;
  IF TG_OP='UPDATE' THEN
   IF NEW.property_id<>OLD.property_id OR NEW.month_start<>OLD.month_start THEN RAISE EXCEPTION 'period_identity_is_immutable' USING ERRCODE='23514'; END IF;
   IF OLD.status='locked' AND NEW.status='open' AND nullif(btrim(NEW.unlock_reason),'') IS NULL THEN RAISE EXCEPTION 'unlock_reason_required' USING ERRCODE='23514'; END IF;
@@ -433,7 +442,7 @@ CREATE FUNCTION guard_ticket() RETURNS trigger LANGUAGE plpgsql AS $$
 #variable_conflict use_column
 DECLARE x jsonb; previous jsonb;
 BEGIN
- IF NEW.assigned_to IS NOT NULL THEN PERFORM require_admin(NEW.assigned_to); END IF;
+ IF NEW.assigned_to IS NOT NULL AND (TG_OP='INSERT' OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to) THEN PERFORM require_admin(NEW.assigned_to); END IF;
  IF NEW.contract_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM contracts WHERE id=NEW.contract_id AND room_id=NEW.room_id) THEN RAISE EXCEPTION 'ticket_room_mismatch' USING ERRCODE='23514'; END IF;
  PERFORM require_files(NEW.attachment_file_ids);
  PERFORM unique_json_keys(NEW.messages,'id');
@@ -442,7 +451,10 @@ BEGIN
   PERFORM (x->>'createdAt')::timestamptz;
   IF jsonb_typeof(x->'isInternal') IS DISTINCT FROM 'boolean' THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
   IF NOT x ?& ARRAY['authorId','body','createdAt','isInternal'] OR nullif(btrim(x->>'body'),'') IS NULL OR NOT EXISTS(SELECT 1 FROM users WHERE id=(x->>'authorId')::uuid) THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
-  IF (x->>'isInternal')::boolean THEN PERFORM require_admin((x->>'authorId')::uuid); END IF;
+  -- Ghi chú nội bộ cũ là append-only, không xét lại role tác giả sau chuyển chủ trọ.
+  IF (x->>'isInternal')::boolean AND (TG_OP='INSERT' OR NOT OLD.messages @> jsonb_build_array(x)) THEN
+   PERFORM require_admin((x->>'authorId')::uuid);
+  END IF;
   PERFORM require_files(coalesce(x->'fileIds','[]'));
  END LOOP;
  IF TG_OP='UPDATE' THEN

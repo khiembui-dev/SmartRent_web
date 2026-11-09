@@ -16,6 +16,7 @@ public class AuthService : IAuthService
     private readonly ISessionTokenService _sessionTokens;
     private readonly IPasswordHasher<User> _passwordHasher;
     private readonly ILogger<AuthService> _logger;
+    private readonly AccountEmail _email;
 
     private static readonly Guid DefaultOrgId = Guid.Parse("00000000-0000-0000-0000-000000000001");
 
@@ -23,12 +24,13 @@ public class AuthService : IAuthService
         SmartRentDbContext db,
         ISessionTokenService jwtTokenService,
         IPasswordHasher<User> passwordHasher,
-        ILogger<AuthService> logger)
+        ILogger<AuthService> logger, AccountEmail email)
     {
         _db = db;
         _sessionTokens = jwtTokenService;
         _passwordHasher = passwordHasher;
         _logger = logger;
+        _email = email;
     }
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? ipAddress, string? userAgent, CancellationToken ct = default)
@@ -54,8 +56,16 @@ public class AuthService : IAuthService
             throw new ForbiddenException($"Tài khoản bị tạm khóa do nhập sai nhiều lần. Vui lòng thử lại sau {remaining} phút.");
         }
 
+        if (user.LockedUntil.HasValue && user.LockedUntil.Value <= DateTime.UtcNow)
+        {
+            user.LockedUntil = null;
+            user.FailedLoginCount = 0;
+        }
         PasswordVerificationResult verify;
-        try { verify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password); }
+        try
+        {
+            verify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password);
+        }
         catch (FormatException) { throw new UnauthorizedException("Tài khoản chưa có mật khẩu hợp lệ."); }
         if (verify == PasswordVerificationResult.Failed)
         {
@@ -129,9 +139,14 @@ public class AuthService : IAuthService
             throw new BadRequestException("Cần đồng ý điều khoản trước khi tạo tài khoản.");
         var user = new User
         {
-            Id = Guid.NewGuid(), Email = normalizedEmail, DisplayName = request.DisplayName.Trim(),
-            Phone = request.Phone?.Trim(), LoginEnabled = true, IsActive = true,
-            IdentityDocuments = "[]", AcceptedTermsAt = DateTime.UtcNow
+            Id = Guid.NewGuid(),
+            Email = normalizedEmail,
+            DisplayName = request.DisplayName.Trim(),
+            Phone = request.Phone?.Trim(),
+            LoginEnabled = true,
+            IsActive = true,
+            IdentityDocuments = "[]",
+            AcceptedTermsAt = DateTime.UtcNow
         };
         user.PasswordHash = _passwordHasher.HashPassword(user, request.Password);
         _db.Users.Add(user);
@@ -184,7 +199,7 @@ public class AuthService : IAuthService
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.TokenHash.ToUpper() == hash.ToUpper() && t.Kind == "session", ct);
 
-        if (tokenRecord == null || tokenRecord.ExpiresAt <= DateTime.UtcNow || tokenRecord.RevokedAt.HasValue)
+        if (tokenRecord == null || tokenRecord.ExpiresAt <= DateTime.UtcNow || tokenRecord.RevokedAt.HasValue || tokenRecord.ConsumedAt.HasValue)
         {
             throw new UnauthorizedException("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
         }
@@ -248,7 +263,7 @@ public class AuthService : IAuthService
             _db.AuthTokens.Add(resetToken);
             await _db.SaveChangesAsync(ct);
 
-            _logger.LogInformation("Đã tạo yêu cầu đặt lại mật khẩu; delivery email cần cấu hình riêng.");
+            await _email.SendReset(user.Email!, rawToken, user.Role == "admin", ct);
         }
     }
 
@@ -259,12 +274,15 @@ public class AuthService : IAuthService
             .Include(t => t.User)
             .FirstOrDefaultAsync(t => t.TokenHash.ToUpper() == hash.ToUpper() && t.Kind == "password_reset", ct);
 
-        if (tokenRecord == null || tokenRecord.ExpiresAt <= DateTime.UtcNow || tokenRecord.ConsumedAt.HasValue)
+        if (tokenRecord == null || tokenRecord.ExpiresAt <= DateTime.UtcNow || tokenRecord.ConsumedAt.HasValue || tokenRecord.RevokedAt.HasValue)
         {
             throw new BadRequestException("Mã đặt lại mật khẩu không hợp lệ hoặc đã hết hạn.");
         }
 
         var user = tokenRecord.User;
+        if (!user.IsActive)
+            throw new ForbiddenException("Tài khoản đã bị khóa.");
+        user.LoginEnabled = true;
         user.PasswordHash = _passwordHasher.HashPassword(user, request.NewPassword);
 
         tokenRecord.ConsumedAt = DateTime.UtcNow;
@@ -279,7 +297,12 @@ public class AuthService : IAuthService
             throw new NotFoundException("Không tìm thấy thông tin tài khoản.");
         }
 
-        var verify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        PasswordVerificationResult verify;
+        try
+        {
+            verify = _passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        }
+        catch (FormatException) { throw new BadRequestException("Mật khẩu hiện tại không đúng."); }
         if (verify == PasswordVerificationResult.Failed)
         {
             throw new BadRequestException("Mật khẩu hiện tại không đúng.");
@@ -298,6 +321,19 @@ public class AuthService : IAuthService
             throw new NotFoundException("Không tìm thấy thông tin tài khoản.");
         }
 
+        if (request.Email is not null && request.Email.Trim() != user.Email)
+        {
+            var email = request.Email.Trim().ToLowerInvariant();
+            if (!System.Net.Mail.MailAddress.TryCreate(email, out _))
+                throw new BadRequestException("Email không hợp lệ.");
+            if (user.Role != "admin")
+                throw new ForbiddenException("Khách gửi đề nghị sửa email qua hồ sơ.");
+            if (await _db.Users.AnyAsync(x => x.Id != userId && x.Email != null && x.Email.ToLower() == email, ct))
+                throw new ConflictException("Email đã được sử dụng.");
+            user.Email = email;
+        }
+        if (request.AvatarFileId is Guid avatar && !await _db.Files.AnyAsync(f => f.Id == avatar && f.UploadedBy == userId && f.Purpose == "avatar" && f.ScanStatus == "clean", ct))
+            throw new BadRequestException("Ảnh đại diện không hợp lệ.");
         user.DisplayName = request.DisplayName.Trim();
         user.Phone = request.Phone?.Trim();
         user.AvatarFileId = request.AvatarFileId;

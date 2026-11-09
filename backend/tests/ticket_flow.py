@@ -31,7 +31,7 @@ args = options.parse_args()
 
 def sql(statement):
     result = subprocess.run(["docker", "compose", "exec", "-T", "db", "psql", "-U", "postgres",
-                             "-d", "smartrent", "-v", "ON_ERROR_STOP=1", "-At"],
+                             "-d", os.environ.get("SMARTRENT_TEST_DATABASE","smartrent"), "-v", "ON_ERROR_STOP=1", "-At"],
                             input=statement, text=True, capture_output=True, cwd=COMPOSE_ROOT, encoding="utf-8")
     if result.returncode:
         raise RuntimeError(result.stderr)

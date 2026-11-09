@@ -11,6 +11,8 @@ Database có 13 bảng. users chứa cả tài khoản và hồ sơ khách thuê
 
 Unique index giới hạn một admin; trigger khóa role; SQL runtime không ghi role. Owner tạo admin bằng database/04_create_admin.sql với hash hợp lệ.
 
+Khi cần chuyển quyền admin sang tài khoản đã đăng ký, dùng [hướng dẫn chuyển chủ trọ](CHUYEN_QUYEN_ADMIN.md). Script owner giữ đúng một admin, thu hồi phiên cũ và giữ nguyên lịch sử người ký/ghi chú.
+
 contracts.user_id là người đại diện. contracts.occupants lưu người ở cùng, vẫn role user; không cấp quyền tài chính cho người ở cùng. Mỗi endpoint kiểm tra cả role lẫn ownership.
 
 Mock trình duyệt hiện có admin ha.chutro@example.com, user an.khachthue@example.com và bich.oghep@example.com; mật khẩu demo1234. Các tài khoản này không tự đồng bộ sang PostgreSQL. Hash trong SQL demo cố ý chưa dùng đăng nhập.

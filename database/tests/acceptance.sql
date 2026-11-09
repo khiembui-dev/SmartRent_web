@@ -28,7 +28,12 @@ SELECT pg_temp.reject('Token expiry valid',$q$INSERT INTO auth_tokens(user_id,ki
 
 SELECT pg_temp.ok('Public listing and embedded image',(SELECT count(*)=1 AND bool_and(jsonb_array_length(images)=1) FROM v_public_rooms));
 SELECT pg_temp.reject('Case insensitive room code',$q$INSERT INTO rooms(property_id,code,name,area_m2,capacity) SELECT id,'a101','Duplicate',20,2 FROM properties$q$,'23505');
-SELECT pg_temp.reject('Published room needs image',$q$UPDATE rooms SET images='[]' WHERE code='A101'$q$,'published_room_needs_photo');
+DO $$ DECLARE original_images jsonb; BEGIN
+ SELECT images INTO original_images FROM rooms WHERE code='A101';
+ UPDATE rooms SET images='[]' WHERE code='A101';
+ PERFORM pg_temp.ok('Published room may have no image',(SELECT listing_status='published' AND images='[]' FROM rooms WHERE code='A101'));
+ UPDATE rooms SET images=original_images WHERE code='A101';
+END $$;
 SELECT pg_temp.reject('Embedded image references real file',$q$UPDATE rooms SET images='[{"fileId":"00000000-0000-0000-0000-000000000001"}]' WHERE code='A101'$q$,'invalid_file_reference');
 SELECT pg_temp.reject('Embedded image unique',$q$UPDATE rooms SET images=images||images WHERE code='A101'$q$,'invalid_or_duplicate_json_key');
 SELECT pg_temp.reject('Embedded amenities unique',$q$UPDATE rooms SET amenities=amenities||amenities WHERE code='A101'$q$,'invalid_or_duplicate_json_key');

@@ -90,8 +90,16 @@ internal static class DashboardOverviewQuery
         ),
         billing AS (
           SELECT count(*)::int AS tenancy_count,
-                 count(*) FILTER (WHERE i.id IS NULL)::int AS missing_readings,
-                 count(*) FILTER (WHERE i.status = 'draft')::int AS draft_count,
+                 count(*) FILTER (WHERE i.id IS NULL OR (i.status='draft' AND EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(c.versions) v CROSS JOIN LATERAL jsonb_array_elements(v->'rates') rate
+                   WHERE nullif(v->>'signedAt','') IS NOT NULL AND rate->>'method'='metered' AND
+                     ((rate->>'category'='electricity' AND i.electricity_end IS NULL) OR
+                      (rate->>'category'='water' AND i.water_end IS NULL)))))::int AS missing_readings,
+                 count(*) FILTER (WHERE i.status = 'draft' AND NOT EXISTS (
+                   SELECT 1 FROM jsonb_array_elements(c.versions) v CROSS JOIN LATERAL jsonb_array_elements(v->'rates') rate
+                   WHERE nullif(v->>'signedAt','') IS NOT NULL AND rate->>'method'='metered' AND
+                     ((rate->>'category'='electricity' AND i.electricity_end IS NULL) OR
+                      (rate->>'category'='water' AND i.water_end IS NULL))))::int AS draft_count,
                  count(*) FILTER (WHERE i.status = 'issued')::int AS invoiced
           FROM scoped_contracts c CROSS JOIN clock k
           LEFT JOIN smartrent.billing_periods bp ON bp.property_id =

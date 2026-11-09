@@ -18,7 +18,7 @@ const rentShort = (value) => (value == null ? 'Liên hệ' : `${(value / 1000000
 function roomCard(room, { clone = false } = {}) {
   return html`<a class="room-card card-interactive" href="${link(`/rooms/${room.slug}`)}" ${clone ? raw('aria-hidden="true" tabindex="-1"') : ''}>
     <div class="room-image-wrap">
-      ${room.coverImageUrl ? html`<img class="room-image" src="${asset(room.coverImageUrl)}" alt="${clone ? '' : `Ảnh phòng ${room.roomCode}`}" loading="lazy">` : ''}
+      ${room.coverImageUrl ? html`<img class="room-image" src="${asset(room.coverImageUrl)}" alt="${clone ? '' : `Ảnh phòng ${room.roomCode}`}" loading="lazy">` : html`<div class="room-photo-empty">${icon('image')}<span>Chưa có ảnh phòng</span></div>`}
       <span class="badge ${room.hasVideo ? 'badge-orange' : 'badge-cyan'} room-badge-top">${room.hasVideo ? 'Có video tham quan' : room.roomType.name}</span>
       <span class="badge badge-green room-badge-status">Còn trống</span>
     </div>

@@ -34,7 +34,7 @@ export default async function ContractDetailPage(ctx) {
     }
     ctx.setTitle(`Hợp đồng ${k.code}`);
     const active = k.tenancyStatus === 'active';
-    const current = k.versions.filter((v) => v.isSigned).pop() || k.versions[k.versions.length - 1];
+    const current = k.versions.filter((v) => v.isSigned && v.effectiveFrom <= todayIso()).pop() || k.versions[k.versions.length - 1];
     const shortDeposit = k.deposit.required != null && k.deposit.held < k.deposit.required;
     const files = [
       ...k.versions.flatMap((v) => v.files.map((f) => ({ ...f, source: `Phiên bản ${v.versionNo}`, locked: true }))),
@@ -82,11 +82,11 @@ export default async function ContractDetailPage(ctx) {
         </dl></div></section></div>
       <div class="ad-col-main">
         <section class="sr-panel"><div class="sr-panel-head"><h2>Tệp hợp đồng</h2><span class="sr-panel-note">${files.length} tệp</span>
-          ${canWrite ? html`<div class="sr-panel-actions"><button type="button" class="btn btn-outline-primary btn-sm" data-action="add-file">${icon('paperclip')} Thêm tệp</button></div>` : ''}</div>
+          ${canWrite && active ? html`<div class="sr-panel-actions"><button type="button" class="btn btn-outline-primary btn-sm" data-action="add-file">${icon('paperclip')} Thêm tệp</button></div>` : ''}</div>
           ${files.length ? html`<ul class="ad-files">${files.map((f) => html`<li>${icon(fileIcon(f.file))}
             <span class="ad-file-name"><strong>${f.file.fileName}</strong><small>${FILE_KIND[f.fileKind] || 'Tệp bổ sung'}, ${f.source}${f.file.scanStatus === 'missing' ? ', thiếu nội dung tệp' : ''}</small></span>
             <button type="button" class="btn btn-outline-secondary btn-sm" data-action="view-file" data-id="${f.file.id}">Xem</button>
-            ${f.attachmentId && canWrite ? html`<button type="button" class="ad-icon-btn is-danger" data-action="remove-file" data-id="${f.attachmentId}" aria-label="Xóa tệp ${f.file.fileName}" title="Xóa tệp">${icon('trash3')}</button>` : ''}</li>`)}</ul>`
+            ${f.attachmentId && canWrite && active ? html`<button type="button" class="ad-icon-btn is-danger" data-action="remove-file" data-id="${f.attachmentId}" aria-label="Xóa tệp ${f.file.fileName}" title="Xóa tệp">${icon('trash3')}</button>` : ''}</li>`)}</ul>`
     : emptyState({ iconName: 'paperclip', title: 'Chưa có tệp', text: 'Thêm ảnh hoặc PDF của hợp đồng.' })}
         </section>
         <section class="sr-panel"><div class="sr-panel-head"><h2>Hóa đơn của hợp đồng</h2></div>
@@ -162,7 +162,7 @@ export default async function ContractDetailPage(ctx) {
       if (done) { toast('Đã ghi nhận cọc'); dataChanged(); await render(); }
     },
     renew: async () => {
-      const current = k.versions.filter((v) => v.isSigned).pop();
+      const current = k.versions.filter((v) => v.isSigned && v.effectiveFrom <= todayIso()).pop();
       const today = todayIso();
       const start = k.endsOn > today ? k.endsOn : today;
       let uploader;

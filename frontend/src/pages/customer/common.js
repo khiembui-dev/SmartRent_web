@@ -22,7 +22,7 @@ const AVAILABILITY = {
 
 // Nhãn theo cách khách hiểu; khu quản trị dùng nhãn nghiệp vụ riêng.
 const PAYMENT = { unpaid: ['Chưa thanh toán', 'danger'], partial: ['Thanh toán một phần', 'warn'], paid: ['Đã thanh toán', 'ok'] };
-const VIEWING = { new: ['Chờ xác nhận', 'wash'], accepted: ['Đã tiếp nhận', 'info'], consulting: ['Đang tư vấn', 'info'], viewing: ['Đã hẹn xem', 'door'], approved: ['Đã duyệt', 'ok'] };
+const VIEWING = { new: ['Chờ xác nhận', 'wash'], accepted: ['Đã tiếp nhận', 'info'], consulting: ['Đang tư vấn', 'info'], scheduled: ['Đã hẹn xem', 'door'], viewing: ['Đã hẹn xem', 'door'], approved: ['Đã duyệt', 'ok'] };
 
 const tag = ([label, tone]) => html`<span class="sr-badge tone-${tone}">${label}</span>`;
 export const paymentBadge = (status) => tag(PAYMENT[status] || ['Đã hủy', 'muted']);

@@ -8,7 +8,7 @@ CREATE OR REPLACE FUNCTION smartrent.guard_ticket() RETURNS trigger LANGUAGE plp
 #variable_conflict use_column
 DECLARE x jsonb; previous jsonb;
 BEGIN
- IF NEW.assigned_to IS NOT NULL THEN PERFORM require_admin(NEW.assigned_to); END IF;
+ IF NEW.assigned_to IS NOT NULL AND (TG_OP='INSERT' OR NEW.assigned_to IS DISTINCT FROM OLD.assigned_to) THEN PERFORM require_admin(NEW.assigned_to); END IF;
  IF NEW.contract_id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM contracts WHERE id=NEW.contract_id AND room_id=NEW.room_id) THEN RAISE EXCEPTION 'ticket_room_mismatch' USING ERRCODE='23514'; END IF;
  PERFORM require_files(NEW.attachment_file_ids);
  PERFORM unique_json_keys(NEW.messages,'id');
@@ -17,7 +17,10 @@ BEGIN
   PERFORM (x->>'createdAt')::timestamptz;
   IF jsonb_typeof(x->'isInternal') IS DISTINCT FROM 'boolean' THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
   IF NOT x ?& ARRAY['authorId','body','createdAt','isInternal'] OR nullif(btrim(x->>'body'),'') IS NULL OR NOT EXISTS(SELECT 1 FROM users WHERE id=(x->>'authorId')::uuid) THEN RAISE EXCEPTION 'invalid_ticket_message' USING ERRCODE='23514'; END IF;
-  IF (x->>'isInternal')::boolean THEN PERFORM require_admin((x->>'authorId')::uuid); END IF;
+  -- Ghi chú nội bộ cũ giữ nguyên người viết khi chuyển quyền chủ trọ.
+  IF (x->>'isInternal')::boolean AND (TG_OP='INSERT' OR NOT OLD.messages @> jsonb_build_array(x)) THEN
+   PERFORM require_admin((x->>'authorId')::uuid);
+  END IF;
   PERFORM require_files(coalesce(x->'fileIds','[]'));
  END LOOP;
  IF TG_OP='UPDATE' THEN

@@ -17,13 +17,14 @@ builder.Services.AddOpenApi();
 
 // Mọi module dùng cùng connection string local và schema; không chạy EF migration/EnsureCreated.
 builder.Services.AddLeasingInfrastructure(builder.Configuration);
-builder.Services.AddDbContext<SmartRentDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("SmartRent")));
+builder.Services.AddDbContext<SmartRentDbContext>((services, options) =>
+    options.UseNpgsql(services.GetRequiredService<NpgsqlDataSource>()));
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUser, CurrentUser>();
 builder.Services.AddScoped<ISessionTokenService, SessionTokenService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<AccountEmail>();
 builder.Services.AddScoped<ISettingsService, SettingsService>();
 // Tạo repository theo vòng đời request để controller có thể yêu cầu qua constructor.
 builder.Services.AddScoped<
@@ -42,11 +43,11 @@ if (args.Contains("--set-admin-password", StringComparer.Ordinal) ||
 {
     if (!app.Environment.IsDevelopment())
         throw new InvalidOperationException("Chỉ đặt mật khẩu admin bằng lệnh này trong Development.");
-    var customerFlag = Array.IndexOf(args,"--set-customer-password");
-    if(customerFlag>=0 && customerFlag+1>=args.Length)
+    var customerFlag = Array.IndexOf(args, "--set-customer-password");
+    if (customerFlag >= 0 && customerFlag + 1 >= args.Length)
         throw new InvalidOperationException("Thêm email khách sau --set-customer-password.");
     await SmartRent.Api.Features.Auth.AdminPasswordSetup.RunAsync(
-        app.Services.GetRequiredService<NpgsqlDataSource>(),customerFlag>=0?args[customerFlag+1]:null);
+        app.Services.GetRequiredService<NpgsqlDataSource>(), customerFlag >= 0 ? args[customerFlag + 1] : null);
     return;
 }
 
@@ -64,9 +65,13 @@ if (app.Environment.IsDevelopment())
 
         try
         {
-            await using var command = dataSource.CreateCommand("SELECT 1");
-            await command.ExecuteScalarAsync(cancellationToken);
-            return Results.Ok(new { connected = true, database = "smartrent" });
+            await using var command = dataSource.CreateCommand("SELECT current_database()");
+            var database = await command.ExecuteScalarAsync(cancellationToken);
+            return Results.Ok(new
+            {
+                connected = true,
+                database
+            });
         }
         catch (NpgsqlException)
         {

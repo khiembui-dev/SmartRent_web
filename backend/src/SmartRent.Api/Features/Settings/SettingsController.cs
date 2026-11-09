@@ -6,7 +6,7 @@ namespace SmartRent.Api.Features.Settings;
 
 [ApiController]
 [Route("api/v1/settings")]
-[Authorize]
+[Authorize(Roles = "admin")]
 public sealed class SettingsController : ControllerBase
 {
     private readonly ISettingsService _settingsService;
@@ -68,12 +68,20 @@ public sealed class SettingsController : ControllerBase
     [HttpPut("email")]
     [Authorize(Roles = "admin")]
     public IActionResult UpdateEmailSettings([FromBody] object body) =>
-        StatusCode(501, new { code = "email_not_implemented", detail = "Email provider is not configured." });
+        StatusCode(501, new
+        {
+            code = "email_not_implemented",
+            detail = "Email provider is not configured."
+        });
 
     [HttpPost("email/test")]
     [Authorize(Roles = "admin")]
     public IActionResult TestEmail([FromBody] object body) =>
-        StatusCode(501, new { code = "email_not_implemented", detail = "Email provider is not configured." });
+        StatusCode(501, new
+        {
+            code = "email_not_implemented",
+            detail = "Email provider is not configured."
+        });
 
     [HttpGet("templates")]
     [Authorize(Roles = "admin")]

@@ -70,7 +70,7 @@ public sealed class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> Logout(CancellationToken ct)
     {
-        var refreshToken = Request.Cookies["smartrent_refresh"];
+        var refreshToken = Request.Cookies["smartrent_refresh"] ?? AuthSessionService.BearerToken(Request);
         await _authService.LogoutAsync(refreshToken, ct);
 
         Response.Cookies.Delete("smartrent_refresh", new CookieOptions
@@ -78,7 +78,10 @@ public sealed class AuthController : ControllerBase
             Path = "/api/v1/auth"
         });
 
-        return Ok(new { message = "Đăng xuất thành công." });
+        return Ok(new
+        {
+            message = "Đăng xuất thành công."
+        });
     }
 
     [HttpPost("forgot-password")]
@@ -86,7 +89,10 @@ public sealed class AuthController : ControllerBase
     public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordRequest req, CancellationToken ct)
     {
         await _authService.ForgotPasswordAsync(req, ct);
-        return Ok(new { message = "Nếu email tồn tại trên hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi." });
+        return Ok(new
+        {
+            message = "Nếu email tồn tại trên hệ thống, hướng dẫn đặt lại mật khẩu đã được gửi."
+        });
     }
 
     [HttpPost("reset-password")]
@@ -94,6 +100,9 @@ public sealed class AuthController : ControllerBase
     public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest req, CancellationToken ct)
     {
         await _authService.ResetPasswordAsync(req, ct);
-        return Ok(new { message = "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới." });
+        return Ok(new
+        {
+            message = "Đặt lại mật khẩu thành công. Vui lòng đăng nhập bằng mật khẩu mới."
+        });
     }
 }

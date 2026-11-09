@@ -1,3 +1,5 @@
+> Cập nhật 07/11/2026: xem [bản hoàn thiện backend hiện tại](BACKEND_COMPLETION.md). Các ghi chú phần còn thiếu bên dưới là snapshot trước đợt hoàn thiện này.
+
 # Ghép code nhóm ngày 06/11/2026
 
 Bản ghép dùng database PostgreSQL 13 bảng hiện tại và hai role `admin`, `user`.

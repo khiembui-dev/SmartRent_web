@@ -19,26 +19,34 @@ public class ProblemDetailsExceptionFilter : IExceptionFilter
     {
         _logger.LogError(context.Exception, "Lỗi xảy ra trong quá trình xử lý yêu cầu: {Message}", context.Exception.Message);
 
+        var exception = context.Exception is Microsoft.EntityFrameworkCore.DbUpdateException update && update.InnerException is not null ? update.InnerException : context.Exception;
         int status;
         string title;
         string detail;
         string? errorCode = null;
 
-        if (context.Exception is ValidationException valEx)
+        if (exception is SmartRent.Api.Common.LeaseHttpException lease)
+        {
+            status = lease.Status;
+            title = "Yêu cầu không hợp lệ";
+            detail = lease.Message;
+            errorCode = lease.Code;
+        }
+        else if (exception is ValidationException valEx)
         {
             status = StatusCodes.Status422UnprocessableEntity;
             title = "Dữ liệu không hợp lệ";
             detail = valEx.Message;
             errorCode = valEx.ErrorCode ?? "validation_failed";
         }
-        else if (context.Exception is AppException appEx)
+        else if (exception is AppException appEx)
         {
             status = (int)appEx.StatusCode;
             title = appEx.StatusCode.ToString();
             detail = appEx.Message;
             errorCode = appEx.ErrorCode;
         }
-        else if (context.Exception is PostgresException pgEx)
+        else if (exception is PostgresException pgEx)
         {
             status = pgEx.SqlState switch
             {

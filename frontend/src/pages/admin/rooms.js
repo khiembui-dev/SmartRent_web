@@ -18,7 +18,7 @@ export default function RoomsPage(ctx) {
   const canWrite = session.can('rooms.write');
   setHtml(ctx.outlet, html`${pageHeader({
     title: 'Phòng',
-    subtitle: 'Trạng thái đã thuê theo khách đang ở. Muốn trả phòng, mở hợp đồng của phòng.',
+    subtitle: 'Phòng còn trống cần đăng tin để xuất hiện ở trang khách. Muốn trả phòng đã thuê, mở hợp đồng của phòng.',
     actions: canWrite ? html`<a class="btn btn-primary btn-sm" href="${link('/admin/rooms/new')}">${icon('plus-lg')} Thêm phòng</a>` : '',
   })}<div data-list></div>`);
 
@@ -36,11 +36,16 @@ export default function RoomsPage(ctx) {
       { title: 'Giá thuê', sortKey: 'currentRent', className: 'text-end', render: (r) => html`<span class="num">${formatVnd(r.currentRent)}</span>` },
       { title: 'Khách đang ở', render: (r) => (r.currentTenancy ? html`<a class="link-quiet" href="${link(`/admin/tenants/${r.currentTenancy.representative.id}`)}">${r.currentTenancy.representative.fullName}</a>` : html`<span class="text-muted-sr">—</span>`) },
       { title: 'Trạng thái', sortKey: 'occupancyStatus', render: (r) => html`${badge('occupancy', r.occupancyStatus)}${r.upcoming ? html` <span class="sr-badge tone-wash no-dot">${r.upcoming.state === 'held' ? 'Đang giữ chỗ' : 'Sắp có khách'}</span>` : ''}${r.currentTenancy && !r.currentTenancy.hasContract ? html` <span class="sr-badge tone-wash no-dot">Chưa có hợp đồng</span>` : ''}` },
+      // Trạng thái ở và trạng thái tin là hai điều kiện độc lập; hiển thị cả hai để biết vì sao khách chưa thấy phòng.
+      { title: 'Tin trên trang khách', sortKey: 'listing.status', render: (r) => html`${badge('listing', r.listing?.status || 'hidden')}${r.listing?.status === 'published' && (r.property.isActive === false || r.occupancyStatus !== 'available') ? html`<small class="d-block text-muted-sr mt-1">${r.property.isActive === false ? 'Cơ sở ngừng hoạt động' : 'Chưa hiện trong phòng trống'}</small>` : ''}` },
       {
         title: '', className: 'text-end ad-actions-col', priority: 2,
         render: (r) => rowActions([
           { href: `/admin/rooms/${r.id}`, label: `Xem phòng ${r.code}`, icon: 'eye' },
           canWrite && { href: `/admin/rooms/${r.id}/edit`, label: `Sửa phòng ${r.code}`, icon: 'pencil' },
+          canWrite && (r.listing?.status === 'published'
+            ? { action: 'hide-listing', id: r.id, label: `Ẩn tin phòng ${r.code} khỏi trang khách`, icon: 'eye-slash' }
+            : { action: 'publish', id: r.id, label: `Đăng phòng ${r.code} lên trang khách`, icon: 'megaphone' }),
           canWrite && { action: 'delete', id: r.id, label: `Xóa phòng ${r.code}`, icon: 'trash3', danger: true },
         ]),
       },
@@ -51,7 +56,25 @@ export default function RoomsPage(ctx) {
     empty: { title: 'Chưa có phòng', text: 'Thêm phòng và gắn vào một cơ sở.' },
   });
 
+  // Dùng chính API đăng/ẩn của trang chi tiết; không đổi trạng thái thuê hoặc tự đăng tất cả phòng ẩn.
+  const changeListing = async (btn, status) => {
+    const saved = await runAction(async () => {
+      const room = await roomsApi.get(btn.dataset.id);
+      return roomsApi.saveListing(room.id, {
+        status,
+        title: room.listing?.title || `${room.name} – ${room.property.name}`,
+        description: room.listing?.description || room.description,
+      });
+    }, { success: status === 'published' ? 'Đã đăng tin. Phòng còn trống sẽ hiển thị ở trang khách.' : 'Đã ẩn tin khỏi trang khách' });
+    if (saved) {
+      dataChanged();
+      list.reload();
+    }
+  };
+
   ctx.onCleanup(bindActions(ctx.outlet, {
+    publish: (btn) => changeListing(btn, 'published'),
+    'hide-listing': (btn) => changeListing(btn, 'hidden'),
     delete: async (btn) => {
       if (!(await confirmDialog({ title: 'Xóa phòng này?', text: 'Chỉ xóa được phòng chưa có lịch sử thuê. Thao tác này không thể hoàn tác.', confirmText: 'Xóa phòng', tone: 'danger' }))) return;
       try {

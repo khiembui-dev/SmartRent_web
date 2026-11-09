@@ -7,6 +7,7 @@ import { session } from '../../services/session.js';
 import { initials } from '../../utils/format.js';
 import { html, setHtml } from '../../utils/html.js';
 import { dataChanged } from './common.js';
+import { bindFilePicker } from '../../components/file-picker.js';
 
 const DAYS = Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `Ngày ${i + 1}` }));
 
@@ -16,8 +17,9 @@ export default async function SettingsPage(ctx) {
   const canSchedule = session.can('billing.read');
   const canSaveSchedule = session.can('settings.manage');
   let schedule = null;
+  let organization = null;
   try {
-    schedule = canSchedule ? await settingsApi.billingSchedule() : null;
+    [schedule, organization] = await Promise.all([canSchedule ? settingsApi.billingSchedule() : null, settingsApi.organization()]);
   } catch (error) {
     setHtml(ctx.outlet, errorState(error));
     return;
@@ -36,6 +38,11 @@ export default async function SettingsPage(ctx) {
     { name: 'newPassword', label: 'Mật khẩu mới', type: 'password', required: true, minLength: 8, col: 'col-md-6', autocomplete: 'new-password', help: 'Ít nhất 8 ký tự.' },
     { name: 'confirm', label: 'Nhập lại mật khẩu mới', type: 'password', required: true, col: 'col-md-6', autocomplete: 'new-password' },
   ];
+  const bankFields = [
+    { name: 'bankName', label: 'Ngân hàng', optional: true },
+    { name: 'bankAccountNumber', label: 'Số tài khoản', optional: true, col: 'col-md-6' },
+    { name: 'bankAccountName', label: 'Tên chủ tài khoản', optional: true, col: 'col-md-6' },
+  ];
   const scheduleFields = [
     { name: 'meterReadingDay', label: 'Ngày nhập số điện nước', type: 'select', required: true, placeholderOption: false, col: 'col-md-6', options: DAYS, disabled: !canSaveSchedule },
     { name: 'invoiceCreateDay', label: 'Ngày tạo hóa đơn', type: 'select', required: true, placeholderOption: false, col: 'col-md-6', options: DAYS, disabled: !canSaveSchedule },
@@ -49,8 +56,8 @@ export default async function SettingsPage(ctx) {
       <div class="sr-panel-body">${formAlert()}
         <div class="ad-avatar-row">
           <span class="ad-profile-avatar is-lg" data-avatar></span>
-          <div><label class="btn btn-outline-secondary btn-sm mb-0" for="st-avatar">${icon('image')} Đổi ảnh đại diện</label>
-            <input type="file" id="st-avatar" class="visually-hidden" accept="image/jpeg,image/png,image/webp">
+          <div><button type="button" class="btn btn-outline-secondary btn-sm mb-0" data-pick-avatar aria-controls="st-avatar">${icon('image')} Đổi ảnh đại diện</button>
+            <input type="file" id="st-avatar" class="visually-hidden" accept="image/jpeg,image/png,image/webp" tabindex="-1" aria-label="Chọn ảnh đại diện">
             <button type="button" class="btn btn-link btn-sm text-danger" data-remove-avatar hidden>Xóa ảnh</button>
             <p class="small text-muted-sr mb-0 mt-1" data-avatar-hint>JPG, PNG hoặc WEBP, tối đa 2 MB.</p></div>
         </div>
@@ -63,8 +70,13 @@ export default async function SettingsPage(ctx) {
       <div class="sr-panel-body">${formAlert()}${renderFields(passwordFields, {})}</div>
       <div class="sr-panel-foot"><button type="submit" class="btn btn-primary">Đổi mật khẩu</button></div>
     </form>
+    <form id="bank-form" class="sr-panel" novalidate>
+      <div class="sr-panel-head"><h2>Tài khoản nhận tiền</h2></div>
+      <div class="sr-panel-body">${formAlert()}<p class="small text-muted-sr">Thông tin này hiển thị trên hóa đơn khách. Nhập đủ ba mục hoặc để trống cả ba.</p>${renderFields(bankFields, organization.settings)}</div>
+      <div class="sr-panel-foot"><button type="submit" class="btn btn-primary">Lưu tài khoản nhận tiền</button></div>
+    </form>
     ${schedule ? html`<form id="schedule-form" class="sr-panel" novalidate>
-      <div class="sr-panel-head"><h2>Lịch nhắc tính tiền</h2>${simulated('Nhắc trên giao diện. Email và thông báo đẩy chưa kết nối dịch vụ thật.')}</div>
+      <div class="sr-panel-head"><h2>Lịch nhắc tính tiền</h2><span class="sr-panel-note">Nhắc trên Tổng quan</span></div>
       <div class="sr-panel-body">${formAlert()}
         <p class="ad-section-hint">Tới ngày đã chọn, trang Tổng quan nhắc còn bao nhiêu phòng chưa nhập số hoặc chưa tạo hóa đơn. Chọn tối đa ngày 28 để tháng nào cũng có.</p>
         ${renderFields(scheduleFields, { ...schedule, meterReadingDay: String(schedule.meterReadingDay), invoiceCreateDay: String(schedule.invoiceCreateDay) })}
@@ -79,6 +91,13 @@ export default async function SettingsPage(ctx) {
   const fileInput = profile.querySelector('#st-avatar');
   const removeBtn = profile.querySelector('[data-remove-avatar]');
   const hint = profile.querySelector('[data-avatar-hint]');
+  ctx.onCleanup(bindFilePicker(profile, '[data-pick-avatar]', () => fileInput));
+  let avatarPreviewUrl = null;
+  const releasePreview = () => {
+    if (avatarPreviewUrl) URL.revokeObjectURL(avatarPreviewUrl);
+    avatarPreviewUrl = null;
+  };
+  ctx.onCleanup(releasePreview);
   const showAvatar = () => {
     setHtml(avatarEl, avatarUrl ? html`<img src="${avatarUrl}" alt="Ảnh đại diện">` : initials(profile.querySelector('[data-field="displayName"]').value));
     removeBtn.hidden = !avatarUrl;
@@ -100,7 +119,11 @@ export default async function SettingsPage(ctx) {
       const { filesApi } = await import('../../services/api.js');
       const uploaded = await filesApi.upload(file, { visibility: 'public', purpose: 'avatar' });
       avatarFileId = uploaded.id;
-      avatarUrl = uploaded.url;
+      // API upload trả metadata/id. Dùng URL blob để xem trước trước khi bấm Lưu;
+      // sau khi lưu, /me trả URL công khai của avatar đã gắn vào tài khoản.
+      releasePreview();
+      avatarPreviewUrl = URL.createObjectURL(file);
+      avatarUrl = avatarPreviewUrl;
       hint.textContent = 'Bấm Lưu thông tin để áp dụng ảnh mới.';
       showAvatar();
     } catch (error) {
@@ -109,6 +132,7 @@ export default async function SettingsPage(ctx) {
     }
   });
   removeBtn.addEventListener('click', () => {
+    releasePreview();
     avatarFileId = null;
     avatarUrl = null;
     hint.textContent = 'Bấm Lưu thông tin để xóa ảnh.';
@@ -134,10 +158,23 @@ export default async function SettingsPage(ctx) {
       onSubmit: async (v) => {
         await authApi.changePassword({ currentPassword: v.currentPassword, newPassword: v.newPassword });
         ctx.outlet.querySelector('#password-form').reset();
-        toast('Đã đổi mật khẩu. Các phiên đăng nhập khác đã bị đăng xuất.');
+        session.clearLocal();
+        toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.');
+        ctx.navigate('/admin/login');
       },
     }),
   ];
+  bindings.push(bindForm(ctx.outlet.querySelector('#bank-form'), {
+    fields: bankFields,
+    validate: (v) => {
+      const count = Object.values(v).filter((value) => String(value || '').trim()).length;
+      return count > 0 && count < 3 ? { bankName: ['Cần nhập đủ ngân hàng, số tài khoản và tên chủ tài khoản.'] } : null;
+    },
+    onSubmit: async (v) => {
+      organization = await settingsApi.saveOrganization({ name: organization.name, settings: { ...organization.settings, ...v } });
+      toast('Đã lưu tài khoản nhận tiền');
+    },
+  }));
   const scheduleForm = ctx.outlet.querySelector('#schedule-form');
   if (scheduleForm && canSaveSchedule) {
     bindings.push(bindForm(scheduleForm, {

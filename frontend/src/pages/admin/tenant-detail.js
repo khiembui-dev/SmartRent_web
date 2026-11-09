@@ -72,7 +72,7 @@ export default async function TenantDetailPage(ctx) {
             <div><dt>Email đăng nhập</dt><dd>${t.account.email}</dd></div>
             <div><dt>Trạng thái</dt><dd>${t.account.isActive ? html`<span class="sr-badge tone-ok">Đang hoạt động</span>` : html`<span class="sr-badge tone-danger">Đã khóa</span>`}</dd></div>
             <div><dt>Đăng nhập gần nhất</dt><dd>${t.account.lastLoginAt ? formatDateTime(t.account.lastLoginAt) : 'Chưa đăng nhập'}</dd></div></dl>`
-    : html`<p class="small text-muted-sr mb-2">Khách chưa có tài khoản nên chưa xem được hóa đơn trực tuyến.</p>${simulated('Gửi lời mời là mô phỏng, chưa gửi email thật')}`}
+    : html`<p class="small text-muted-sr mb-2">Khách chưa có tài khoản nên chưa xem được hóa đơn trực tuyến.</p><p class="small text-muted-sr">Gửi lời mời đặt mật khẩu để khách kích hoạt tài khoản.</p>`}
         </div></section>
       </div>
       <div class="ad-col-main">
@@ -109,7 +109,7 @@ export default async function TenantDetailPage(ctx) {
     },
     invite: async () => {
       const result = await runAction(() => tenantsApi.invitePortal(id));
-      if (result) toast(`Mô phỏng: đã ghi nhận lời mời tới ${result.toEmail}, chưa gửi email thật`, 'info');
+      if (result) toast(`Đã tạo thư mời đặt mật khẩu cho ${result.toEmail}`, 'info');
     },
     'approve-profile': async (btn) => {
       const result = await formModal({

@@ -8,11 +8,12 @@ import 'filepond/dist/filepond.min.css';
 import 'filepond-plugin-image-preview/dist/filepond-plugin-image-preview.min.css';
 import { config } from '../config.js';
 import { filesApi } from '../services/api.js';
+import { bindFilePicker } from './file-picker.js';
 
 FilePond.registerPlugin(FilePondPluginImagePreview, FilePondPluginFileValidateSize, FilePondPluginFileValidateType);
 
 const LABELS = {
-  labelIdle: 'Kéo thả tệp vào đây hoặc <span class="filepond--label-action">chọn tệp</span>',
+  labelIdle: 'Kéo thả tệp vào đây hoặc <span class="filepond--label-action" role="button">chọn tệp</span>',
   labelInvalidField: 'Có tệp không hợp lệ',
   labelFileWaitingForSize: 'Đang đọc dung lượng',
   labelFileSizeNotAvailable: 'Không đọc được dung lượng',
@@ -47,9 +48,11 @@ const LABELS = {
 export function createUploader(input, { multiple = false, maxFiles = 5, accept = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'], visibility = 'private', purpose = 'other', onChange } = {}) {
   const uploaded = new Map();
   const emit = () => onChange?.([...uploaded.values()]);
+  const wrapper = input.closest('[data-uploader]') || input.parentElement;
   const pond = FilePond.create(input, {
     ...LABELS,
     allowMultiple: multiple,
+    allowBrowse: true,
     maxFiles: multiple ? maxFiles : 1,
     maxFileSize: '10MB',
     acceptedFileTypes: accept,
@@ -78,7 +81,10 @@ export function createUploader(input, { multiple = false, maxFiles = 5, accept =
       },
     },
   });
-  const wrapper = input.closest('[data-uploader]') || input.parentElement;
+  // FilePond thay input ban đầu bằng .filepond--browser. Mở đúng input hiện tại,
+  // hỗ trợ chuột, Enter và Space mà không phụ thuộc vào hành vi mặc định của label.
+  const releasePicker = bindFilePicker(pond.element, '.filepond--label-action',
+    () => pond.element.querySelector('input[type="file"].filepond--browser'));
   if (config.isMock && wrapper && !wrapper.querySelector('.sr-upload-sim')) {
     const hint = document.createElement('div');
     hint.className = 'form-text sr-upload-sim';
@@ -93,6 +99,6 @@ export function createUploader(input, { multiple = false, maxFiles = 5, accept =
     get hasErrors() { return pond.getFiles().some((f) => [FilePond.FileStatus.PROCESSING_ERROR, FilePond.FileStatus.LOAD_ERROR].includes(f.status)); },
     get busy() { return pond.getFiles().some((f) => f.status === FilePond.FileStatus.PROCESSING || f.status === FilePond.FileStatus.PROCESSING_QUEUED); },
     reset() { pond.removeFiles(); uploaded.clear(); emit(); },
-    destroy() { pond.destroy(); },
+    destroy() { releasePicker(); pond.destroy(); },
   };
 }

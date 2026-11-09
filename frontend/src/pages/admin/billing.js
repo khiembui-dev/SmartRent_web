@@ -143,7 +143,7 @@ export default async function BillingPage(ctx) {
     if (b.current) {
       const canFix = canEnter() && !b.current.inUse && b.current.kind === 'periodic';
       current = html`<span class="ad-meter-new is-saved"><small>Tháng này</small><strong class="num">${formatNumber(b.current.value, 3)}</strong>
-        ${canFix ? html`<button type="button" class="btn btn-link btn-sm p-0" data-action="correct" data-reading="${b.current.id}" data-value="${b.current.value}" data-label="${meta.name} phòng ${row.room.code}">Sửa</button>` : ''}</span>`;
+        ${canFix ? html`<button type="button" class="btn btn-link btn-sm p-0" data-action="correct" data-reading="${b.current.id}" data-kind="${kind}" data-value="${b.current.value}" data-label="${meta.name} phòng ${row.room.code}">Sửa</button>` : ''}</span>`;
     } else if (canEnter()) {
       current = html`<span class="ad-meter-new"><label class="visually-hidden" for="m-${b.meterId}">Số ${meta.name} tháng này phòng ${row.room.code}</label>
         <small aria-hidden="true">Tháng này</small>
@@ -453,7 +453,7 @@ export default async function BillingPage(ctx) {
           { name: 'readingValue', label: 'Số đúng', type: 'decimal', decimals: 3, required: true, min: 0, default: Number(btn.dataset.value) },
           { name: 'reason', label: 'Lý do sửa', type: 'textarea', rows: 2, required: true, minLength: 5 },
         ],
-        onSubmit: (v) => metersApi.correct(btn.dataset.reading, v),
+        onSubmit: (v) => metersApi.correct(btn.dataset.reading, { ...v, meterKind: btn.dataset.kind }),
       });
       if (result) {
         toast('Đã sửa số');

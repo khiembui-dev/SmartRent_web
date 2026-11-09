@@ -2,6 +2,12 @@
 
 Baseline thu gọn theo yêu cầu ngày 04/11/2026. Một database dùng chung cho khu admin và khu khách, chỉ hai role `admin` và `user`, tối đa một admin.
 
+Chuyển tài khoản đã đăng ký thành admin bằng [script và hướng dẫn chuyển quyền](../docs/CHUYEN_QUYEN_ADMIN.md). Không chạy UPDATE role riêng lẻ; admin trước chuyển về user trong cùng transaction.
+
+Tin phòng chỉ hiện trên trang khách khi đã đăng, phòng còn trống và cơ sở hoạt động.
+Ảnh có thể bổ sung sau. Database đã cài trước thay đổi này chạy migration
+`08_room_listings.sql` bằng owner; không reset database. Xem [luồng đăng phòng](../docs/PHONG_TREN_TRANG_KHACH.md).
+
 | Bảng | Dữ liệu |
 |---|---|
 | users | Tài khoản và toàn bộ hồ sơ khách thuê |

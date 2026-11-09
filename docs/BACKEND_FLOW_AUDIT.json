@@ -1,0 +1,511 @@
+{
+  "databaseIsolation": true,
+  "sourceCommit": "9db2caa",
+  "results": [
+    {
+      "case": "Audit isolation and admin session",
+      "method": "GET",
+      "path": "/me",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Dashboard SQL",
+      "method": "GET",
+      "path": "/dashboard",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Guest admin blocked",
+      "method": "GET",
+      "path": "/contracts",
+      "expected": 401,
+      "status": 401,
+      "passes": true
+    },
+    {
+      "case": "Customer admin blocked",
+      "method": "GET",
+      "path": "/contracts",
+      "expected": 403,
+      "status": 403,
+      "passes": true,
+      "code": "admin_required",
+      "detail": "Chỉ quản trị viên được thực hiện."
+    },
+    {
+      "case": "Active page missing route /public/filters",
+      "method": "GET",
+      "path": "/public/filters",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Active page missing route /public/rooms",
+      "method": "GET",
+      "path": "/public/rooms",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Active page missing route /public/contact-info",
+      "method": "GET",
+      "path": "/public/contact-info",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Active page missing route /properties",
+      "method": "GET",
+      "path": "/properties",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Active page missing route /rooms",
+      "method": "GET",
+      "path": "/rooms",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Active page missing route /exports",
+      "method": "GET",
+      "path": "/exports",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Amenity create route",
+      "method": "POST",
+      "path": "/catalog/amenities",
+      "expected": 200,
+      "status": 404,
+      "passes": false
+    },
+    {
+      "case": "Admin invoice detail",
+      "method": "GET",
+      "path": "/invoices/8ec1cd6d-80ab-45e7-894a-0678b180758f",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "HD-001"
+    },
+    {
+      "case": "Admin invoice DTO has meterSegments",
+      "passes": false,
+      "observed": {
+        "hasMeterSegments": false,
+        "hasLineAmount": false
+      }
+    },
+    {
+      "case": "Admin contract detail",
+      "method": "GET",
+      "path": "/contracts/fc8cb86d-e149-4e73-86e7-ccdde3046a87",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "HDTH-001"
+    },
+    {
+      "case": "Checkout DTO has meters",
+      "passes": false,
+      "observed": {
+        "hasMeters": false
+      }
+    },
+    {
+      "case": "Resident tenant detail",
+      "method": "GET",
+      "path": "/tenants/344df5a7-58b2-4efa-9738-2da608ebcb9e",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "KH-002"
+    },
+    {
+      "case": "Resident displayed as living in a room",
+      "passes": false,
+      "observed": {
+        "residenceStatus": "none",
+        "tenancies": []
+      }
+    },
+    {
+      "case": "List filters /tenants?propertyId=09eb4afe-f648-4de2-8ac6-c7935000f296",
+      "method": "GET",
+      "path": "/tenants?propertyId=09eb4afe-f648-4de2-8ac6-c7935000f296",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Filter should return zero: /tenants?propertyId=09eb4afe-f648-4de2-8ac6-c7935000f296",
+      "passes": false,
+      "observed": {
+        "totalItems": 3
+      }
+    },
+    {
+      "case": "List filters /contracts?propertyId=3762eed0-5f90-47ca-aea4-8cd2887cb237",
+      "method": "GET",
+      "path": "/contracts?propertyId=3762eed0-5f90-47ca-aea4-8cd2887cb237",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Filter should return zero: /contracts?propertyId=3762eed0-5f90-47ca-aea4-8cd2887cb237",
+      "passes": false,
+      "observed": {
+        "totalItems": 1
+      }
+    },
+    {
+      "case": "List filters /contracts?status=terminated",
+      "method": "GET",
+      "path": "/contracts?status=terminated",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Filter should return zero: /contracts?status=terminated",
+      "passes": false,
+      "observed": {
+        "totalItems": 1
+      }
+    },
+    {
+      "case": "Customer contact change frontend payload",
+      "method": "POST",
+      "path": "/portal/profile-change-requests",
+      "expected": 200,
+      "status": 400,
+      "passes": false
+    },
+    {
+      "case": "Approve phone-only profile request",
+      "method": "POST",
+      "path": "/profile-change-requests/5d5b9dff-b82a-4ba8-bb25-000ca9b250bf/approve",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "new row for relation \"users\" violates check constraint \"users_check\"",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Profile update email frontend payload",
+      "method": "PUT",
+      "path": "/me/profile",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Admin edited email saved",
+      "passes": false,
+      "observed": {
+        "actualEmail": "admin@example.test",
+        "requestedEmail": "new-admin@audit.invalid"
+      }
+    },
+    {
+      "case": "Renewal frontend rate payload",
+      "method": "POST",
+      "path": "/contracts/fc8cb86d-e149-4e73-86e7-ccdde3046a87/versions",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "invalid_or_duplicate_json_key: id",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Renewal canonical rate payload",
+      "method": "POST",
+      "path": "/contracts/fc8cb86d-e149-4e73-86e7-ccdde3046a87/versions",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Create version returns object with versions",
+      "passes": false,
+      "observed": {
+        "responseType": "list"
+      }
+    },
+    {
+      "case": "Open October period",
+      "method": "POST",
+      "path": "/billing-periods",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "October worksheet",
+      "method": "GET",
+      "path": "/billing-periods/3aac4165-3711-440c-aadf-5a1de771baf9/worksheet",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Worksheet carries previous electricity reading 150",
+      "passes": false,
+      "observed": {
+        "previous": null
+      }
+    },
+    {
+      "case": "Record monthly electricity",
+      "method": "POST",
+      "path": "/meter-readings/batch",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "new row for relation \"invoices\" violates check constraint \"invoices_check4\"",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Batch issue on new period",
+      "method": "POST",
+      "path": "/invoice-batches",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "new row for relation \"invoices\" violates check constraint \"invoices_check4\"",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Checkout preview",
+      "method": "POST",
+      "path": "/tenancies/fc8cb86d-e149-4e73-86e7-ccdde3046a87/checkout/preview",
+      "expected": 200,
+      "status": 200,
+      "passes": true
+    },
+    {
+      "case": "Checkout preview calculates final charges",
+      "passes": false,
+      "observed": {
+        "finalInvoice": {
+          "totalAmount": 0,
+          "lines": []
+        }
+      }
+    },
+    {
+      "case": "Checkout with final readings",
+      "method": "POST",
+      "path": "/tenancies/fc8cb86d-e149-4e73-86e7-ccdde3046a87/checkout",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "column \"electricity_from_at\" is of type timestamp with time zone but expression is of type text",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Customer transfer local timezone",
+      "method": "POST",
+      "path": "/portal/payments",
+      "expected": 200,
+      "status": 500,
+      "passes": false,
+      "detail": "System.ArgumentException: Cannot write DateTimeOffset with Offset=07:00:00 to PostgreSQL type 'timestamp with time zone', only offset 0 (UTC) is supported.  (Parameter 'value')\r\n   at Npgsql.Internal.Converters.DateTimeOffsetConverter.WriteCore(PgWriter writer, DateTimeOffset value)\r\n   at Npgsql.Internal.PgBufferedConverter`1.Write(PgWriter writer, T value)\r\n   at Npgsql.Internal.PgBufferedConverter`1.WriteAsObject(Boolean async, PgWriter writer, Object value, CancellationToken cancellationToken)\r\n   at Npgsql.Internal.PgConverter.WriteAsObjectAsync(PgWriter writer, Object value, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlParameter.WriteValue(Boolean async, PgWriter writer, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlParameter.Write(Boolean async, PgWriter writer, CancellationToken cancellationToken)\r\n   at Npgsql.Internal.NpgsqlConnector.WriteBind(List`1 parameters, String portal, Byte[] asciiName, Boolean allResultTypesAreUnknown, Boolean[] unknownResultTypeList, Boolean async, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlCommand.<Write>g__WriteExecute|103_0(NpgsqlConnector connector, Boolean async, Boolean flush, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlCommand.ExecuteReader(Boolean async, CommandBehavior behavior, CancellationToken cancellationToken)\r\n   at Npgsql.NpgsqlCommand.ExecuteScalar(Boolean async, CancellationToken cancellationToken)\r\n   at SmartRent.Api.Features.Payments.PortalPaymentsController.ReportPayment(JsonElement body, CancellationToken ct) in D:\\Downloads\\smartrent web - ban dau\\smartrent web\\backend\\src\\SmartRent.Api\\Features\\Payments\\PortalPaymentsController.cs:line 206\r\n   at SmartRent.Api.Features.Payments.PortalPaymentsController.ReportPayment(JsonElement body, CancellationToken ct) in D:\\Downloads\\smartrent web - ban dau\\smartrent web\\backend\\src\\SmartRent.Api\\Features\\Payments\\PortalPaymentsController.cs:line 212\r\n   at SmartRent.Api.Features.Payments.PortalPaymentsController.ReportPayment(JsonElement body, CancellationToken ct) in D:\\Downloads\\smartrent web - ban dau\\smartrent web\\backend\\src\\SmartRent.Api\\Features\\Payments\\PortalPaymentsController.cs:line 212\r\n   at SmartRent.Api.Features.Payments.PortalPaymentsController.ReportPayment(JsonElement body, CancellationToken ct) in D:\\Downloads\\smartrent web - ban dau\\smartrent web\\backend\\src\\SmartRent.Api\\Features\\Payments\\PortalPaymentsController.cs:line 212\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ActionMethodExecutor.TaskOfIActionResultExecutor.Execute(ActionContext actionContext, IActionResultTypeMapper mapper, ObjectMethodExecutor executor, Object controller, Object[] arguments)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeActionMethodAsync>g__Awaited|12_0(ControllerActionInvoker invoker, ValueTask`1 actionResultValueTask)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeNextActionFilterAsync>g__Awaited|10_0(ControllerActionInvoker invoker, Task lastTask, State next, Scope scope, Object state, Boolean isCompleted)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.Rethrow(ActionExecutedContextSealed context)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.Next(State& next, Scope& scope, Object& state, Boolean& isCompleted)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ControllerActionInvoker.<InvokeInnerFilterAsync>g__Awaited|13_0(ControllerActionInvoker invoker, Task lastTask, State next, Scope scope, Object state, Boolean isCompleted)\r\n   at Microsoft.AspNetCore.Mvc.Infrastructure.ResourceInvoker.<InvokeNextExceptionFilterAsync>g__Awaited|26_0(ResourceInvoker invoker, Task lastTask, State next, Scope scope, Object state, Boolean isCompleted)"
+    },
+    {
+      "case": "Cash receipt first",
+      "method": "POST",
+      "path": "/payments",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "PT-00000002"
+    },
+    {
+      "case": "Cash receipt replay",
+      "method": "POST",
+      "path": "/payments",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "PT-00000003"
+    },
+    {
+      "case": "Receipt idempotency replay",
+      "passes": false,
+      "observed": {
+        "firstId": "03eb5d13-16e3-4505-8d1c-584e61a8bd95",
+        "replayId": "8669cb0c-3ecd-4cb4-bb21-e4f1cd6f0e08"
+      }
+    },
+    {
+      "case": "Customer reports larger bank transfer",
+      "method": "POST",
+      "path": "/portal/payments",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "PT-00000004"
+    },
+    {
+      "case": "Confirm uses supplied bounded allocation",
+      "method": "POST",
+      "path": "/payments/ee4bae0a-8364-4a78-a5be-8a1bbf61073c/confirm",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "invoice_overallocated",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Reverse original receipt",
+      "method": "POST",
+      "path": "/payment-allocations/a382cfcd-a2b5-472b-a8b1-31ea478f71a8/reverse",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "new row for relation \"payments\" violates check constraint \"payments_check6\"",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Portal invoice after reversal",
+      "method": "GET",
+      "path": "/portal/invoices/8ec1cd6d-80ab-45e7-894a-0678b180758f",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "HD-001"
+    },
+    {
+      "case": "Portal receipt history nets reversals",
+      "passes": true,
+      "observed": {
+        "renderedHistoryAmount": 1000200,
+        "paidAmount": 1000200
+      }
+    },
+    {
+      "case": "Check-in frontend payload",
+      "method": "POST",
+      "path": "/tenancies/check-in",
+      "expected": 200,
+      "status": 422,
+      "passes": false,
+      "code": "invalid_or_duplicate_json_key: id",
+      "detail": "Dữ liệu không thỏa quy tắc nghiệp vụ."
+    },
+    {
+      "case": "Check-in canonical payload",
+      "method": "POST",
+      "path": "/tenancies/check-in",
+      "expected": 200,
+      "status": 200,
+      "passes": true,
+      "code": "CON-00000007"
+    },
+    {
+      "case": "Check-in returns frontend contracts array",
+      "passes": false,
+      "observed": {
+        "responseKeys": [
+          "id",
+          "code",
+          "rent",
+          "room",
+          "endsOn",
+          "status",
+          "tenant",
+          "deposit",
+          "tenancy",
+          "daysLeft",
+          "expiring",
+          "invoices",
+          "moveInOn",
+          "requests",
+          "roomInfo",
+          "startsOn",
+          "versions",
+          "moveOutOn",
+          "occupants",
+          "tenancyId",
+          "archivedAt",
+          "contractId",
+          "attachments",
+          "depositHeld",
+          "endedReason",
+          "displayEndOn",
+          "effectiveFrom",
+          "finalReadings",
+          "tenancyStatus",
+          "onboardingGaps",
+          "onboardingMode",
+          "representative",
+          "checkinHandover",
+          "checkoutSummary",
+          "initialReadings",
+          "requiredDeposit",
+          "checkoutHandover",
+          "remainingDebtReason",
+          "stillOccupiedAfterExpiry"
+        ]
+      }
+    },
+    {
+      "case": "Changed check-in payload with same key",
+      "method": "POST",
+      "path": "/tenancies/check-in",
+      "expected": 409,
+      "status": 200,
+      "passes": false,
+      "code": "CON-00000007"
+    },
+    {
+      "case": "Upload avatar",
+      "method": "POST",
+      "path": "/files",
+      "expected": 200,
+      "status": 422,
+      "passes": false
+    },
+    {
+      "case": "Upload contract_signed",
+      "method": "POST",
+      "path": "/files",
+      "expected": 200,
+      "status": 422,
+      "passes": false
+    },
+    {
+      "case": "Upload payment_proof",
+      "method": "POST",
+      "path": "/files",
+      "expected": 200,
+      "status": 422,
+      "passes": false
+    },
+    {
+      "case": "Upload room_image",
+      "method": "POST",
+      "path": "/files",
+      "expected": 200,
+      "status": 422,
+      "passes": false
+    }
+  ],
+  "stage": "before_completion",
+  "supersededBy": "BACKEND_COMPLETION.md"
+}

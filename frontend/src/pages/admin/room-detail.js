@@ -55,7 +55,7 @@ export default async function RoomDetailPage(ctx) {
         <section class="sr-panel">
           ${cover ? html`<div class="ad-gallery"><img class="ad-gallery-main" src="${asset(cover.url)}" alt="${cover.caption || `Ảnh phòng ${r.code}`}">
             ${r.images.length > 1 ? html`<div class="ad-gallery-strip">${r.images.filter((i) => i.id !== cover.id).slice(0, 4).map((i) => html`<img src="${asset(i.url)}" alt="${i.caption || ''}" loading="lazy">`)}</div>` : ''}</div>`
-    : emptyState({ iconName: 'image', title: 'Phòng chưa có ảnh', text: 'Thêm ảnh trước khi đăng tin lên trang tìm phòng.', action: canWrite ? html`<a class="btn btn-outline-primary btn-sm" href="${link(`/admin/rooms/${id}/edit`)}">Thêm ảnh</a>` : '' })}
+    : emptyState({ iconName: 'image', title: 'Phòng chưa có ảnh', text: 'Có thể đăng tin ngay và bổ sung ảnh phòng sau.', action: canWrite ? html`<a class="btn btn-outline-primary btn-sm" href="${link(`/admin/rooms/${id}/edit`)}">Thêm ảnh</a>` : '' })}
           ${r.description ? html`<div class="sr-panel-body border-top"><p class="mb-0">${r.description}</p></div>` : ''}
         </section>
         <section class="sr-panel"><div class="sr-panel-head"><h2>Hợp đồng của phòng</h2><span class="sr-panel-note">${contracts.length} hợp đồng</span></div>
@@ -88,7 +88,8 @@ export default async function RoomDetailPage(ctx) {
           ${r.amenities.length ? html`<ul class="ad-amenities">${r.amenities.map((a) => html`<li>${icon(a.icon || 'check2')} ${a.name}</li>`)}</ul>` : html`<p class="small text-muted-sr mb-0">Chưa có tiện ích.</p>`}</div></section>
         <section class="sr-panel"><div class="sr-panel-head"><h2>Tin trên trang tìm phòng</h2></div><div class="sr-panel-body">
           <p class="small mb-2">${r.listing ? badge('listing', r.listing.status) : html`<span class="sr-badge tone-muted">Chưa đăng</span>`}</p>
-          ${r.images.length ? '' : html`<div class="mb-2">${note('Cần ít nhất một ảnh để đăng tin.', { tone: 'warn' })}</div>`}
+          <p class="small text-muted-sr mb-2">Tin đã đăng chỉ xuất hiện trong danh sách phòng trống khi phòng còn trống và cơ sở đang hoạt động.</p>
+          ${r.images.length ? '' : html`<div class="mb-2">${note('Bạn có thể đăng tin khi chưa có ảnh và bổ sung ảnh sau.')}</div>`}
           ${canWrite ? html`<button type="button" class="btn btn-outline-primary btn-sm w-100" data-action="listing" data-status="${listingLive ? 'hidden' : 'published'}">${listingLive ? 'Ẩn tin khỏi trang tìm phòng' : 'Đăng lên trang tìm phòng'}</button>` : ''}
         </div></section>
       </div>

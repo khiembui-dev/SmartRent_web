@@ -1,195 +1,85 @@
-using System;
-using System.Collections.Generic;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
 using Npgsql;
 using SmartRent.Api.Common;
-
+using static SmartRent.Api.Common.BusinessData;
 namespace SmartRent.Api.Features.Billing;
 
-[ApiController]
-[Route("api/v1/meter-readings")]
-public sealed class MeterReadingsController(NpgsqlDataSource db) : LeasingController(db)
+[ApiController, Route("api/v1/meter-readings")]
+public sealed class MeterReadingsController(NpgsqlDataSource db) : BusinessController(db)
 {
-    // 1. Ghi hàng loạt chỉ số điện nước từ bảng tính Worksheet
+    // Chỉ số điện/nước nằm ngay trên hóa đơn nháp; lưu theo nhóm phòng trong một transaction.
     [HttpPost("batch")]
-    public async Task<IActionResult> RecordBatch([FromBody] JsonElement body, CancellationToken ct = default)
+    public Task<IActionResult> Batch(JsonElement body, CancellationToken ct) => Run(true, async (c, t, actor) =>
     {
-        try
+        var b = Object(body);
+        var pid = b.Id("billingPeriodId");
+        var results = new List<object>();
+        var groups = new Dictionary<Guid, List<(string Kind, decimal Value, string At, Guid Meter)>>();
+        foreach (var item in b["items"]?.AsArray() ?? throw Invalid("Cần danh sách chỉ số."))
         {
-            var billingPeriodId = body.TryGetProperty("billingPeriodId", out var pBp) && pBp.TryGetGuid(out var bpGuid)
-                ? bpGuid : Guid.Empty;
-
-            if (billingPeriodId == Guid.Empty || !body.TryGetProperty("items", out var pItems) || pItems.ValueKind != JsonValueKind.Array)
-            {
-                return BadRequest(new { code = "validation_failed", message = "Cần chọn kỳ tính tiền và danh sách chỉ số." });
-            }
-
-            var (c, t, _) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                // Kiểm tra xem kỳ có bị khóa không
-                var periodStatus = await ScalarStringAsync(c, t,
-                    "select status from billing_periods where id=@id", ct, P("id", billingPeriodId));
-
-                if (periodStatus == "locked")
-                {
-                    await t.RollbackAsync(ct);
-                    return Conflict(new { code = "period_locked", message = "Kỳ tính tiền đã bị khóa, không thể ghi số." });
-                }
-
-                var results = new List<object>();
-                var index = 0;
-
-                foreach (var item in pItems.EnumerateArray())
-                {
-                    var meterId = item.TryGetProperty("meterId", out var pM) && pM.TryGetGuid(out var mGuid) ? mGuid : Guid.Empty;
-                    var readingValue = item.TryGetProperty("readingValue", out var pV) ? pV.GetDecimal() : (decimal?)null;
-                    var observedAt = item.TryGetProperty("observedAt", out var pO) ? pO.GetString() : DateTimeOffset.UtcNow.ToString("O");
-
-                    if (meterId == Guid.Empty || !readingValue.HasValue || readingValue < 0)
-                    {
-                        results.Add(new { index, meterId, status = "failed", message = "Chỉ số không hợp lệ." });
-                        index++;
-                        continue;
-                    }
-
-                    // Xác định phòng và loại công tơ từ meterId
-                    var targetSql = @"
-                        select r.id as room_id, ct.id as contract_id,
-                               case when md5(r.id::text || 'electricity')::uuid=@m then 'electricity' else 'water' end as meter_kind
-                        from rooms r
-                        left join contracts ct on ct.room_id=r.id and ct.status in ('active','planned')
-                        where md5(r.id::text || 'electricity')::uuid=@m or md5(r.id::text || 'water')::uuid=@m
-                        limit 1";
-
-                    await using var cmd = new NpgsqlCommand(targetSql, c, t);
-                    cmd.Parameters.AddWithValue("m", meterId);
-                    await using var r = await cmd.ExecuteReaderAsync(ct);
-
-                    if (!await r.ReadAsync(ct))
-                    {
-                        results.Add(new { index, meterId, status = "failed", message = "Không tìm thấy công tơ của phòng." });
-                        index++;
-                        continue;
-                    }
-
-                    var roomId = r.GetGuid(0);
-                    var contractId = r.IsDBNull(1) ? (Guid?)null : r.GetGuid(1);
-                    var meterKind = r.GetString(2);
-                    await r.CloseAsync();
-
-                    if (!contractId.HasValue)
-                    {
-                        results.Add(new { index, meterId, status = "failed", message = "Phòng chưa có hợp đồng thuê hoạt động." });
-                        index++;
-                        continue;
-                    }
-
-                    // Tìm hoặc tạo hóa đơn nháp (draft) cho hợp đồng trong kỳ này
-                    var invoiceIdStr = await ScalarStringAsync(c, t,
-                        "select id::text from invoices where contract_id=@cid and period_id=@pid and status='draft' limit 1",
-                        ct, P("cid", contractId.Value), P("pid", billingPeriodId));
-
-                    Guid invoiceId;
-                    if (invoiceIdStr == null)
-                    {
-                        var newInvId = Guid.NewGuid();
-                        var insertSql = @"
-                            insert into invoices(id, contract_id, period_id, status, kind, service_from, service_to,
-                                                electricity_start, water_start, lines)
-                            select @id, @cid, @pid, 'draft', 'periodic', bp.month_start, bp.month_start + interval '1 month',
-                                   coalesce((select inv_prev.electricity_end from invoices inv_prev where inv_prev.contract_id=@cid and inv_prev.status='issued' order by inv_prev.service_to desc limit 1), 0),
-                                   coalesce((select inv_prev.water_end from invoices inv_prev where inv_prev.contract_id=@cid and inv_prev.status='issued' order by inv_prev.service_to desc limit 1), 0),
-                                   '[]'::jsonb
-                            from billing_periods bp where bp.id=@pid
-                            returning id::text";
-
-                        await ScalarStringAsync(c, t, insertSql, ct,
-                            P("id", newInvId), P("cid", contractId.Value), P("pid", billingPeriodId));
-                        invoiceId = newInvId;
-                    }
-                    else
-                    {
-                        invoiceId = Guid.Parse(invoiceIdStr);
-                    }
-
-                    // Cập nhật chỉ số mới vào hóa đơn draft
-                    if (meterKind == "electricity")
-                    {
-                        await ScalarStringAsync(c, t,
-                            "update invoices set electricity_end=@val, electricity_to_at=@at::timestamptz where id=@id returning id::text",
-                            ct, P("val", readingValue.Value), P("at", observedAt), P("id", invoiceId));
-                    }
-                    else
-                    {
-                        await ScalarStringAsync(c, t,
-                            "update invoices set water_end=@val, water_to_at=@at::timestamptz where id=@id returning id::text",
-                            ct, P("val", readingValue.Value), P("at", observedAt), P("id", invoiceId));
-                    }
-
-                    results.Add(new { index, meterId, status = "succeeded", readingId = invoiceId });
-                    index++;
-                }
-
-                await CommitAsync(t, ct);
-                return Ok(new { results });
-            }
+            var meter = item.Id("meterId");
+            var target = await Row(c, t, """
+                select jsonb_build_object('id',ct.id,'kind',case when md5(r.id::text||'electricity')::uuid=@meter then 'electricity' else 'water' end)::text
+                from contracts ct join rooms r on r.id=ct.room_id join billing_periods bp on bp.property_id=r.property_id
+                where bp.id=@period and ct.status in ('active','ended') and ct.starts_on<bp.month_start+interval '1 month'
+                  and (ct.move_out_on is null or ct.move_out_on>bp.month_start)
+                  and (@meter=md5(r.id::text||'electricity')::uuid or @meter=md5(r.id::text||'water')::uuid)
+                """, ct, "period", pid, "meter", meter);
+            var id = target.Id("id");
+            if (!groups.ContainsKey(id))
+                groups[id] = [];
+            var value = item.Number("readingValue", -1);
+            if (value < 0)
+                throw Invalid("Chỉ số phải không âm.");
+            var at = DateTimeOffset.Parse(item.Text("observedAt") ?? DateTimeOffset.UtcNow.ToString("O")).ToUniversalTime();
+            if (at > DateTimeOffset.UtcNow.AddMinutes(1))
+                throw Invalid("Không ghi chỉ số ở tương lai.");
+            groups[id].Add((target.Text("kind")!, value, at.ToString("O"), meter));
         }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
-
-    // 2. Sửa chỉ số (Điều chỉnh sai sót)
+        foreach (var (id, items) in groups)
+        {
+            var inv = await BillingEngine.Draft(c, t, id, pid, ct);
+            if (inv.Text("status") != "draft")
+                throw new LeaseHttpException(409, "invoice_issued", "Hóa đơn đã phát hành; không sửa chỉ số trực tiếp.");
+            foreach (var x in items)
+            {
+                if (inv[x.Kind + "_start"] is null)
+                    throw Invalid("Thiếu chỉ số đầu. Bổ sung hồ sơ nhận phòng trước khi ghi số.");
+                await Execute(c, t, $"update invoices set {x.Kind}_end=@value,{x.Kind}_to_at=@at::timestamptz,correction_reason=@reason where id=@id", ct, "id", inv.Id("id"), "value", x.Value, "at", x.At, "reason", "Nhập chỉ số kỳ từ bảng tính");
+                results.Add(new
+                {
+                    meterId = x.Meter,
+                    status = "succeeded",
+                    readingId = inv.Id("id")
+                });
+            }
+            await BillingEngine.Recompute(c, t, inv.Id("id"), false, actor, ct);
+        }
+        return new
+        {
+            results
+        };
+    }, ct);
     [HttpPost("{id:guid}/correct")]
-    public async Task<IActionResult> Correct(Guid id, [FromBody] JsonElement body, CancellationToken ct = default)
+    public Task<IActionResult> Correct(Guid id, JsonElement body, CancellationToken ct) => Run(true, async (c, t, a) =>
     {
-        try
+        var b = Object(body);
+        var kind = b.Text("meterKind");
+        if (kind is not ("electricity" or "water"))
+            throw Invalid("Cần loại chỉ số điện hoặc nước.");
+        var reason = b.Text("reason");
+        if (string.IsNullOrWhiteSpace(reason))
+            throw Invalid("Cần lý do sửa chỉ số.");
+        var inv = await Row(c, t, "select to_jsonb(i)::text from invoices i where id=@id for update", ct, "id", id);
+        if (inv.Text("status") != "draft")
+            throw new LeaseHttpException(409, "invoice_issued", "Chỉ sửa chỉ số hóa đơn nháp.");
+        await Execute(c, t, $"update invoices set {kind}_end=@value,correction_reason=@reason where id=@id", ct, "id", id, "value", b.Number("readingValue", -1), "reason", reason);
+        await BillingEngine.Recompute(c, t, id, false, a, ct);
+        return new
         {
-            var readingValue = body.TryGetProperty("readingValue", out var pVal) ? pVal.GetDecimal() : (decimal?)null;
-            var reason = body.TryGetProperty("reason", out var pR) ? pR.GetString() : null;
-
-            if (!readingValue.HasValue || string.IsNullOrWhiteSpace(reason))
-            {
-                return BadRequest(new { code = "validation_failed", message = "Cần nhập chỉ số mới và lý do sửa." });
-            }
-
-            var (c, t, _) = await BeginAsync(true, ct);
-            await using (c) await using (t)
-            {
-                // Cập nhật chỉ số và lưu vết lịch sử vào readings_history
-                var updateSql = @"
-                    update invoices
-                    set readings_history = readings_history || jsonb_build_array(
-                            jsonb_build_object(
-                                'changedAt', now(),
-                                'reason', @reason,
-                                'oldElectricityEnd', electricity_end,
-                                'oldWaterEnd', water_end
-                            )
-                        ),
-                        electricity_end = (case when electricity_end is not null then @val else electricity_end end),
-                        water_end = (case when water_end is not null and electricity_end is null then @val else water_end end),
-                        correction_reason = @reason
-                    where id=@id and status='draft'
-                    returning id::text";
-
-                var updated = await ScalarStringAsync(c, t, updateSql, ct,
-                    P("id", id), P("val", readingValue.Value), P("reason", reason));
-
-                if (updated == null)
-                {
-                    await t.RollbackAsync(ct);
-                    return NotFound(new { code = "not_found", message = "Không tìm thấy hóa đơn nháp để sửa chỉ số." });
-                }
-
-                await CommitAsync(t, ct);
-                return Ok(new { id, readingValue, reason });
-            }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
-    }
+            id
+        };
+    }, ct);
 }

@@ -1,3 +1,5 @@
+> Cập nhật 07/11/2026: xem [bản hoàn thiện backend hiện tại](BACKEND_COMPLETION.md). Các ghi chú phần còn thiếu bên dưới là snapshot trước đợt hoàn thiện này.
+
 # Bàn giao backend — baseline 13 bảng
 
 Backend ASP.NET hiện còn khung; frontend đang chạy mock. Database mới dùng 13 bảng, một admin và các user. Đọc [schema và bộ cài](../database/README.md), [JSONB](../database/JSON_DATA.md), [quy tắc transaction](../database/THIET_KE_DATABASE.md) trước khi viết API.

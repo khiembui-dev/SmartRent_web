@@ -6,7 +6,7 @@ const id = encodeURIComponent;
 const withKey = (idempotencyKey) => (idempotencyKey ? { idempotencyKey } : {});
 
 export const authApi = {
-  login: (email, password, audience = 'customer') => http.post('/api/v1/auth/login', { email, password, audience }),
+  login: (email, password) => http.post('/api/v1/auth/login', { email, password }),
   register: (body) => http.post('/api/v1/auth/register', body),
   logout: () => http.post('/api/v1/auth/logout', {}),
   forgotPassword: (email) => http.post('/api/v1/auth/forgot-password', { email }),
@@ -66,6 +66,7 @@ export const roomsApi = {
 };
 
 export const inquiriesApi = {
+  decide: (inquiryId, body) => http.post(`/api/v1/inquiries/${id(inquiryId)}/decision`, body),
   list: (query, options) => http.get('/api/v1/inquiries', query, options),
   get: (inquiryId) => http.get(`/api/v1/inquiries/${id(inquiryId)}`),
   create: (body) => http.post('/api/v1/inquiries', body),
@@ -251,6 +252,7 @@ export const filesApi = {
 };
 
 export const portalApi = {
+  decideViewing: (inquiryId, body) => http.post(`/api/v1/portal/inquiries/${id(inquiryId)}/decision`, body),
   overview: () => http.get('/api/v1/portal/overview'),
   inquiries: () => http.get('/api/v1/portal/inquiries'),
   createInquiry: (body, key) => http.post('/api/v1/portal/inquiries', body, withKey(key)),

@@ -1,3 +1,4 @@
+import { viewingFields } from './viewing-workflow.js';
 // Ánh xạ bản ghi mock → DTO JSON (camelCase) đúng như hợp đồng trong docs/api/openapi.yaml.
 import { lineAmount } from '../utils/money.js';
 import { addDays, compareIso, diffDays } from '../utils/date.js';
@@ -284,6 +285,7 @@ export function ticketDetail(db, t, now, { includeInternal }) {
 export function inquirySummary(db, q) {
   const room = find(db.rooms, q.roomId);
   return {
+    ...viewingFields(db, q),
     id: q.id, code: q.code, room: roomRef(db, room), contactName: q.contactName, phone: q.phone, email: q.email, desiredMoveIn: q.desiredMoveIn,
     occupants: q.occupants, message: q.message, status: q.status, assignedTo: userRef(db, q.assignedTo), tenantId: q.tenantId,
     closedReason: q.closedReason, source: q.source, createdAt: q.createdAt,

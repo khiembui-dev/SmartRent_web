@@ -41,6 +41,7 @@ public sealed class TenanciesController(NpgsqlDataSource db) : BusinessControlle
         }
         var room = b.Id("roomId");
         var tenant = b.Id("tenantId");
+        await ContractTenantRules.ValidateAsync(c, t, tenant, ct);
         var day = DateOnly.Parse(b.Text("moveInOn")!);
         if (day > Today)
             throw Invalid("Ngày vào ở không được ở tương lai.");
@@ -81,6 +82,7 @@ public sealed class TenanciesController(NpgsqlDataSource db) : BusinessControlle
             throw Invalid("Hợp đồng đã có bản ký.");
         var b = Object(body);
         var day = DateOnly.Parse(b.Text("effectiveFrom") ?? raw.Text("starts_on")!);
+        await ContractTenantRules.ValidateAsync(c, t, raw.Id("user_id"), ct);
         var file = b["signature"]!.Id("signedFileId");
         await RoomsController.CheckFile(c, t, file, a, "contract_signed", ct);
         var v = BuildVersion(b["contract"]!.AsObject(), day, a, file, b["signature"].Text("signedAt"));

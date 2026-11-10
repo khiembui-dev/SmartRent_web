@@ -7,7 +7,7 @@ export function loginRedirect(auth, user, next) {
   const home = isAdmin(user) ? '/admin' : '/';
   if (auth === 'guest' && user) return home;
   if (auth === 'admin') {
-    if (!user) return `/admin/login?next=${encodeURIComponent(next)}`;
+    if (!user) return `/login?next=${encodeURIComponent(next)}`;
     if (!isAdmin(user)) return '/';
   }
   if (auth === 'customer') {

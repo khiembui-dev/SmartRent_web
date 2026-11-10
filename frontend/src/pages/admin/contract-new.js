@@ -11,6 +11,7 @@ import { formatNumber, formatVnd, parseVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { dataChanged } from './common.js';
 import { tenantFormModal } from './tenant-dialogs.js';
+import { contractTenantErrors } from '../../utils/contract-tenant.js';
 
 const DEFAULT_TERMS = 'Bên thuê thanh toán đúng hạn, giữ gìn tài sản trong phòng và tuân thủ nội quy của cơ sở. Hai bên báo trước 30 ngày khi muốn chấm dứt hợp đồng.';
 const METHOD_OPTIONS = [{ value: 'cash', label: 'Tiền mặt' }, { value: 'bank_transfer', label: 'Chuyển khoản' }];
@@ -20,7 +21,8 @@ export default async function ContractNewPage(ctx) {
   setHtml(ctx.outlet, loadingBlock(10));
   const org = session.organization;
   const today = todayIso();
-  const { roomId: presetRoom, tenantId: presetTenant, inquiryId, tenancyId } = ctx.query;
+  const { roomId: presetRoom, inquiryId, tenancyId } = ctx.query;
+  const presetTenant = ctx.query.tenantId || ctx.query.tenant;
   let inquiry = null;
   let preset = null;
   let tenantPreset = null;
@@ -44,6 +46,7 @@ export default async function ContractNewPage(ctx) {
   if (existing) ctx.setTitle(`Bổ sung hợp đồng phòng ${existing.room.code}`);
   let propertyId = existing?.property.id || preset?.property.id || session.propertyId || org.properties[0]?.id;
   let room = null;
+  let roomReady = false;
   let billing = null;
   let tenantLabel = existing?.representative.fullName || tenantPreset?.fullName || null;
 
@@ -71,11 +74,13 @@ export default async function ContractNewPage(ctx) {
       ${inquiry ? html`<div class="mb-3">${note(html`Từ yêu cầu <strong>${inquiry.code}</strong> của ${inquiry.contactName}${inquiry.phone ? `, ${inquiry.phone}` : ''}.
         ${inquiry.tenantId ? '' : html`<button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-from-inquiry>Tạo hồ sơ khách từ yêu cầu này</button>`}`)}</div>` : ''}
       <section class="sr-panel"><div class="sr-panel-head"><h2>Khách và phòng</h2>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-edit-tenant>Bổ sung thông tin khách</button>
         ${!existing && session.can('tenants.write') ? html`<div class="sr-panel-actions"><button type="button" class="btn btn-outline-secondary btn-sm" data-add-tenant>${icon('person-plus')} Thêm khách mới</button></div>` : ''}</div>
         <div class="sr-panel-body">${existing ? html`<dl class="ad-kv">
           <div><dt>Khách thuê</dt><dd><a href="${link(`/admin/tenants/${existing.representative.id}`)}">${existing.representative.fullName}</a></dd></div>
           <div><dt>Phòng</dt><dd>${plate(existing.room)} ${existing.room.propertyName}</dd></div>
-          <div><dt>Vào ở từ</dt><dd>${formatDate(existing.actualMoveIn)}</dd></div></dl>` : renderFields(partyFields, { propertyId, tenantId: tenantPreset?.id })}</div></section>
+          <div><dt>Vào ở từ</dt><dd>${formatDate(existing.actualMoveIn)}</dd></div></dl>` : renderFields(partyFields, { propertyId, tenantId: tenantPreset?.id })}
+          <p class="form-text mb-0">Người đứng tên hợp đồng phải có số điện thoại hợp lệ và ngày sinh xác nhận đủ 18 tuổi.</p></div></section>
       <section class="sr-panel"><div class="sr-panel-head"><h2>Thời hạn</h2><div class="sr-panel-actions ad-term-quick" role="group" aria-label="Chọn nhanh thời hạn">
         ${[6, 12, 24].map((m) => html`<button type="button" class="btn btn-outline-secondary btn-sm" data-term="${m}">${m} tháng</button>`)}</div></div>
         <div class="sr-panel-body">${renderFields(termFields, { moveInOn: existing?.actualMoveIn || today })}</div></section>
@@ -135,7 +140,11 @@ export default async function ContractNewPage(ctx) {
       { name: 'deposit.methodCode', label: 'Cách thu cọc', type: 'select', placeholderOption: false, col: 'col-md-6', options: METHOD_OPTIONS, default: 'cash' },
     ];
     const rateFields = others.map((r) => ({ name: `rate.${r.chargeType.code}`, label: `${r.chargeType.name} (đ/${r.chargeType.unitLabel})`, type: 'money', col: 'col-md-6', required: true, help: r.billingCycle === 'once' ? 'Thu một lần' : r.scope === 'room' ? 'Theo giá riêng của phòng' : 'Theo giá cơ sở' }));
-    const meters = ['electricity', 'water'].map((kind) => room.meters.find((m) => m.meterKind === kind && !m.removedAt)).filter((m) => m && !existing?.meters.find((x) => x.meterKind === m.meterKind)?.hasBaseline);
+    // SQL stores readings on contracts/invoices; older mock DTOs also expose meters.
+    const roomMeters = room.meters ?? ['electricity', 'water']
+      .filter((kind) => rates.some((r) => r.chargeType.category === kind && r.calculationMethod === 'metered'))
+      .map((meterKind) => ({ meterKind }));
+    const meters = roomMeters.filter((m) => !m.removedAt && !(existing?.meters ?? []).find((x) => x.meterKind === m.meterKind)?.hasBaseline);
     const readingFields = meters.map((m) => ({
       name: `readings.${m.meterKind}`, label: m.meterKind === 'electricity' ? 'Số điện đầu kỳ (kWh)' : 'Số nước đầu kỳ (m³)', type: 'decimal', decimals: 3, required: true, min: 0, col: 'col-md-6',
       help: m.lastReading ? `Lần chốt gần nhất: ${formatNumber(m.lastReading.value, 3)} ngày ${formatDate(m.lastReading.observedAt)}` : 'Phòng chưa có số nào. Nhập số đang hiện trên công tơ.',
@@ -158,18 +167,33 @@ export default async function ContractNewPage(ctx) {
   };
 
   const selectRoom = async (id) => {
-    room = id ? await roomsApi.get(id) : null;
+    roomReady = false;
+    room = null;
+    renderRoomPart();
+    if (input('roomId')) input('roomId').value = id || '';
+    const selected = id ? await roomsApi.get(id) : null;
+    if (input('roomId') && input('roomId').value !== id) return;
+    room = selected;
     if (input('roomId')) input('roomId').value = id || '';
     renderRoomPart();
+    roomReady = Boolean(room);
   };
 
   input('propertyId')?.addEventListener('change', async (event) => {
     propertyId = event.target.value;
     room = null;
+    roomReady = false;
     renderRoomPart();
     await loadRooms();
   });
-  input('roomId')?.addEventListener('change', (event) => selectRoom(event.target.value));
+  input('roomId')?.addEventListener('change', async (event) => {
+    try { await selectRoom(event.target.value); }
+    catch (error) {
+      const alert = form.querySelector('[data-form-alert]');
+      setHtml(alert, note(error.detail || error.message, { tone: 'danger' }));
+      alert.hidden = false;
+    }
+  });
   input('tenantId')?.addEventListener('change', (event) => {
     const ts = event.target.tomselect;
     tenantLabel = ts?.options[event.target.value]?.text || null;
@@ -186,8 +210,15 @@ export default async function ContractNewPage(ctx) {
     renderSummary();
   };
   form.querySelector('[data-add-tenant]')?.addEventListener('click', async () => {
-    const created = await tenantFormModal();
+    const created = await tenantFormModal(null, { forContract: true });
     if (created) pickTenant(created);
+  });
+  form.querySelector('[data-edit-tenant]').addEventListener('click', async () => {
+    const id = existing?.representative.id || input('tenantId')?.value;
+    if (!id) { toast('Chọn khách thuê trước khi bổ sung thông tin.'); return; }
+    const tenant = await tenantsApi.get(id);
+    const updated = await tenantFormModal(tenant, { forContract: true });
+    if (updated && !existing) pickTenant(updated);
   });
   form.querySelector('[data-from-inquiry]')?.addEventListener('click', async (event) => {
     const { runAction } = await import('../../components/dialogs.js');
@@ -231,14 +262,20 @@ export default async function ContractNewPage(ctx) {
     fields,
     validate: (v) => (v.moveInOn && v.lastDay && v.lastDay <= v.moveInOn ? { lastDay: ['Ngày cuối phải sau ngày vào ở.'] } : null),
     onSubmit: async (v, { idempotencyKey }) => {
-      if (!room) throw new FormError('Chọn phòng trước khi tạo hợp đồng.');
+      if (!room || !roomReady) throw new FormError('Dữ liệu phòng chưa sẵn sàng. Chọn lại phòng trước khi tạo hợp đồng.');
+      const tenant = await tenantsApi.get(existing?.representative.id || v.tenantId);
+      const profileErrors = Object.values(contractTenantErrors(tenant)).flat();
+      if (profileErrors.length) throw new FormError(`${profileErrors.join(' ')} Bấm “Bổ sung thông tin khách” để cập nhật.`);
       if (uploader.busy) throw new FormError('Tệp đang tải lên. Chờ tải xong rồi lưu lại.');
       const [signed, ...extras] = uploader.fileIds;
       if (!signed) throw new FormError('Cần tải lên bản hợp đồng đã ký (ảnh hoặc PDF).');
-      const rates = room.rates.effective.filter((r) => r.chargeType.category !== 'compensation').map((r) => ({
-        chargeTypeId: r.chargeType.id, unitPrice: r.chargeType.category === 'rent' ? v.rent : v.rate[r.chargeType.code],
+      const rates = room.rates.effective.filter((r) => r.chargeType.category !== 'compensation').map((r) => {
+        const price = r.chargeType.category === 'rent' ? v.rent : v.rate?.[r.chargeType.code];
+        if (price == null) throw new FormError(`Cần nhập giá ${r.chargeType.name}. Chọn lại phòng nếu trường giá chưa hiển thị.`);
+        return {
+        chargeTypeId: r.chargeType.id, unitPrice: price,
         calculationMethod: r.calculationMethod, billingCycle: r.billingCycle, prorationMode: r.prorationMode,
-      }));
+      }; });
       const common = {
         contract: { endsOn: addDays(v.lastDay, 1), requiredDeposit: v.requiredDeposit, invoiceDay: billing.invoiceDay, dueAfterDays: billing.dueAfterDays, prorationPolicy: billing.prorationPolicy || 'actual_days', termsText: v.termsText, rates },
         signature: { signatureMethod: 'paper', signedAt: new Date().toISOString(), signedFileId: signed },

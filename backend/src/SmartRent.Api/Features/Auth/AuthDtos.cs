@@ -14,13 +14,6 @@ public class LoginRequest
     [Required(ErrorMessage = "Mật khẩu không được để trống")]
     public string Password { get; set; } = null!;
 
-    /// <summary>
-    /// Khu vực đăng nhập: 'admin' (chủ trọ) hoặc 'customer' (khách thuê)
-    /// </summary>
-    public string? Audience
-    {
-        get; set;
-    }
 }
 
 /// <summary>

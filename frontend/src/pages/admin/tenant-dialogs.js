@@ -5,6 +5,7 @@ import { note } from '../../components/ui.js';
 import { ApiError } from '../../services/errors.js';
 import { tenantsApi } from '../../services/api.js';
 import { todayIso } from '../../utils/date.js';
+import { contractTenantErrors } from '../../utils/contract-tenant.js';
 
 const FIELDS = [
   { name: 'fullName', label: 'Họ tên', required: true },
@@ -17,7 +18,7 @@ const FIELDS = [
   { name: 'notes', label: 'Ghi chú', type: 'textarea', rows: 2, optional: true },
 ];
 
-export function tenantFormModal(tenant) {
+export function tenantFormModal(tenant, { forContract = false } = {}) {
   const values = tenant ? { ...tenant, addressLine: tenant.address?.line } : {};
   const save = async (v) => {
     if (tenant) return tenantsApi.update(tenant.id, { ...v, locality: tenant.address?.locality });
@@ -30,7 +31,10 @@ export function tenantFormModal(tenant) {
       return tenantsApi.create({ ...v, confirmDuplicate: true });
     }
   };
-  return formModal({ title: tenant ? `Sửa thông tin ${tenant.fullName}` : 'Thêm khách thuê', size: 'lg', submitLabel: tenant ? 'Lưu thay đổi' : 'Thêm khách', fields: FIELDS, values, onSubmit: save });
+  const fields = FIELDS.map((field) => forContract && ['phone', 'dateOfBirth'].includes(field.name)
+    ? { ...field, required: true, optional: false, help: field.name === 'dateOfBirth' ? 'Người đứng tên hợp đồng phải đủ 18 tuổi.' : '' } : field);
+  return formModal({ title: tenant ? `Sửa thông tin ${tenant.fullName}` : 'Thêm khách thuê', size: 'lg', submitLabel: tenant ? 'Lưu thay đổi' : 'Thêm khách', fields, values, onSubmit: save,
+    validate: forContract ? contractTenantErrors : undefined });
 }
 
 export function tenantPasswordModal(tenant) {

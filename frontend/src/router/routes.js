@@ -20,7 +20,7 @@ export const ROUTES = [
   member('/notifications', () => import('../pages/shared/notifications.js')),
 
   // Xác thực: cửa đăng nhập riêng cho admin, không cho đăng ký admin.
-  { path: '/admin/login', layout: 'auth', auth: 'guest', load: () => import('../pages/auth/login.js') },
+  { path: '/admin/login', redirect: '/login' },
   { path: '/admin/forgot-password', layout: 'auth', auth: 'none', load: () => import('../pages/auth/forgot.js') },
   { path: '/admin/reset-password', layout: 'auth', auth: 'none', load: () => import('../pages/auth/reset.js') },
   { path: '/login', layout: 'auth', auth: 'guest', load: () => import('../pages/auth/login.js') },

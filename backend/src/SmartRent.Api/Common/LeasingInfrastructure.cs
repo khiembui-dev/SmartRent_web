@@ -86,7 +86,17 @@ public abstract class LeasingController : ControllerBase
     protected static async Task CommitAsync(NpgsqlTransaction transaction, CancellationToken ct)
     { try { await transaction.CommitAsync(ct); } catch (PostgresException e) { throw new LeaseHttpException(422, e.MessageText, "Dữ liệu không thỏa quy tắc nghiệp vụ."); } }
     protected ObjectResult LeaseProblem(LeaseHttpException e) => StatusCode(e.Status, new { code = e.Code, detail = e.Message });
-    protected ObjectResult DatabaseProblem(PostgresException e) => StatusCode(e.SqlState is "23505" ? 409 : 422, new { code = e.MessageText, detail = "Dữ liệu không thỏa quy tắc nghiệp vụ." });
+    protected ObjectResult DatabaseProblem(PostgresException e)
+    {
+        // Constraint violations describe invalid input; SQL/programming errors are server failures.
+        if (e.SqlState.StartsWith("23", StringComparison.Ordinal) || e.SqlState == "P0001")
+            return StatusCode(e.SqlState is "23505" or "23P01" ? 409 : 422,
+                new { code = e.MessageText, detail = "Dữ liệu không thỏa quy tắc nghiệp vụ." });
+
+        HttpContext.RequestServices.GetService<ILogger<LeasingController>>()?
+            .LogError(e, "Database request failed with SQLSTATE {SqlState}", e.SqlState);
+        return StatusCode(500, new { code = "database_error", detail = "Máy chủ gặp lỗi khi tải hoặc lưu dữ liệu. Vui lòng thử lại sau." });
+    }
 }
 public sealed class LeaseHttpException(int status, string code, string message) : Exception(message)
 { public int Status { get; } = status; public string Code { get; } = code; }

@@ -1,11 +1,11 @@
+import { customerViewing, bindCustomerViewings } from '../../../components/customer-viewings.js';
 // Trang Thuê phòng: chỉ có phòng đang trống ở admin. Lọc và phân trang ở máy chủ.
 import { errorState, icon, link, loadingBlock } from '../../../components/ui.js';
 import { replaceQuery } from '../../../router/router.js';
 import { portalApi, publicApi } from '../../../services/api.js';
 import { session } from '../../../services/session.js';
-import { formatDateTime } from '../../../utils/date.js';
 import { html, setHtml } from '../../../utils/html.js';
-import { BUDGETS, budgetQuery, pageHead, pager, roomCard, viewingBadge } from '../common.js';
+import { BUDGETS, budgetQuery, pageHead, pager, roomCard } from '../common.js';
 
 const PAGE_SIZE = 12;
 const SORTS = [
@@ -13,21 +13,14 @@ const SORTS = [
   { value: '-price', label: 'Giá cao trước' },
   { value: 'newest', label: 'Mới đăng' },
 ];
-const OPEN_STATUS = ['new', 'accepted', 'consulting', 'scheduled', 'viewing', 'approved'];
 
 function myViewings(items) {
-  const open = items.filter((q) => OPEN_STATUS.includes(q.status));
-  if (!open.length) return '';
-  return html`<section class="cu-card cu-viewings" aria-label="Lịch xem phòng của bạn">
-    <h2>Lịch xem phòng của bạn</h2>
-    <ul>${open.map((q) => html`<li>
-      <span class="sr-plate">${q.room.code}</span>
-      <span class="cu-viewing-text">
-        <a href="${link(`/rooms/${q.slug}`)}">${q.room.propertyName}</a>
-        <small>${q.scheduledAt ? `Đã hẹn ${formatDateTime(q.scheduledAt)}` : q.preferredViewingAt ? `Bạn muốn xem lúc ${formatDateTime(q.preferredViewingAt)}, chờ quản lý xác nhận` : 'Chờ quản lý xác nhận'}</small>
-      </span>
-      ${viewingBadge(q.status)}
-    </li>`)}</ul>
+  if (!items.length) return '';
+  const closed = items.filter((q) => ['cancelled', 'rejected', 'converted', 'completed', 'no_show'].includes(q.status));
+  const active = items.filter((q) => !closed.includes(q));
+  return html`<section aria-label="Lịch xem phòng của bạn"><h2 class="h5">Lịch xem phòng của bạn</h2>
+    ${active.map(customerViewing)}
+    ${closed.length ? html`<details class="mb-3"><summary>Lịch đã kết thúc (${closed.length})</summary>${closed.slice(0, 10).map(customerViewing)}</details>` : ''}
   </section>`;
 }
 
@@ -103,7 +96,10 @@ export default async function RoomsPage(ctx) {
     session.isCustomer ? portalApi.inquiries() : Promise.resolve([]),
   ]);
   if (ctx.signal.aborted) return;
-  if (viewingsResult.status === 'fulfilled') setHtml($('[data-viewings]'), myViewings(viewingsResult.value));
+  let myRequests = viewingsResult.status === 'fulfilled' ? viewingsResult.value : [];
+  const reloadViewings = async () => { myRequests = await portalApi.inquiries(); setHtml($('[data-viewings]'), myViewings(myRequests)); };
+  setHtml($('[data-viewings]'), myViewings(myRequests));
+  ctx.onCleanup(bindCustomerViewings($('[data-viewings]'), () => myRequests, reloadViewings));
   const filters = filtersResult.status === 'fulfilled' ? filtersResult.value : null;
   setHtml($('[data-filters]'), html`
     ${select('locality', 'Khu vực', 'Mọi khu vực', (filters?.provinces || []).flatMap((p) => p.localities).map((l) => ({ value: l, label: l })))}

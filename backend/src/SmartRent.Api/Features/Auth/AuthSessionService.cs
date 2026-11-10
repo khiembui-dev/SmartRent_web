@@ -16,7 +16,7 @@ public sealed class AuthSessionService(NpgsqlDataSource source)
 {
     private readonly PasswordHasher<object> _hasher = new();
 
-    public async Task<AuthSession?> LoginAsync(string email, string password, string audience,
+    public async Task<AuthSession?> LoginAsync(string email, string password,
         CancellationToken cancellationToken)
     {
         await using var connection = await source.OpenConnectionAsync(cancellationToken);
@@ -41,8 +41,7 @@ public sealed class AuthSessionService(NpgsqlDataSource source)
         PasswordVerificationResult result;
         try { result = _hasher.VerifyHashedPassword(user, user.PasswordHash, password); }
         catch (FormatException) { return null; } // Hash demo bị vô hiệu hóa không được dùng đăng nhập.
-        if (result == PasswordVerificationResult.Failed ||
-            user.Role != (audience == "admin" ? "admin" : "user")) return null;
+        if (result == PasswordVerificationResult.Failed) return null;
 
         var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         var expiresAt = DateTime.UtcNow.AddHours(12);

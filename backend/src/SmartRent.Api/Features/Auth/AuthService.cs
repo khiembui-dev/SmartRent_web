@@ -35,8 +35,6 @@ public class AuthService : IAuthService
 
     public async Task<LoginResponse> LoginAsync(LoginRequest request, string? ipAddress, string? userAgent, CancellationToken ct = default)
     {
-        if (request.Audience is not ("admin" or "customer"))
-            throw new BadRequestException("Khu đăng nhập phải là admin hoặc customer.");
         var normalizedEmail = request.Email.Trim().ToLowerInvariant();
         var user = await _db.Users.FirstOrDefaultAsync(u => u.Email != null && u.Email.ToLower() == normalizedEmail, ct);
 
@@ -79,17 +77,7 @@ public class AuthService : IAuthService
             throw new UnauthorizedException("Email hoặc mật khẩu chưa đúng.");
         }
 
-        // Kiểm tra đúng cửa đăng nhập
-        if (string.Equals(request.Audience, "admin", StringComparison.OrdinalIgnoreCase) && user.Role != "admin")
-        {
-            throw new ForbiddenException("Chỉ tài khoản admin (chủ trọ) được đăng nhập trang quản trị.");
-        }
-        if (string.Equals(request.Audience, "customer", StringComparison.OrdinalIgnoreCase) && user.Role != "user")
-        {
-            throw new ForbiddenException("Tài khoản admin vui lòng đăng nhập tại /admin.");
-        }
-
-        // Đăng nhập thành công
+        // Login is shared; role remains the role stored in the database.
         user.FailedLoginCount = 0;
         user.LockedUntil = null;
         user.LastLoginAt = DateTime.UtcNow;

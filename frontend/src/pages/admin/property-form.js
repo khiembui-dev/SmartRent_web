@@ -6,6 +6,7 @@ import { errorState, icon, link, loadingBlock, note, pageHeader } from '../../co
 import { propertiesApi } from '../../services/api.js';
 import { session } from '../../services/session.js';
 import { html, setHtml } from '../../utils/html.js';
+import { mapUrlError } from '../../utils/maps.js';
 import { dataChanged, getCatalog } from './common.js';
 
 export default async function PropertyFormPage(ctx) {
@@ -27,10 +28,13 @@ export default async function PropertyFormPage(ctx) {
     { name: 'address.line', label: 'Số nhà, tên đường', required: true, placeholder: 'Ví dụ: 12 Nguyễn Gia Trí' },
     { name: 'address.locality', label: 'Phường/xã, quận/huyện', col: 'col-md-6', optional: true },
     { name: 'address.province', label: 'Tỉnh/thành phố', col: 'col-md-6', required: true },
+    { name: 'mapUrl', label: 'Liên kết Google Maps', type: 'url', optional: true, maxLength: 4096, validate: (v) => mapUrlError(v), help: 'Dán liên kết chia sẻ vị trí chính xác. Mọi phòng thuộc cơ sở dùng chung vị trí này.' },
+    { name: 'mapEmbedUrl', label: 'URL nhúng Google Maps', type: 'url', optional: true, maxLength: 4096, validate: (v) => mapUrlError(v, true), help: 'Không bắt buộc. Maps → Chia sẻ → Nhúng bản đồ: lấy URL trong src, không dán toàn bộ iframe. Không có URL nhúng thì khách vẫn mở được liên kết vị trí.' },
+    { name: 'description', label: 'Giới thiệu cơ sở', type: 'textarea', optional: true, maxLength: 3000 },
   ];
   const rateFields = RATE_FIELDS.map((r) => ({ name: `rate.${r.code}`, label: `${r.label} (${r.unit})`, type: 'money', required: true, col: 'col-md-6', min: 0 }));
   const fields = [...infoFields, ...rateFields];
-  const values = { name: property?.name, address: property?.address, rate: property?.prices };
+  const values = { name: property?.name, address: property?.address, mapUrl: property?.mapUrl, mapEmbedUrl: property?.mapEmbedUrl, description: property?.description, rate: property?.prices };
   const back = isEdit ? `/admin/properties/${id}` : '/admin/properties';
 
   setHtml(ctx.outlet, html`${pageHeader({
@@ -59,7 +63,7 @@ export default async function PropertyFormPage(ctx) {
       const charge = (code) => catalog.chargeTypes.find((c) => c.code === code);
       const body = { ...v, rates: RATE_FIELDS.map((r) => ({ chargeTypeId: charge(r.code).id, unitPrice: v.rate[r.code] })) };
       delete body.rate;
-      if (isEdit) Object.assign(body, { code: property.code, description: property.description, contactName: property.contactName, phone: property.phone, email: property.email });
+      if (isEdit) Object.assign(body, { code: property.code, contactName: property.contactName, phone: property.phone, email: property.email });
       const saved = isEdit ? await propertiesApi.update(id, body) : await propertiesApi.create(body);
       binding.reset();
       await session.reload();

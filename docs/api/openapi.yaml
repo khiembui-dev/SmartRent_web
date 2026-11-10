@@ -71,15 +71,12 @@ paths:
       tags:
         - Xác thực
       summary: Đăng nhập
-      description: Đăng nhập bằng email + mật khẩu (ASP.NET Core Identity). Trả access token ngắn hạn; refresh token nên đặt trong cookie HttpOnly, Secure, SameSite=Lax/Strict. Khóa tạm sau nhiều lần sai.
+      description: Đăng nhập chung bằng email và mật khẩu. Role được lấy từ tài khoản trong database; admin vào /admin, user vào khu khách. Client không chọn quyền đăng nhập.
       operationId: postAuthLogin
       x-actor: Khách vãng lai (không đăng nhập)
       x-error-codes:
         - invalid_credentials
         - account_locked
-        - admin_only
-        - customer_only
-        - invalid_audience
       security: []
       requestBody:
         required: true
@@ -2182,6 +2179,8 @@ paths:
       tags:
         - Yêu cầu thuê, lịch xem, giữ chỗ
       summary: Tạo lịch xem
+      description: API cũ đã ngừng tự xếp lịch; trả 409 confirmation_required. Dùng /inquiries/{id}/decision để đề xuất hoặc xác nhận lịch.
+      deprecated: true
       operationId: postInquiriesByIdViewings
       x-actor: Nhân sự đơn vị (X-Organization-Id)
       x-permission: inquiries.write
@@ -8568,7 +8567,7 @@ paths:
       tags:
         - Cổng khách thuê
       summary: Đặt lịch xem phòng
-      description: Bắt buộc đăng nhập. Chỉ nhận phòng đang trống. Yêu cầu hiện ở Lịch xem phòng của admin, không giữ chỗ và không đổi trạng thái phòng.
+      description: Bắt buộc đăng nhập. Số người nguyên từ 1 đến sức chứa phòng. Giờ bắt đầu phải ở tương lai và chậm nhất 20:00 theo Asia/Ho_Chi_Minh. Sau 20:00 chỉ nhận từ ngày mai. Xác nhận mặc định 30 phút, kết thúc chậm nhất 21:00. Yêu cầu chưa giữ phòng.
       operationId: postPortalInquiries
       x-actor: Khách thuê (qua tenants.user_id)
       x-idempotent: true
@@ -8607,6 +8606,55 @@ paths:
           $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationFailed"
+  /api/v1/inquiries/{id}/decision:
+    post:
+      tags: ['Yêu cầu thuê, lịch xem, giữ chỗ']
+      summary: Quản lý xác nhận, đề xuất giờ, từ chối hoặc hủy lịch
+      operationId: postInquiryDecision
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewingDecisionRequest'}
+      responses:
+        '200':
+          description: Yêu cầu sau cập nhật, gồm proposal, negotiationHistory, nextViewing, scheduledAt và scheduledEndsAt.
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
+  /api/v1/portal/inquiries/{id}/decision:
+    post:
+      tags: [Cổng khách thuê]
+      summary: Khách đồng ý, đề xuất giờ khác hoặc hủy yêu cầu của mình
+      operationId: postPortalInquiryDecision
+      description: Kiểm tra quyền sở hữu. Không tự chấp nhận đề xuất của chính mình. Lịch đã chốt giữ nguyên trong lúc chờ đổi giờ.
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ViewingDecisionRequest'}
+      responses:
+        '200':
+          description: Yêu cầu sau cập nhật; giờ mới chỉ có hiệu lực khi bên còn lại đồng ý.
+        '401': {$ref: '#/components/responses/Unauthorized'}
+        '403': {$ref: '#/components/responses/Forbidden'}
+        '404': {$ref: '#/components/responses/NotFound'}
+        '409': {$ref: '#/components/responses/Conflict'}
+        '422': {$ref: '#/components/responses/ValidationFailed'}
   /api/v1/portal/profile:
     get:
       tags:
@@ -9654,12 +9702,8 @@ components:
           type: boolean
     AuthLoginRequest:
       type: object
+      required: [email, password]
       properties:
-        audience:
-          type: string
-          enum: [admin, customer]
-          default: customer
-          description: Admin chỉ đăng nhập cửa admin; khách chỉ đăng nhập cửa customer.
         email:
           type: string
         password:
@@ -14916,6 +14960,29 @@ components:
               type: boolean
             capacity:
               type: integer
+    ViewingDecisionRequest:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [accept, propose, reject, cancel]
+          description: reject chỉ dành cho admin khi chưa có lịch đã chốt.
+        proposalId:
+          type: [string, 'null']
+          description: ID đề xuất hiện tại hoặc null cho giờ khách gửi ban đầu. Dữ liệu cũ trả 409.
+        startsAt:
+          type: string
+          format: date-time
+          description: Bắt buộc khi propose. Thời điểm tương lai, chậm nhất 20:00 theo giờ Việt Nam.
+        endsAt:
+          type: string
+          format: date-time
+          description: Sau startsAt, cùng ngày, chậm nhất 21:00. Mặc định bắt đầu cộng 30 phút.
+        reason:
+          type: string
+          maxLength: 1000
+          description: Bắt buộc cho propose, reject và cancel.
     PortalInquiryRequest:
       type: object
       required:
@@ -14928,10 +14995,12 @@ components:
         preferredViewingAt:
           type: string
           format: date-time
+          description: Thời điểm trong tương lai, chậm nhất 20:00 giờ Việt Nam. Sau 20:00 chọn từ ngày mai.
         occupants:
           type: integer
           minimum: 1
-          maximum: 10
+          maximum: 20
+          description: Không vượt capacity của phòng được chọn; máy chủ trả 422 invalid_occupants nếu vượt sức chứa.
         message:
           type:
             - string
@@ -16043,6 +16112,14 @@ components:
     PropertiesByIdPutRequest:
       type: object
       properties:
+        mapUrl:
+          type: [string, 'null']
+          format: uri
+          description: URL HTTPS Google Maps hoặc link chia sẻ. Phòng kế thừa từ cơ sở.
+        mapEmbedUrl:
+          type: [string, 'null']
+          format: uri
+          description: URL src của Google Maps /maps/embed; không phải toàn bộ thẻ iframe.
         rates:
           type: array
           description: Bảng giá từ form. Với phòng, giá trùng giá cơ sở được coi là kế thừa (không tạo giá riêng, đóng giá riêng nếu có).
@@ -16140,6 +16217,14 @@ components:
     PropertiesRequest:
       type: object
       properties:
+        mapUrl:
+          type: [string, 'null']
+          format: uri
+          description: URL HTTPS Google Maps hoặc link chia sẻ. Phòng kế thừa từ cơ sở.
+        mapEmbedUrl:
+          type: [string, 'null']
+          format: uri
+          description: URL src của Google Maps /maps/embed; không phải toàn bộ thẻ iframe.
         rates:
           type: array
           description: Bảng giá từ form. Với phòng, giá trùng giá cơ sở được coi là kế thừa (không tạo giá riêng, đóng giá riêng nếu có).
@@ -18049,6 +18134,11 @@ components:
     RoomsByIdPutRequest:
       type: object
       properties:
+        listing:
+          $ref: '#/components/schemas/RoomFormListing'
+        roomTypeName:
+          type: string
+          description: Tên hiển thị của loại phòng được chọn.
         rates:
           type: array
           description: Bảng giá từ form. Với phòng, giá trùng giá cơ sở được coi là kế thừa (không tạo giá riêng, đóng giá riêng nếu có).
@@ -18067,8 +18157,7 @@ components:
           description: Giá thuê mới; đóng dòng giá cũ và thêm dòng mới.
         roomTypeId:
           type: string
-          format: uuid
-          description: Không bắt buộc; form quản trị không gửi. Bỏ trống khi tạo phòng thì dùng loại STANDARD của đơn vị, bỏ trống khi sửa thì giữ nguyên.
+          description: ID/code loại phòng từ catalog; form gửi loại phòng được chọn. Bỏ trống giữ nguyên khi sửa.
         occupant:
           $ref: "#/components/schemas/RoomOccupantInput"
         code:
@@ -18239,9 +18328,27 @@ components:
         reason:
           type: string
           minLength: 5
+    RoomFormListing:
+      type: object
+      properties:
+        title:
+          type: [string, 'null']
+          description: Để trống dùng tên phòng và cơ sở.
+        description:
+          type: [string, 'null']
+          description: Để trống dùng mô tả phòng.
+        status:
+          type: string
+          enum: [draft, hidden, published]
+          description: Form mặc định bản nháp; chỉ đăng khi quản lý chọn published.
     RoomsRequest:
       type: object
       properties:
+        listing:
+          $ref: '#/components/schemas/RoomFormListing'
+        roomTypeName:
+          type: string
+          description: Tên hiển thị của loại phòng được chọn.
         rates:
           type: array
           description: Bảng giá từ form. Với phòng, giá trùng giá cơ sở được coi là kế thừa (không tạo giá riêng, đóng giá riêng nếu có).
@@ -18265,8 +18372,7 @@ components:
           format: uuid
         roomTypeId:
           type: string
-          format: uuid
-          description: Không bắt buộc; form quản trị không gửi. Bỏ trống khi tạo phòng thì dùng loại STANDARD của đơn vị, bỏ trống khi sửa thì giữ nguyên.
+          description: ID/code loại phòng từ catalog; form gửi loại phòng được chọn. Bỏ trống giữ nguyên khi sửa.
         occupant:
           $ref: "#/components/schemas/RoomOccupantInput"
         code:

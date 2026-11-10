@@ -29,6 +29,23 @@ export function parseVnd(input) {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/** Format digits without rounding, and keep the caret beside the same digit. */
+export function formatMoneyEdit(value, position = value.length) {
+  const negative = value.trimStart().startsWith('-');
+  const rawDigits = value.replace(/\D/g, '');
+  const digits = rawDigits.replace(/^0+(?=\d)/, '');
+  const removed = rawDigits.length - digits.length;
+  const before = Math.max(0, value.slice(0, position).replace(/\D/g, '').length - removed);
+  const text = (negative ? '-' : '') + digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  let caret = negative ? 1 : 0;
+  let seen = 0;
+  while (caret < text.length && seen < before) {
+    if (/\d/.test(text[caret])) seen++;
+    caret++;
+  }
+  return { text, caret };
+}
+
 /** "12,5" hoặc "12.5" → 12.5 cho số lượng/chỉ số; dấu chấm phân cách nghìn không dùng ở trường này. */
 export function parseDecimal(input) {
   if (input == null || input === '') return null;

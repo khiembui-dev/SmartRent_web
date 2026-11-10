@@ -77,6 +77,7 @@ public sealed class ContractsController(NpgsqlDataSource db) : BusinessControlle
         var v = versions.FirstOrDefault(x => x.Text("id") == versionId) ?? throw Missing();
         if (v.Text("signedAt") is null)
         {
+            await ContractTenantRules.ValidateAsync(c, t, raw.Id("user_id"), ct);
             v["signedAt"] = DateTimeOffset.Parse(b.Text("signedAt") ?? DateTimeOffset.UtcNow.ToString("O")).ToUniversalTime().ToString("O");
             v["signedBy"] = a;
             v["fileIds"] = new JsonArray(JsonValue.Create(file));

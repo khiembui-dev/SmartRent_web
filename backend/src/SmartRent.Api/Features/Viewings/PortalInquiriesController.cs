@@ -44,16 +44,16 @@ public sealed class PortalInquiriesController(NpgsqlDataSource db) : LeasingCont
                     throw new LeaseHttpException(422, "room_required", "Cần phòng đang đăng tin.");
                 if (await ScalarStringAsync(c, t, "select id::text from v_room_occupancy where id=@id and occupancy_status='available'", ct, P("id", roomId)) is null)
                     throw new LeaseHttpException(409, "room_unavailable", "Phòng không còn trống.");
-                if (input.PreferredViewingAt is DateTimeOffset preferred && preferred <= DateTimeOffset.UtcNow)
-                    throw new LeaseHttpException(422, "invalid_preferred_time", "Chọn thời gian xem trong tương lai.");
+                var capacity = await ScalarStringAsync(c, t, "select capacity::text from rooms where id=@id for share", ct, P("id", roomId));
+                ViewingRules.ValidateOccupants(input.Occupants, int.Parse(capacity!));
+                ViewingRules.ValidateTime(input.PreferredViewingAt, DateTimeOffset.UtcNow);
                 var existing = await ScalarStringAsync(c, t, $"select {ViewingSql.InquiryJson("b", true)} from bookings b where b.user_id=@user and b.room_id=@room and b.kind='viewing' and b.status in ('new','accepted','consulting','scheduled') order by b.created_at desc limit 1", ct, P("user", actor), P("room", roomId));
                 if (existing is not null)
                 {
                     await t.RollbackAsync(ct);
                     return Content(existing, "application/json");
                 }
-                var profile = await ScalarStringAsync(c, t, "select display_name from users where id=@id", ct, P("id", actor));
-                var row = await ScalarStringAsync(c, t, $"""insert into bookings(code,user_id,room_id,kind,status,contact_name,phone,email,occupants,preferred_viewing_at,desired_on,message) select next_code('INQ'),u.id,@room,'viewing','new',coalesce(nullif(@name,''),u.display_name),coalesce(nullif(@phone,''),u.phone),coalesce(nullif(@email,''),u.email),@occupants,@preferred,@desired,@message from users u where u.id=@user returning {ViewingSql.InquiryJson("bookings", true)}""", ct, P("user", actor), P("room", roomId), P("name", input.ContactName ?? ""), P("phone", input.Phone ?? ""), P("email", input.Email ?? ""), P("occupants", Math.Clamp(input.Occupants ?? 1, (short)1, (short)20)), P("preferred", input.PreferredViewingAt), P("desired", input.DesiredOn), P("message", input.Message));
+                var row = await ScalarStringAsync(c, t, $"""insert into bookings(code,user_id,room_id,kind,status,contact_name,phone,email,occupants,preferred_viewing_at,desired_on,message) select next_code('INQ'),u.id,@room,'viewing','new',coalesce(nullif(@name,''),u.display_name),coalesce(nullif(@phone,''),u.phone),coalesce(nullif(@email,''),u.email),@occupants,@preferred,@desired,@message from users u where u.id=@user returning {ViewingSql.InquiryJson("bookings", true)}""", ct, P("user", actor), P("room", roomId), P("name", input.ContactName ?? ""), P("phone", input.Phone ?? ""), P("email", input.Email ?? ""), P("occupants", input.Occupants), P("preferred", input.PreferredViewingAt), P("desired", input.DesiredOn), P("message", input.Message));
                 await CommitAsync(t, ct);
                 return Content(row!, "application/json");
             }

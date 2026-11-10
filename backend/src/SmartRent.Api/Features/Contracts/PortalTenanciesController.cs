@@ -47,7 +47,15 @@ public sealed class PortalTenanciesController(NpgsqlDataSource db) : BusinessCon
         var detail = await ContractsController.Detail(c, t, id, ct);
         var residents = new List<JsonObject>();
         if (finance)
-            residents = await Rows(c, t, "select jsonb_build_object('id',u.id,'fullName',u.display_name,'joinedOn',x->>'joinedOn','leftOn',x->>'leftOn','relationship',x->>'relationship)::text from contracts c cross join lateral jsonb_array_elements(c.occupants)x join users u on u.id=(x->>'userId')::uuid where c.id=@id", ct, "id", id);
+            residents = await Rows(c, t, """
+                select jsonb_build_object(
+                    'id',u.id,'fullName',u.display_name,'joinedOn',x->>'joinedOn',
+                    'leftOn',x->>'leftOn','relationship',x->>'relationship')::text
+                from contracts c
+                cross join lateral jsonb_array_elements(c.occupants) x
+                join users u on u.id=(x->>'userId')::uuid
+                where c.id=@id
+                """, ct, "id", id);
         var handovers = new JsonArray();
         if (finance)
         {

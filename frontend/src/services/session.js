@@ -101,8 +101,8 @@ export const session = {
     return state.me;
   },
 
-  async login(email, password, audience = 'customer') {
-    const result = await authApi.login(email, password, audience);
+  async login(email, password) {
+    const result = await authApi.login(email, password);
     authState.setToken(result.accessToken, result.expiresAt);
     await this.reload();
     return state.me;

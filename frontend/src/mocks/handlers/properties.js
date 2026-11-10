@@ -1,3 +1,4 @@
+import { mapUrlError } from '../../utils/maps.js';
 // Cơ sở, phòng, giá, tin đăng, ảnh, tài sản và danh mục.
 import { uuid } from '../../utils/ids.js';
 import { compareIso, isIsoDate, vnDateTimeToInstant } from '../../utils/date.js';
@@ -51,6 +52,20 @@ function syncRoomRates(ctx, room, rates) {
   }
 }
 
+function syncListing(ctx, room) {
+  const b = ctx.body.listing;
+  if (!b) return;
+  if (!['draft', 'hidden', 'published'].includes(b.status)) fail(422, 'validation_failed', 'Trạng thái tin không hợp lệ.');
+  let listing = ctx.db.roomListings.find((l) => l.roomId === room.id);
+  if (!listing) {
+    listing = { id: uuid(), roomId: room.id, slug: `${slugify(room.code)}-${room.id.slice(0,8)}`, createdAt: ctx.now };
+    ctx.db.roomListings.push(listing);
+  }
+  if (b.status === 'published' && ![...roomRates(ctx.db, room.id, ctx.today).values()].some(({ rate }) => rate.unitPrice > 0 && find(ctx.db.chargeTypes, rate.chargeTypeId)?.category === 'rent')) fail(422, 'validation_failed', 'Cần giá phòng trước khi đăng tin.');
+  Object.assign(listing, { title: b.title?.trim() || `${room.name} – ${find(ctx.db.properties, room.propertyId).name}`, description: b.description || null, status: b.status, updatedAt: ctx.now });
+  if (b.status === 'published') listing.publishedAt ||= ctx.now;
+}
+
 function addRoomImage(ctx, room, fileId, caption) {
   const file = must(ctx.db.files, fileId, 'tệp');
   if (file.visibility !== 'public') rule('file_not_public', 'Ảnh phòng phải là tệp công khai.');
@@ -72,6 +87,7 @@ function validateProperty(ctx, b, existing) {
     v.number('billingSettings.dueAfterDays', b.billingSettings.dueAfterDays, 'Số ngày đến hạn', { min: 0, max: 365 });
     v.number('billingSettings.contractWarningDays', b.billingSettings.contractWarningDays, 'Mốc cảnh báo hợp đồng', { min: 0, max: 365 });
   }
+  for (const key of ['mapUrl', 'mapEmbedUrl']) { const error = mapUrlError(b[key], key === 'mapEmbedUrl'); if (error) v.add(key, error); }
   v.check();
   if (b.code && ctx.db.properties.some((p) => p.organizationId === ctx.organizationId && p.code === b.code && p.id !== existing?.id)) {
     conflict('property_code_taken', `Mã cơ sở ${b.code} đã được dùng trong đơn vị.`, { code: ['Mã đã tồn tại.'] });
@@ -83,7 +99,7 @@ function propertyDetail(ctx, p) {
   const plan = db.ratePlans.find((x) => x.propertyId === p.id);
   return {
     ...propertySummary(db, p, ctx.today),
-    description: p.description, email: p.email,
+    description: p.description, email: p.email, mapUrl: p.mapUrl || null, mapEmbedUrl: p.mapEmbedUrl || null,
     billingSettings: db.billingSettings.find((s) => s.propertyId === p.id),
     rates: planRates(db, plan, 'property'),
     periods: db.billingPeriods.filter((x) => x.propertyId === p.id).sort((a, b) => compareIso(b.monthStart, a.monthStart)).slice(0, 6),
@@ -99,7 +115,7 @@ function roomDetail(ctx, room) {
   const allocations = db.roomAllocations.filter((a) => a.roomId === room.id).sort((a, b) => compareIso(b.startsOn, a.startsOn));
   return {
     ...summary,
-    description: room.description, rulesText: room.rulesText,
+    description: room.description, rulesText: room.rulesText, address: find(db.properties, room.propertyId).address, mapUrl: find(db.properties, room.propertyId).mapUrl || null, mapEmbedUrl: find(db.properties, room.propertyId).mapEmbedUrl || null,
     amenities: room.amenityIds.map((id) => find(db.amenities, id)).filter(Boolean).map((a) => ({ id: a.id, code: a.code, name: a.name, icon: a.icon })),
     images: [...room.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => ({ ...i, file: i.fileId ? fileDto(db, i.fileId) : null })),
     assets: db.roomAssets.filter((a) => a.roomId === room.id),
@@ -214,7 +230,7 @@ export default function register(r) {
     const p = {
       id: uuid(), organizationId: ctx.organizationId, code: b.code || generatePropertyCode(ctx, b.name), name: b.name.trim(),
       address: { line: b.address.line, locality: b.address.locality || null, province: b.address.province, latitude: null, longitude: null },
-      description: b.description || null, contactName: b.contactName || null, phone: b.phone || null, email: b.email || null, isActive: true, createdAt: ctx.now,
+      mapUrl: b.mapUrl || null, mapEmbedUrl: b.mapEmbedUrl || null, description: b.description || null, contactName: b.contactName || null, phone: b.phone || null, email: b.email || null, isActive: true, createdAt: ctx.now,
     };
     ctx.db.properties.push(p);
     ctx.db.billingSettings.push({ propertyId: p.id, invoiceDay: 28, dueAfterDays: 7, contractWarningDays: 30, prorationPolicy: 'actual_days', timezone: 'Asia/Ho_Chi_Minh', ...(b.billingSettings || {}) });
@@ -231,6 +247,7 @@ export default function register(r) {
     const p = propertyInScope(ctx, ctx.params.id);
     validateProperty(ctx, ctx.body, p);
     const rates = validateRates(ctx, ctx.body.rates);
+    for (const key of ['mapUrl', 'mapEmbedUrl']) if (Object.hasOwn(ctx.body, key)) p[key] = ctx.body[key] || null;
     const before = { code: p.code, name: p.name, address: p.address };
     Object.assign(p, {
       code: ctx.body.code, name: ctx.body.name.trim(), description: ctx.body.description || null, contactName: ctx.body.contactName || null,
@@ -340,6 +357,7 @@ export default function register(r) {
     });
     if (b.occupant) registerExistingTenancy(ctx, room, b.occupant);
     audit(ctx.db, ctx, { action: 'INSERT', tableName: 'rooms', recordId: room.id, after: { code: room.code, propertyId: room.propertyId } });
+    syncListing(ctx, room);
     return roomDetail(ctx, room);
   }, { perm: 'rooms.write' });
 
@@ -369,6 +387,7 @@ export default function register(r) {
     (b.imageFileIds || []).forEach((fileId) => addRoomImage(ctx, room, fileId));
     if (b.occupant) registerExistingTenancy(ctx, room, b.occupant);
     audit(ctx.db, ctx, { action: 'UPDATE', tableName: 'rooms', recordId: room.id, before, after: { code: room.code, areaM2: room.areaM2, capacity: room.capacity, requiredDeposit: room.requiredDeposit } });
+    syncListing(ctx, room);
     return roomDetail(ctx, room);
   }, { perm: 'rooms.write' });
 
@@ -405,6 +424,7 @@ export default function register(r) {
       const listing = ctx.db.roomListings.find((l) => l.roomId === room.id);
       if (listing?.status === 'published') listing.status = 'hidden';
     }
+    syncListing(ctx, room);
     return roomDetail(ctx, room);
   }, { perm: 'rooms.write' });
 

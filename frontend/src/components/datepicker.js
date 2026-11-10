@@ -3,6 +3,7 @@
 import flatpickr from 'flatpickr';
 import { Vietnamese } from 'flatpickr/dist/esm/l10n/vn.js';
 import 'flatpickr/dist/flatpickr.min.css';
+import { viewingBounds } from '../utils/viewing.js';
 
 flatpickr.localize(Vietnamese);
 
@@ -11,6 +12,15 @@ export function initDatepickers(root) {
   root.querySelectorAll('[data-datepicker]').forEach((el) => {
     if (el._flatpickr) return;
     const withTime = el.dataset.enableTime === 'true';
+    const viewingHours = el.dataset.viewingHours === 'true';
+    const refreshViewingBounds = (dates, value, picker) => {
+      if (!viewingHours) return;
+      const { min } = viewingBounds();
+      picker.set('minDate', min);
+      const selected = picker.selectedDates[0];
+      const selectedDay = selected ? picker.formatDate(selected, 'Y-m-d') : min.slice(0, 10);
+      picker.set('minTime', selectedDay === min.slice(0, 10) ? min.slice(11) : '00:00');
+    };
     const instance = flatpickr(el, {
       allowInput: true,
       altInput: true,
@@ -20,8 +30,10 @@ export function initDatepickers(root) {
       time_24hr: true,
       minDate: el.dataset.min || null,
       maxDate: el.dataset.max || null,
+      ...(viewingHours ? { maxTime: '20:00', minuteIncrement: 1, onReady: refreshViewingBounds, onOpen: refreshViewingBounds } : {}),
       disableMobile: true,
-      onChange: () => {
+      onChange: (dates, value, picker) => {
+        refreshViewingBounds(dates, value, picker);
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       },

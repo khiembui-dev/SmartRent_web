@@ -1,6 +1,8 @@
+import { decideViewing, viewingFields } from '../viewing-workflow.js';
 // Cổng khách thuê: chỉ dữ liệu của chính khách. Người ở cùng không xem công nợ/hóa đơn của người đại diện.
 import { uuid } from '../../utils/ids.js';
 import { addDays, compareIso, formatDateTime, isIsoDate } from '../../utils/date.js';
+import { viewingTimeError } from '../../utils/viewing.js';
 import { conflict, fail, listResponse, rule, validator } from '../respond.js';
 import { contractStatus, createPayment, depositHeld, find, must, nextCode, notify, roomRates, staffWith, tenancyContext } from '../engine.js';
 import { invoiceDetail, invoiceSummary, paymentSummary, propertyRef, roomRef, tenantRef, ticketDetail, ticketSummary, userRef, versionDto } from '../dto.js';
@@ -55,7 +57,7 @@ function inquiryView(ctx, q) {
   return {
     id: q.id, code: q.code, status: q.status, room: roomRef(db, room), slug: db.roomListings.find((l) => l.roomId === room.id)?.slug || null,
     preferredViewingAt: q.preferredViewingAt || null, occupants: q.occupants, message: q.message, createdAt: q.createdAt,
-    scheduledAt: viewing?.startsAt || null,
+    ...viewingFields(db, q),
   };
 }
 
@@ -103,17 +105,26 @@ export default function register(r) {
   }, { auth: 'customer' });
 
   // Đặt lịch xem phòng: bắt buộc đăng nhập. Gửi yêu cầu chưa giữ phòng và không đổi trạng thái phòng.
+  r.post('/api/v1/portal/inquiries/:id/decision', (ctx) => {
+    const q = ctx.db.inquiries.find((q) => q.id === ctx.params.id && ctx.tenantRecords.some((t) => t.id === q.tenantId));
+    if (!q) fail(404, 'not_found', 'Không tìm thấy yêu cầu.');
+    decideViewing(ctx, q, false);
+    return inquiryView(ctx, q);
+  }, { auth: 'customer' });
+
   r.post('/api/v1/portal/inquiries', (ctx) => {
     const b = ctx.body;
     const v = validator();
     v.required('slug', b.slug, 'Phòng');
     v.required('preferredViewingAt', b.preferredViewingAt, 'Ngày giờ muốn xem');
-    v.number('occupants', b.occupants, 'Số người ở', { min: 1, max: 10 });
+    v.number('occupants', b.occupants, 'Số người ở', { min: 1, max: 20, decimals: 0 });
     v.check();
-    if (b.preferredViewingAt <= ctx.now) fail(422, 'validation_failed', 'Ngày giờ xem phòng phải ở tương lai.', { preferredViewingAt: ['Chọn thời điểm trong tương lai.'] });
+    const timeError = viewingTimeError(b.preferredViewingAt, ctx.now);
+    if (timeError) fail(422, 'invalid_preferred_time', timeError, { preferredViewingAt: [timeError] });
     const listing = findPublishedListing(ctx.db, b.slug);
     if (!listing) fail(404, 'not_found', 'Tin đăng không còn hiển thị.');
     const room = find(ctx.db.rooms, listing.roomId);
+    if (b.occupants > room.capacity) fail(422, 'invalid_occupants', `Phòng ở tối đa ${room.capacity} người.`, { occupants: [`Số người ở phải từ 1 đến ${room.capacity} người.`] });
     const property = find(ctx.db.properties, room.propertyId);
     if (availability(ctx.db, room, ctx.today).status !== 'available') conflict('room_not_available', 'Phòng này không còn trống. Hãy chọn phòng khác.');
     // Tài khoản đăng ký ở một đơn vị vẫn đặt được phòng của đơn vị khác: tạo hồ sơ ở đơn vị đó để admin thấy.

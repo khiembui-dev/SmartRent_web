@@ -29,34 +29,32 @@ public sealed class ViewingsController(NpgsqlDataSource db) : LeasingController(
     [HttpPost("{id}/result")]
     public async Task<IActionResult> Result(string id, [FromBody] ViewingResult input, CancellationToken ct)
     {
-        if (input.Status is not ("completed" or "no_show" or "cancelled"))
-            return BadRequest(new
-            {
-                code = "invalid_status",
-                message = "Kết quả không hợp lệ."
-            });
-        try
-        {
-            var (c, t, _) = await BeginAsync(true, ct);
-            await using (c)
-            await using (t)
-            {
-                var json = await ScalarStringAsync(c, t, """update bookings set appointments=(select jsonb_agg(case when a->>'id'=@id then jsonb_set(jsonb_set(a,'{status}',to_jsonb(@status::text)),'{resultNotes}',to_jsonb(@notes::text)) else a end) from jsonb_array_elements(appointments) a),status=case when @status='completed' then 'completed' else status end where kind='viewing' and appointments @> jsonb_build_array(jsonb_build_object('id',@id)) returning id::text""", ct, P("id", id), P("status", input.Status), P("notes", input.ResultNotes ?? ""));
-                if (json is null)
-                {
-                    await t.RollbackAsync(ct);
-                    return NotFound();
+        try {
+            var (c,t,actor) = await BeginAsync(true,ct);
+            await using(c) await using(t) {
+                var b = await BusinessData.Row(c,t,"select to_jsonb(b)::text from bookings b where kind='viewing' and appointments @> jsonb_build_array(jsonb_build_object('id',@id)) for update",ct,"id",id);
+                var appointments=b["appointments"]!.AsArray();
+                var appointment=appointments.First(x=>BusinessData.Text(x,"id")==id)!;
+                if (BusinessData.Text(appointment,"status")!="scheduled" || BusinessData.Text(b,"status") is "cancelled" or "rejected" or "converted")
+                    throw new LeaseHttpException(409,"viewing_closed","Lịch xem đã kết thúc.");
+                if (input.Status == "cancelled")
+                    await ViewingWorkflow.Apply(c,t,Guid.Parse(BusinessData.Text(b,"id")!),actor,true,new ViewingDecision("cancel",Reason:input.ResultNotes),ct);
+                else {
+                    if(input.Status is not ("completed" or "no_show")) throw new LeaseHttpException(422,"invalid_status","Kết quả không hợp lệ.");
+                    var boundary=DateTimeOffset.Parse(BusinessData.Text(appointment,input.Status=="no_show"?"endsAt":"startsAt")!);
+                    if(DateTimeOffset.UtcNow < boundary) throw new LeaseHttpException(422,"too_early","Chưa đến thời điểm ghi kết quả buổi xem.");
+                    appointment["status"]=input.Status;
+                    appointment["resultNotes"]=input.ResultNotes;
+                    appointment["recordedAt"]=DateTimeOffset.UtcNow.ToString("O");
+                    await BusinessData.Execute(c,t,"update bookings set status=@status,appointments=@appointments::jsonb,changes=changes-'viewingProposal' where id=@id",ct,
+                        "status",input.Status,"appointments",appointments.ToJsonString(),"id",Guid.Parse(BusinessData.Text(b,"id")!));
+                    await BusinessData.Execute(c,t,"insert into notifications(recipient_id,event_key,title,body,url) values(@user,@event,'Kết quả xem phòng',@body,'/rooms')",ct,
+                        "user",Guid.Parse(BusinessData.Text(b,"user_id")!),"event","viewing-result:"+id,"body",input.Status == "completed" ? "Quản lý đã ghi nhận bạn đến xem phòng." : "Quản lý ghi nhận khách không đến xem phòng.");
                 }
-                await CommitAsync(t, ct);
-                return Ok(new
-                {
-                    id,
-                    status = input.Status
-                });
+                await CommitAsync(t,ct); return Ok(new { id,status=input.Status });
             }
-        }
-        catch (LeaseHttpException e) { return LeaseProblem(e); }
-        catch (PostgresException e) { return DatabaseProblem(e); }
+        } catch(LeaseHttpException e) {return LeaseProblem(e);}
+          catch(PostgresException e) {return DatabaseProblem(e);}
     }
 }
 public sealed record ViewingResult(string? Status, string? ResultNotes);

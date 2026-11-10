@@ -47,9 +47,11 @@ try:
  print('PASS create property, room, amenity, upload, publish and public photo')
  email=tag+'@full.invalid';password=secrets.token_urlsafe(20)
  auth=req('/auth/register','POST',{'fullName':'Full customer','email':email,'password':password,'acceptedTerms':True},role=None);tokens['full']=auth['accessToken'];state['user']=auth['user']['id'];state['email']=email;state['password']=password
- inquiry=req('/portal/inquiries','POST',{'slug':slug,'contactName':'Full customer','occupants':2,'phone':'0900000000','preferredViewingAt':'2026-11-10T09:00:00+07:00'},role='full')
- req('/inquiries/'+inquiry['id']+'/viewings','POST',{'startsAt':'2026-11-10T09:00:00+07:00','endsAt':'2026-11-10T10:00:00+07:00'})
- viewing=next(x for x in req('/viewings')['items'] if x['inquiryId']==inquiry['id']);req('/viewings/'+viewing['id']+'/result','POST',{'status':'completed','resultNotes':'Done'})
+ viewing_day=(datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date()+datetime.timedelta(days=1)).isoformat()
+ inquiry=req('/portal/inquiries','POST',{'slug':slug,'contactName':'Full customer','occupants':2,'phone':'0900000000','preferredViewingAt':viewing_day+'T20:00:00+07:00'},role='full')
+ req('/inquiries/'+inquiry['id']+'/decision','POST',{'action':'accept'})
+ viewing=next(x for x in req('/viewings')['items'] if x['inquiryId']==inquiry['id'])
+ req('/viewings/'+viewing['id']+'/result','POST',{'status':'completed','resultNotes':'Too early'},expected=422)
  print('PASS register, book by slug and manage viewing')
  check={'roomId':r['id'],'tenantId':state['user'],'moveInOn':'2026-10-28','inquiryId':inquiry['id'],
   'contract':{'endsOn':'2027-10-28','requiredDeposit':3000000,'invoiceDay':1,'dueAfterDays':5,'termsText':'Signed agreement','rates':[{'chargeTypeId':'RENT','unitPrice':3000000},*rates]},

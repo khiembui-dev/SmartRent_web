@@ -49,7 +49,7 @@ export function meContext(db, user) {
 
 export default function register(r) {
   r.post('/api/v1/auth/login', (ctx) => {
-    const { email, password, audience = 'customer' } = ctx.body;
+    const { email, password } = ctx.body;
     const v = validator();
     v.required('email', email, 'Email');
     v.required('password', password, 'Mật khẩu');
@@ -57,9 +57,6 @@ export default function register(r) {
     const user = ctx.db.users.find((u) => u.email.toLowerCase() === String(email).trim().toLowerCase());
     if (!user || user.mockPassword !== password) fail(401, 'invalid_credentials', 'Email hoặc mật khẩu chưa đúng.');
     if (!user.isActive) fail(403, 'account_locked', 'Tài khoản đang bị khóa. Liên hệ chủ trọ.');
-    if (!['admin', 'customer'].includes(audience)) fail(422, 'invalid_audience', 'Khu vực đăng nhập không hợp lệ.');
-    if (audience === 'admin' && user.role !== 'admin') fail(403, 'admin_only', 'Chỉ tài khoản admin (chủ trọ) được đăng nhập trang quản trị.');
-    if (audience === 'customer' && user.role !== 'user') fail(403, 'customer_only', 'Tài khoản admin vui lòng đăng nhập tại /admin.');
     return openSession(ctx, user);
   }, { auth: 'public' });
 

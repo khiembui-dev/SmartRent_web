@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { mapLinks, mapUrlError } from '../src/utils/maps.js';
+for (const value of ['javascript:alert(1)', 'https://google.com.evil.invalid/maps', 'http://google.com/maps', 'https://user:pass@google.com/maps', 'https://www.google.com:8080/maps', '<iframe src="https://google.com/maps/embed"></iframe>']) assert.ok(mapUrlError(value));
+for (const value of ['https://www.google.com/maps/search/?api=1&query=10,106', 'https://maps.app.goo.gl/example', 'https://goo.gl/maps/example']) assert.equal(mapUrlError(value), null);
+assert.ok(mapUrlError('https://maps.app.goo.gl/example', true));
+const embed = 'https://www.google.com/maps/embed?pb=example';
+assert.equal(mapUrlError(embed, true), null);
+const shared = 'https://maps.app.goo.gl/example';
+assert.equal(mapLinks({ mapUrl: shared }, 'Address').embed, null);
+assert.equal(mapLinks({ mapUrl: shared }, 'Address').url, shared);
+assert.equal(mapLinks({ mapUrl: shared, mapEmbedUrl: embed }, 'Address').embed, embed);
+assert.ok(mapLinks({}, 'Địa chỉ thử').embed.includes(encodeURIComponent('Địa chỉ thử')));
+console.log('Google Maps link validation, exact pin links and address fallback passed.');

@@ -12,6 +12,7 @@ import { formatNumber, formatVnd, parseVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { dataChanged, getCatalog, invalidateCatalog } from './common.js';
 import { tenantFormModal } from './tenant-dialogs.js';
+import { mapLinks } from '../../utils/maps.js';
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Sẵn sàng cho thuê' },
@@ -40,7 +41,9 @@ export default async function RoomFormPage(ctx) {
   }
 
   const initialProperty = room?.property.id || ctx.query.propertyId || session.propertyId || org.properties[0].id;
+  if (!catalog.roomTypes.length) catalog.roomTypes.push({ id: 'STANDARD', name: 'Phòng tiêu chuẩn' });
   let propertyPrices = {};
+  let loadedProperty = null;
   const charge = (code) => catalog.chargeTypes.find((c) => c.code === code);
   const effective = (code) => room?.rates.effective.find((r) => r.chargeType.code === code);
   const rent = effective('RENT')?.unitPrice;
@@ -57,7 +60,9 @@ export default async function RoomFormPage(ctx) {
     { name: 'areaM2', label: 'Diện tích', type: 'decimal', decimals: 2, unit: 'm²', required: true, col: 'col-md-4', min: 1, max: 500 },
     { name: 'capacity', label: 'Số người tối đa', type: 'number', required: true, col: 'col-md-4', min: 1, max: 20, default: 2 },
     { name: 'floorLabel', label: 'Tầng hoặc khu', optional: true, col: 'col-md-4', placeholder: 'Tầng 1' },
+    { name: 'roomTypeId', label: 'Loại phòng', type: 'select', required: true, options: catalog.roomTypes.map((t) => ({ value: t.id, label: t.name })), default: catalog.roomTypes[0]?.id },
     { name: 'description', label: 'Thông tin thêm', type: 'textarea', rows: 3, optional: true, placeholder: 'Hướng phòng, ban công, ghi chú cho khách xem phòng…' },
+    { name: 'rulesText', label: 'Quy định phòng', type: 'textarea', rows: 3, optional: true, maxLength: 5000, help: 'Hiển thị ở mục Quy định trên trang khách.' },
   ];
   const priceFields = [
     { name: 'rent', label: 'Giá phòng mỗi tháng', type: 'money', required: true, positive: true, col: 'col-md-6' },
@@ -71,13 +76,19 @@ export default async function RoomFormPage(ctx) {
     { name: 'occupant.readings.water', label: 'Số nước lúc vào ở', type: 'decimal', decimals: 3, min: 0, unit: 'm³', col: 'col-md-4', optional: true },
   ];
   const rateFields = ROOM_RATE_FIELDS.map((r) => ({ name: `rate.${r.code}`, label: `${r.label} (${r.unit})`, type: 'money', optional: true, col: 'col-md-6' }));
-  const fields = [...infoFields, ...priceFields, ...rateFields, ...occupantFields];
+  const listingFields = [
+    { name: 'listing.title', label: 'Tiêu đề trên trang khách', optional: true, maxLength: 200, help: 'Để trống để dùng tên phòng và cơ sở.' },
+    { name: 'listing.description', label: 'Mô tả đăng cho khách', type: 'textarea', optional: true, maxLength: 10000, help: 'Để trống để dùng Thông tin thêm ở trên. Nội dung riêng tại đây được ưu tiên hiển thị.' },
+    { name: 'listing.status', label: 'Trạng thái tin đăng', type: 'select', required: true, placeholderOption: false, default: 'draft', options: [{ value: 'draft', label: 'Bản nháp' }, { value: 'hidden', label: 'Ẩn khỏi trang khách' }, { value: 'published', label: 'Đăng lên trang khách' }], help: 'Tin đã đăng chỉ hiện trong danh sách khi phòng còn trống và cơ sở hoạt động.' },
+  ];
+  const fields = [...infoFields, ...priceFields, ...rateFields, ...occupantFields, ...listingFields];
   const values = {
     propertyId: initialProperty, code: room?.code, name: room?.name, areaM2: room?.areaM2, capacity: room?.capacity, floorLabel: room?.floorLabel,
     description: room?.description, rent, requiredDeposit: room?.requiredDeposit, operatingStatus: occupied ? 'occupied' : room?.operatingStatus, rate: roomRate,
+    roomTypeId: room?.roomType?.id, rulesText: room?.rulesText, listing: room?.listing || { status: 'draft' },
   };
   const back = isEdit ? `/admin/rooms/${id}` : '/admin/rooms';
-  const selectedAmenities = new Set(room?.amenities.map((a) => a.id) || []);
+  const selectedAmenities = new Set(room?.amenities.map((a) => a.id || a.code) || []);
 
   const amenityChip = (a) => html`<label class="ad-chip"><input type="checkbox" value="${a.id}" data-amenity ${selectedAmenities.has(a.id) ? 'checked' : ''}><span>${icon(a.icon || 'check2')} ${a.name}</span></label>`;
 
@@ -88,7 +99,7 @@ export default async function RoomFormPage(ctx) {
   <form id="room-form" class="ad-form has-rail" novalidate>
     <div class="ad-form-main">
       ${formAlert()}
-      <section class="sr-panel"><div class="sr-panel-head"><h2>Cơ sở và thông tin phòng</h2></div><div class="sr-panel-body">${renderFields(infoFields, values)}</div></section>
+      <section class="sr-panel"><div class="sr-panel-head"><h2>Cơ sở và thông tin phòng</h2></div><div class="sr-panel-body">${renderFields(infoFields, values)}<div data-location class="mt-3" aria-live="polite"></div></div></section>
       <section class="sr-panel"><div class="sr-panel-head"><h2>Giá phòng và trạng thái</h2></div><div class="sr-panel-body">
         ${renderFields(priceFields, values)}
         ${occupied ? html`<div class="mt-3">${note(html`Phòng đang có khách <strong>${room.currentTenancy.representative.fullName}</strong>. Muốn trả phòng hoặc đổi khách, thao tác ở trang chi tiết phòng hoặc hợp đồng.`)}</div>` : html`<div class="ad-occupant" data-occupant hidden>
@@ -112,6 +123,7 @@ export default async function RoomFormPage(ctx) {
         <div class="ad-gallery-edit" data-existing></div>
         <div data-uploader><input type="file" data-room-images aria-label="Tải ảnh phòng"></div>
       </div></section>
+      <section class="sr-panel"><div class="sr-panel-head"><h2>Nội dung trên trang khách</h2></div><div class="sr-panel-body">${renderFields(listingFields, values)}</div></section>
       <div class="ad-savebar">
         <a class="btn btn-outline-secondary" href="${link(back)}">Hủy</a>
         <button type="submit" class="btn btn-primary">${icon('check2')} ${isEdit ? 'Lưu thay đổi' : 'Thêm phòng'}</button>
@@ -149,6 +161,7 @@ export default async function RoomFormPage(ctx) {
       <p class="ad-rail-sub">${propertyName}</p>
       <dl>
         <div><dt>Giá phòng</dt><dd class="num">${rentValue ? formatVnd(rentValue) : '—'}</dd></div>
+        <div><dt>Tiền cọc đề xuất</dt><dd class="num">${parseVnd(input('requiredDeposit').value) == null ? '—' : formatVnd(parseVnd(input('requiredDeposit').value))}</dd></div>
         <div><dt>Phí cố định mỗi tháng</dt><dd class="num">${formatVnd(monthly - (rentValue || 0))}</dd></div>
         <div class="is-total"><dt>Tổng trước điện nước</dt><dd class="num">${formatVnd(monthly)}</dd></div>
         <div><dt>Điện</dt><dd class="num">${priceText(parseVnd(input('rate.ELECTRICITY').value) ?? propertyPrices.ELECTRICITY, 'đ/kWh')}</dd></div>
@@ -159,8 +172,18 @@ export default async function RoomFormPage(ctx) {
   };
 
   const loadProperty = async (propertyId) => {
+    loadedProperty = null;
+    setHtml(form.querySelector('[data-location]'), html`<p class="small">Đang tải địa chỉ cơ sở…</p>`);
     try {
-      propertyPrices = (await propertiesApi.get(propertyId)).prices;
+      const property = await propertiesApi.get(propertyId);
+      if (input('propertyId').value !== propertyId) return;
+      loadedProperty = property;
+      propertyPrices = property.prices;
+      const address = [property.address.line, property.address.locality, property.address.province].filter(Boolean).join(', ');
+      const maps = mapLinks(property, address);
+      setHtml(form.querySelector('[data-location]'), html`<div class="alert alert-light border mb-0"><strong>Địa chỉ dùng trên trang khách</strong><p class="mb-1">${address}</p>
+        <a href="${maps.url}" target="_blank" rel="noopener noreferrer">Mở Google Maps</a> · <a href="${link(`/admin/properties/${property.id}/edit`)}">Sửa địa chỉ / bản đồ của cơ sở</a>
+        <p class="small text-muted-sr mb-0 mt-1">Mọi phòng của cơ sở kế thừa địa chỉ và vị trí này.</p></div>`);
     } catch (error) {
       await errorDialog(error, 'Không tải được bảng giá cơ sở');
     }
@@ -241,6 +264,7 @@ export default async function RoomFormPage(ctx) {
   const binding = bindForm(form, {
     fields,
     validate: (v) => {
+      if (!loadedProperty || loadedProperty.id !== v.propertyId) return { propertyId: ['Cần tải thành công thông tin cơ sở trước khi lưu.'] };
       if (occupied || v.operatingStatus !== 'occupied') return null;
       const errors = {};
       if (!v.occupant?.tenantId) errors['occupant.tenantId'] = ['Chọn khách đang thuê phòng này.'];
@@ -253,7 +277,7 @@ export default async function RoomFormPage(ctx) {
         .filter((r) => r.unitPrice != null);
       const renting = !occupied && v.operatingStatus === 'occupied';
       const { rate: _rate, occupant, ...rest } = v;
-      const body = { ...rest, rates, amenityIds: [...form.querySelectorAll('[data-amenity]:checked')].map((el) => el.value), imageFileIds: uploader.fileIds, occupant: renting ? occupant : undefined };
+      const body = { ...rest, roomTypeName: catalog.roomTypes.find((t) => t.id === v.roomTypeId)?.name, rates, amenityIds: [...form.querySelectorAll('[data-amenity]:checked')].map((el) => el.value), imageFileIds: uploader.fileIds, occupant: renting ? occupant : undefined };
       if (isEdit) delete body.operatingStatus;
       else if (renting) body.operatingStatus = 'available';
       const saved = isEdit ? await roomsApi.update(id, body) : await roomsApi.create(body);

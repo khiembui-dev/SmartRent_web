@@ -93,6 +93,8 @@ CREATE TABLE properties (
   province text NOT NULL,
   description text,
   is_active boolean NOT NULL DEFAULT true,
+  map_url text,
+  map_embed_url text,
   inactive_reason text,
   invoice_day smallint NOT NULL DEFAULT 1 CHECK (invoice_day BETWEEN 1 AND 31),
   due_after_days smallint NOT NULL DEFAULT 5 CHECK (due_after_days BETWEEN 0 AND 365),

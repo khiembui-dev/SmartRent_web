@@ -1,6 +1,8 @@
+import { decideViewing } from '../viewing-workflow.js';
 // Yêu cầu thuê, lịch xem, giữ chỗ. Giữ chỗ chiếm lịch phòng nhưng KHÔNG phải đang ở.
 import { uuid } from '../../utils/ids.js';
 import { compareIso, formatDateTime, instantToIsoDate, isIsoDate } from '../../utils/date.js';
+import { viewingTimeError } from '../../utils/viewing.js';
 import { conflict, fail, listResponse, rule, validator } from '../respond.js';
 import { audit, createAllocation, find, must, nextCode, notify } from '../engine.js';
 import { inquirySummary, reservationDto, roomSummary, tenantRef, tenantSummary, userRef } from '../dto.js';
@@ -113,6 +115,10 @@ export default function register(r) {
   r.post('/api/v1/inquiries/:id/transitions', (ctx) => {
     const q = inquiryInScope(ctx, ctx.params.id);
     const { action, reason, note } = ctx.body;
+    if (['cancel', 'reject'].includes(action)) {
+      decideViewing(ctx, q, true);
+      return inquiryDetail(ctx, q);
+    }
     const t = TRANSITIONS[action];
     if (!t) fail(422, 'validation_failed', 'Hành động không hợp lệ.', { action: ['Không hỗ trợ.'] });
     if (!t.from.includes(q.status)) conflict('invalid_transition', `Không thể chuyển yêu cầu từ "${q.status}" bằng hành động này. Tải lại để xem trạng thái mới nhất.`);
@@ -155,24 +161,13 @@ export default function register(r) {
     return inquiryDetail(ctx, q);
   }, { perm: 'inquiries.write' });
 
-  r.post('/api/v1/inquiries/:id/viewings', (ctx) => {
+  r.post('/api/v1/inquiries/:id/decision', (ctx) => {
     const q = inquiryInScope(ctx, ctx.params.id);
-    if (!OPEN.includes(q.status)) conflict('inquiry_closed', 'Yêu cầu đã đóng, không thể hẹn xem.');
-    const b = ctx.body;
-    const v = validator();
-    v.required('startsAt', b.startsAt, 'Thời gian bắt đầu');
-    v.required('endsAt', b.endsAt, 'Thời gian kết thúc');
-    v.check();
-    if (b.endsAt <= b.startsAt) fail(422, 'validation_failed', 'Thời gian kết thúc phải sau bắt đầu.', { endsAt: ['Phải sau thời gian bắt đầu.'] });
-    if (b.startsAt < ctx.now) fail(422, 'validation_failed', 'Không hẹn xem trong quá khứ.', { startsAt: ['Chọn thời gian trong tương lai.'] });
-    const viewing = { id: uuid(), inquiryId: q.id, startsAt: b.startsAt, endsAt: b.endsAt, hostUserId: b.hostUserId || ctx.user.id, status: 'scheduled', resultNotes: null };
-    ctx.db.viewings.push(viewing);
-    const from = q.status;
-    if (['new', 'accepted', 'consulting'].includes(q.status)) q.status = 'viewing';
-    if (!q.assignedTo) q.assignedTo = ctx.user.id;
-    ctx.db.inquiryEvents.push({ id: uuid(), inquiryId: q.id, kind: 'status', body: `Hẹn xem lúc ${formatDateTime(b.startsAt)}.`, fromStatus: from, toStatus: q.status, actorId: ctx.user.id, occurredAt: ctx.now });
+    decideViewing(ctx, q, true);
     return inquiryDetail(ctx, q);
   }, { perm: 'inquiries.write' });
+
+  r.post('/api/v1/inquiries/:id/viewings', () => conflict('confirmation_required', 'Hãy xác nhận hoặc đề xuất lịch để hai bên thống nhất.'), { perm: 'inquiries.write' });
 
   r.post('/api/v1/inquiries/:id/tenant', (ctx) => {
     const q = inquiryInScope(ctx, ctx.params.id);
@@ -215,11 +210,17 @@ export default function register(r) {
     v.oneOf('status', ctx.body.status, ['completed', 'no_show', 'cancelled'], 'Kết quả');
     v.check();
     if (viewing.status !== 'scheduled') conflict('viewing_closed', 'Lịch xem đã có kết quả.');
+    if (ctx.body.status === 'cancelled') {
+      const q = find(ctx.db.inquiries, viewing.inquiryId);
+      decideViewing({ ...ctx, body: { action: 'cancel', reason: ctx.body.resultNotes } }, q, true);
+      return { ...viewing, inquiry: inquirySummary(ctx.db, q) };
+    }
+    if (new Date(ctx.now) < new Date(ctx.body.status === 'no_show' ? viewing.endsAt : viewing.startsAt)) fail(422, 'too_early', 'Chưa đến thời điểm ghi kết quả.');
     viewing.status = ctx.body.status;
     viewing.resultNotes = ctx.body.resultNotes || null;
     const q = find(ctx.db.inquiries, viewing.inquiryId);
     ctx.db.inquiryEvents.push({ id: uuid(), inquiryId: q.id, kind: 'note', body: `Kết quả xem phòng: ${{ completed: 'đã xem', no_show: 'khách không đến', cancelled: 'đã hủy' }[ctx.body.status]}. ${viewing.resultNotes || ''}`.trim(), fromStatus: null, toStatus: null, actorId: ctx.user.id, occurredAt: ctx.now });
-    if (q.status === 'viewing') q.status = 'consulting';
+    q.status = ctx.body.status; q.proposal = null;
     return { ...viewing, inquiry: inquirySummary(ctx.db, q) };
   }, { perm: 'inquiries.write' });
 

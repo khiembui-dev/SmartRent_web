@@ -3,7 +3,7 @@
 import { setLeaveGuard } from '../router/router.js';
 import { ApiError, errorHint } from '../services/errors.js';
 import { uuid } from '../utils/ids.js';
-import { formatNumber, parseDecimal, parseVnd } from '../utils/money.js';
+import { formatNumber, formatMoneyEdit, parseDecimal, parseVnd } from '../utils/money.js';
 import { attrs, escapeHtml, html, raw } from '../utils/html.js';
 import { isIsoDate, localInputToInstant, monthOptions } from '../utils/date.js';
 
@@ -213,16 +213,37 @@ export function setSubmitting(form, submitting, label = 'Đang lưu…') {
   form.setAttribute('aria-busy', submitting ? 'true' : 'false');
 }
 
-/** Định dạng phân cách nghìn khi gõ tiền, giữ vị trí con trỏ ở cuối. */
+/** Định dạng tiền và giữ vị trí chọn theo chữ số thay vì dấu phân cách. */
 function bindMoneyInputs(root) {
   const handler = (event) => {
     const el = event.target;
     if (!el.matches('[data-money]')) return;
-    const n = parseVnd(el.value);
-    el.value = n == null ? '' : formatNumber(n);
+    if (event.isComposing) return;
+    const start = formatMoneyEdit(el.value, el.selectionStart ?? el.value.length);
+    const end = formatMoneyEdit(el.value, el.selectionEnd ?? el.value.length);
+    el.value = start.text;
+    el.setSelectionRange(start.caret, end.caret);
+  };
+  const beforeInput = (event) => {
+    const el = event.target;
+    if (!el.matches('[data-money]') || el.selectionStart !== el.selectionEnd) return;
+    const pos = el.selectionStart;
+    const backward = event.inputType === 'deleteContentBackward' && el.value[pos - 1] === '.';
+    const forward = event.inputType === 'deleteContentForward' && el.value[pos] === '.';
+    if (!backward && !forward) return;
+    event.preventDefault();
+    const start = backward ? Math.max(0, pos - 2) : pos;
+    const end = backward ? pos : Math.min(el.value.length, pos + 2);
+    el.value = el.value.slice(0, start) + el.value.slice(end);
+    el.setSelectionRange(start, start);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
   };
   root.addEventListener('input', handler);
-  return () => root.removeEventListener('input', handler);
+  root.addEventListener('beforeinput', beforeInput);
+  return () => {
+    root.removeEventListener('input', handler);
+    root.removeEventListener('beforeinput', beforeInput);
+  };
 }
 
 /** Khởi tạo các điều khiển nâng cao trong vùng (chỉ tải thư viện khi có trường cần). */

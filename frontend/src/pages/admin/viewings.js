@@ -1,5 +1,6 @@
 // Lịch xem phòng: bên trái là yêu cầu khách gửi từ trang tìm phòng, bên phải là lịch hẹn theo ngày.
 // Gửi yêu cầu chưa giữ phòng; sau khi xem xong có thể tạo hợp đồng ngay từ lịch hẹn.
+import { negotiationInfo, proposalModal, canAcceptViewing } from '../../components/viewing-negotiation.js';
 import { propertySelect } from '../../components/admin-kit.js';
 import { badge } from '../../components/badges.js';
 import { reasonDialog, runAction, toast } from '../../components/dialogs.js';
@@ -33,7 +34,7 @@ export default async function ViewingsPage(ctx) {
 
   setHtml(ctx.outlet, html`${pageHeader({
     title: 'Lịch xem phòng',
-    subtitle: 'Yêu cầu khách gửi từ trang tìm phòng về đây. Xếp lịch, ghi kết quả rồi tạo hợp đồng.',
+    subtitle: 'Xác nhận giờ khách chọn hoặc đề xuất giờ khác. Ghi kết quả sau buổi xem.',
     actions: html`<div class="ad-head-filters">${propertySelect({ id: 'vw-property', value: propertyId })}</div>`,
   })}<div data-body>${loadingBlock(8)}</div>`);
   const body = ctx.outlet.querySelector('[data-body]');
@@ -46,17 +47,19 @@ export default async function ViewingsPage(ctx) {
       ${q.desiredMoveIn ? html`<div><dt>Muốn vào ở</dt><dd>${formatDate(q.desiredMoveIn)}</dd></div>` : ''}
       ${q.email ? html`<div class="is-wide"><dt>Email</dt><dd>${q.email}</dd></div>` : ''}
     </dl>
+    ${negotiationInfo(q)}
     ${q.message ? html`<p class="ad-request-msg">${multiline(q.message)}</p>` : ''}
     <footer><small>Gửi ${relative(q.createdAt)}</small>
       ${canWrite ? html`<span class="ad-request-actions">
-        <button type="button" class="btn btn-outline-secondary btn-sm" data-action="reject" data-id="${q.id}">Từ chối</button>
-        <button type="button" class="btn btn-primary btn-sm" data-action="schedule" data-id="${q.id}">${icon('calendar-plus')} Xếp lịch xem</button></span>` : ''}</footer>
+        ${canAcceptViewing(q, 'admin') ? html`<button type="button" class="btn btn-primary btn-sm" data-action="accept" data-id="${q.id}">Xác nhận lịch</button>` : ''}
+        <button type="button" class="btn btn-outline-primary btn-sm" data-action="propose" data-id="${q.id}">Đề xuất giờ khác</button>
+        ${!q.nextViewing ? html`<button type="button" class="btn btn-outline-secondary btn-sm" data-action="reject" data-id="${q.id}">Từ chối</button>` : ''}</span>` : ''}</footer>
   </article>`;
 
   const appointment = (v) => {
     const q = v.inquiry;
     const open = v.status === 'scheduled';
-    const late = open && v.date < today;
+    const late = open && new Date(v.endsAt) <= new Date();
     return html`<li class="ad-appt ${late ? 'is-late' : ''} ${ctx.query.inquiry === q.id ? 'is-focus' : ''}">
       <time class="num">${formatTime(v.startsAt)}</time>
       <div class="ad-appt-main">
@@ -66,16 +69,17 @@ export default async function ViewingsPage(ctx) {
       <div class="ad-appt-end">
         ${late ? html`<span class="sr-badge tone-wash">Cần ghi kết quả</span>` : badge('viewing', v.status)}
         ${open && canWrite ? html`<span class="ad-request-actions">
-          <button type="button" class="btn btn-outline-secondary btn-sm" data-action="result" data-id="${v.id}" data-status="no_show">Khách không đến</button>
+          ${new Date(v.endsAt) <= new Date() ? html`<button type="button" class="btn btn-outline-secondary btn-sm" data-action="result" data-id="${v.id}" data-status="no_show">Khách không đến</button>` : ''}
+          ${new Date(v.startsAt) > new Date() ? html`<button type="button" class="btn btn-outline-primary btn-sm" data-action="propose" data-id="${q.id}">Đề nghị đổi lịch</button>` : ''}
           <button type="button" class="btn btn-outline-secondary btn-sm" data-action="result" data-id="${v.id}" data-status="cancelled">Hủy lịch</button>
-          <button type="button" class="btn btn-outline-primary btn-sm" data-action="result" data-id="${v.id}" data-status="completed">Đã xem</button></span>` : ''}
+          ${new Date(v.startsAt) <= new Date() ? html`<button type="button" class="btn btn-outline-primary btn-sm" data-action="result" data-id="${v.id}" data-status="completed">Đã xem</button>` : ''}</span>` : ''}
         ${v.status === 'completed' && !['converted', 'rejected', 'cancelled'].includes(q.status) && session.can('tenancies.checkin') ? html`<a class="btn btn-primary btn-sm" href="${link(`/admin/contracts/new?inquiryId=${q.id}&roomId=${q.room.id}`)}">${icon('file-earmark-plus')} Tạo hợp đồng</a>` : ''}
       </div>
     </li>`;
   };
 
   const render = () => {
-    const queue = inquiries.filter((q) => !q.nextViewing && WAITING.includes(q.status));
+    const queue = inquiries.filter((q) => (!q.nextViewing && WAITING.includes(q.status)) || q.proposal);
     const upcoming = viewings.filter((v) => v.status === 'scheduled').sort((a, b) => a.startsAt.localeCompare(b.startsAt));
     const past = viewings.filter((v) => v.status !== 'scheduled').sort((a, b) => b.startsAt.localeCompare(a.startsAt));
     const shown = view === 'upcoming' ? upcoming : past;
@@ -86,7 +90,7 @@ export default async function ViewingsPage(ctx) {
     });
     setHtml(body, html`<div class="ad-viewings">
       <section class="sr-panel ad-queue">
-        <div class="sr-panel-head"><h2>Yêu cầu chờ xếp lịch</h2><span class="ad-count ${queue.length ? 'is-attention' : ''} num">${queue.length}</span></div>
+        <div class="sr-panel-head"><h2>Yêu cầu chờ xác nhận</h2><span class="ad-count ${queue.length ? 'is-attention' : ''} num">${queue.length}</span></div>
         ${queue.length ? html`<div class="ad-queue-list">${queue.map(requestCard)}</div>` : emptyState({ iconName: 'inbox', title: 'Không có yêu cầu mới', text: 'Khách gửi yêu cầu ở trang tìm phòng sẽ hiện ở đây.' })}
       </section>
       <section class="sr-panel ad-agenda">
@@ -136,22 +140,16 @@ export default async function ViewingsPage(ctx) {
   });
 
   ctx.onCleanup(bindActions(ctx.outlet, {
-    schedule: async (btn) => {
+    accept: async (btn) => {
       const q = inquiries.find((x) => x.id === btn.dataset.id);
-      const result = await formModal({
-        title: `Xếp lịch xem phòng ${q.room.code}`, submitLabel: 'Xếp lịch',
-        intro: html`<p class="mb-0">${q.contactName}${q.phone ? `, ${formatPhone(q.phone)}` : ''}</p>${q.message ? html`<p class="small text-muted-sr mb-0">${multiline(q.message)}</p>` : ''}`,
-        fields: [
-          { name: 'startsAt', label: 'Thời gian xem', type: 'datetime', required: true, col: 'col-md-7' },
-          { name: 'minutes', label: 'Thời lượng', type: 'select', col: 'col-md-5', placeholderOption: false, default: '30', options: [['15', '15 phút'], ['30', '30 phút'], ['45', '45 phút'], ['60', '1 giờ']].map(([value, label]) => ({ value, label })) },
-        ],
-        onSubmit: (v) => inquiriesApi.scheduleViewing(q.id, { startsAt: v.startsAt, endsAt: new Date(new Date(v.startsAt).getTime() + Number(v.minutes) * 60000).toISOString() }),
-      });
-      if (result) {
-        toast('Đã xếp lịch xem phòng');
-        dataChanged();
-        await load();
-      }
+      await runAction(() => inquiriesApi.decide(q.id, { action: 'accept', proposalId: q.proposal?.id || null }), { success: 'Đã xác nhận lịch xem' });
+      dataChanged();
+      await load();
+    },
+    propose: async (btn) => {
+      const q = inquiries.find((x) => x.id === btn.dataset.id) || viewings.find((x) => x.inquiry.id === btn.dataset.id)?.inquiry;
+      const result = await proposalModal(q, (body) => inquiriesApi.decide(q.id, body));
+      if (result) { toast('Đã gửi đề xuất, chờ khách đồng ý'); dataChanged(); await load(); }
     },
     reject: async (btn) => {
       const reason = await reasonDialog({ title: 'Từ chối yêu cầu', text: 'Yêu cầu sẽ đóng lại, phòng không bị ảnh hưởng.', confirmText: 'Từ chối', tone: 'danger' });
@@ -164,7 +162,7 @@ export default async function ViewingsPage(ctx) {
       const { status } = btn.dataset;
       const result = await formModal({
         title: { completed: 'Khách đã xem phòng', no_show: 'Khách không đến', cancelled: 'Hủy lịch hẹn' }[status], submitLabel: 'Lưu kết quả',
-        fields: [{ name: 'resultNotes', label: 'Ghi chú', type: 'textarea', rows: 2, optional: true, placeholder: status === 'completed' ? 'Khách ưng phòng, muốn vào ở đầu tháng…' : '' }],
+        fields: [{ name: 'resultNotes', label: 'Ghi chú', type: 'textarea', rows: 2, required: status === 'cancelled', optional: status !== 'cancelled', placeholder: status === 'completed' ? 'Khách ưng phòng, muốn vào ở đầu tháng…' : '' }],
         onSubmit: (v) => viewingsApi.result(btn.dataset.id, { status, resultNotes: v.resultNotes }),
       });
       if (result) {

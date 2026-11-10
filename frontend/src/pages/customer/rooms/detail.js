@@ -1,9 +1,12 @@
+import { customerViewing, bindCustomerViewings } from '../../../components/customer-viewings.js';
+import { mapLinks } from '../../../utils/maps.js';
 // Chi tiết phòng: đặt lịch xem trực tiếp chỉ mở sau khi đăng nhập. Gửi yêu cầu chưa giữ phòng và không đổi trạng thái phòng.
 import { bindForm, enhance, formAlert, renderFields } from '../../../components/form.js';
 import { asset, errorState, icon, link, note } from '../../../components/ui.js';
 import { portalApi, publicApi } from '../../../services/api.js';
 import { session } from '../../../services/session.js';
-import { addDays, formatDateTime, todayIso } from '../../../utils/date.js';
+import { formatDateTime } from '../../../utils/date.js';
+import { viewingBounds, viewingTimeError } from '../../../utils/viewing.js';
 import { formatArea, formatPhone } from '../../../utils/format.js';
 import { formatVnd } from '../../../utils/money.js';
 import { html, multiline, setHtml } from '../../../utils/html.js';
@@ -49,15 +52,7 @@ function bookingBox(room, myRequest) {
   </form>`;
 }
 
-function bookedState(request) {
-  return html`<div class="cu-book-state">
-    <h3>${icon('check-circle')} Đã đặt lịch ${request.code}</h3>
-    <div class="mb-2">${viewingBadge(request.status)}</div>
-    <p>${request.scheduledAt ? `Quản lý đã hẹn ${formatDateTime(request.scheduledAt)}.` : `Bạn muốn xem lúc ${formatDateTime(request.preferredViewingAt)}. Quản lý sẽ gọi lại để xác nhận.`}</p>
-    <p class="cu-book-hint">Lịch này chưa giữ phòng cho bạn.</p>
-    <a class="btn btn-outline-primary w-100" href="${link('/rooms')}">Xem lịch của bạn</a>
-  </div>`;
-}
+function bookedState(request) { return customerViewing(request); }
 
 export default async function RoomDetailPage(ctx) {
   let room;
@@ -74,7 +69,7 @@ export default async function RoomDetailPage(ctx) {
 
   ctx.setTitle(`${room.roomCode} – ${room.title}`);
   const address = [room.property.addressLine, room.locality, room.province].filter(Boolean).join(', ');
-  const mapQuery = encodeURIComponent(address);
+  const maps = mapLinks(room, address);
   const myRequest = requests.find((q) => q.slug === room.slug && OPEN_STATUS.includes(q.status));
   const available = room.availability.status === 'available';
   const fees = room.fees.filter((f) => f.category !== 'rent');
@@ -114,8 +109,9 @@ export default async function RoomDetailPage(ctx) {
         <section class="cu-card">
           <h2>Vị trí khu nhà</h2>
           ${room.property.description ? html`<p class="cu-text">${room.property.description}</p>` : ''}
-          <div class="cu-map"><iframe src="https://www.google.com/maps?q=${mapQuery}&output=embed" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Bản đồ khu nhà ${room.propertyName}"></iframe></div>
-          <a class="cu-link" href="https://www.google.com/maps/search/?api=1&query=${mapQuery}" target="_blank" rel="noopener noreferrer">${icon('signpost-2')} Mở bản đồ chỉ đường</a>
+          ${maps.embed ? html`<div class="cu-map"><iframe src="${maps.embed}" loading="lazy" referrerpolicy="no-referrer-when-downgrade" title="Bản đồ khu nhà ${room.propertyName}"></iframe></div>` : html`<p>Chọn liên kết bên dưới để mở vị trí do quản lý cung cấp.</p>`}
+          ${maps.searched ? html`<p class="small text-muted-sr">Bản đồ tìm theo địa chỉ cơ sở. Vui lòng xác nhận vị trí với quản lý trước khi đến.</p>` : ''}
+          <a class="cu-link" href="${maps.url}" target="_blank" rel="noopener noreferrer">${icon('signpost-2')} Mở bản đồ chỉ đường</a>
         </section>
       </div>
       <aside class="cu-room-side">
@@ -152,12 +148,18 @@ export default async function RoomDetailPage(ctx) {
     dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
   }
 
+  ctx.onCleanup(bindCustomerViewings($('[data-booking-box]'), () => requests, async () => {
+    requests = await portalApi.inquiries();
+    const current = requests.find((q) => q.slug === room.slug && OPEN_STATUS.includes(q.status));
+    if (current) setHtml($('[data-booking-box]'), bookedState(current));
+    else await ctx.navigate(`/rooms/${room.slug}`, { replace: true, force: true });
+  }));
   // Đặt lịch
   const form = $('[data-booking]');
   if (!form) return;
   const fields = [
-    { name: 'preferredViewingAt', label: 'Ngày giờ muốn xem', type: 'datetime', required: true, min: todayIso(), default: `${addDays(todayIso(), 1)}T10:00` },
-    { name: 'occupants', label: 'Số người ở', type: 'number', min: 1, max: 10, default: 1, required: true, help: `Phòng ở tối đa ${room.capacity} người.` },
+    { name: 'preferredViewingAt', label: 'Ngày giờ muốn xem', type: 'datetime', required: true, min: viewingBounds().min, default: viewingBounds().defaultTime, attrs: { 'data-viewing-hours': 'true' }, help: 'Bắt đầu chậm nhất 20:00, kết thúc chậm nhất 21:00 (giờ Việt Nam). Sau 20:00 chỉ nhận lịch từ ngày mai.' },
+    { name: 'occupants', label: 'Số người ở', type: 'number', min: 1, max: room.capacity, default: 1, required: true, validate: (v) => Number.isInteger(v) ? null : 'Số người ở phải là số nguyên.', help: `Phòng ở tối đa ${room.capacity} người.` },
     { name: 'message', label: 'Ghi chú', type: 'textarea', rows: 2, optional: true, maxLength: 500, placeholder: 'Ví dụ: có xe máy, xem sau 17 giờ' },
   ];
   setHtml($('[data-booking-fields]'), renderFields(fields));
@@ -165,10 +167,11 @@ export default async function RoomDetailPage(ctx) {
   if (ctx.signal.aborted) return;
   const binding = bindForm(form, {
     fields, guardDirty: false, submittingLabel: 'Đang gửi…',
-    validate: (v) => (v.preferredViewingAt && v.preferredViewingAt <= new Date().toISOString() ? { preferredViewingAt: ['Chọn thời điểm trong tương lai.'] } : null),
+    validate: (v) => { const error = viewingTimeError(v.preferredViewingAt); return error ? { preferredViewingAt: [error] } : null; },
     onSubmit: async (v, { idempotencyKey }) => {
       const result = await portalApi.createInquiry({ ...v, slug: room.slug }, idempotencyKey);
-      setHtml($('[data-booking-box]'), html`${bookedState(result)}${result.overCapacity ? html`<div class="mt-2">${note(`Bạn khai ${v.occupants} người, phòng ở tối đa ${result.capacity} người. Quản lý có thể gợi ý phòng phù hợp hơn.`, { tone: 'warn' })}</div>` : ''}`);
+      requests = [...requests, result];
+      setHtml($('[data-booking-box]'), bookedState(result));
     },
   });
   ctx.onCleanup(() => binding.destroy());

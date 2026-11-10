@@ -124,7 +124,7 @@ export default function register(r) {
     const siblings = vacantListings(db, ctx.today).filter((l) => l.id !== listing.id && find(db.rooms, l.roomId).propertyId === property.id).slice(0, 3).map((l) => card(db, l, ctx.today));
     return {
       ...base,
-      description: listing.description, rulesText: room.rulesText, floorLabel: room.floorLabel, videoUrl: listing.videoUrl || null,
+      mapUrl: property.mapUrl || null, mapEmbedUrl: property.mapEmbedUrl || null, description: listing.description || room.description, rulesText: room.rulesText, floorLabel: room.floorLabel, videoUrl: listing.videoUrl || null,
       images: [...room.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => ({ url: i.url, caption: i.caption, isCover: i.isCover })),
       fees: fees(db, room, ctx.today),
       property: { name: property.name, addressLine: property.address.line, locality: property.address.locality, province: property.address.province, description: property.description, contactName: property.contactName, phone: property.phone },

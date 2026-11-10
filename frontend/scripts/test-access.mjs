@@ -23,11 +23,12 @@ assert.ok(!listRoutes().some((r) => /^\/api\/v1\/(system|roles|members|permissio
 for (const old of ['quan.quanly@example.com', 'lan.nhanvien@example.com', 'minh.kythuat@example.com', 'admin@smartrent.example.com', 'tung.hoabinh@example.com']) {
   await rejected(login(old, 'admin'), 401, 'invalid_credentials');
 }
-await rejected(login(customer.email, 'admin'), 403, 'admin_only');
-await rejected(login(admin.email, 'customer'), 403, 'customer_only');
-await rejected(login(admin.email, 'manager'), 422, 'invalid_audience');
-const adminSession = await login(admin.email, 'admin');
-const customerSession = await login(customer.email, 'customer');
+const adminSession = await login(admin.email);
+const customerSession = await login(customer.email);
+const forged = await login(customer.email, 'admin');
+assert.equal((await call('GET', '/api/v1/me', null, forged.accessToken)).user.role, 'user');
+await rejected(call('GET', '/api/v1/inquiries', null, forged.accessToken), 403, 'admin_only');
+assert.equal(ROUTES.find((r) => r.path === '/admin/login').redirect, '/login');
 await rejected(call('GET', '/api/v1/portal/invoices', null, adminSession.accessToken), 403, 'customer_only');
 const adminEndpoints = listRoutes().filter((r) => r.auth === 'admin');
 for (const route of adminEndpoints) {
@@ -37,7 +38,7 @@ for (const route of adminEndpoints) {
 }
 for (const route of ROUTES.filter((r) => r.auth === 'admin')) {
   assert.equal(loginRedirect(route.auth, customer, route.path), '/');
-  assert.ok(loginRedirect(route.auth, null, route.path).startsWith('/admin/login?next='));
+  assert.ok(loginRedirect(route.auth, null, route.path).startsWith('/login?next='));
   assert.equal(loginRedirect(route.auth, admin, route.path), null);
 }
 const registration = await call('POST', '/api/v1/auth/register', {
@@ -68,4 +69,4 @@ assert.ok(!migrated.users.some((u) => u.id === oldStaffId));
 assert.ok(!migrated.businessRoles && !migrated.supportGrants);
 assert.deepEqual(migrated.sessions, []);
 assert.ok(migrated.memberships.every((m) => m.userId === admin.id && !m.roleIds));
-console.log(`Đạt: 2 loại tài khoản, một admin, đăng nhập riêng, chống tự nâng quyền, ${adminEndpoints.length} API admin chặn khách/khách vãng lai, router và chuyển dữ liệu cũ.`);
+console.log(`Đạt: 2 loại tài khoản, một admin, đăng nhập chung, chống tự nâng quyền, ${adminEndpoints.length} API admin chặn khách/khách vãng lai, router và chuyển dữ liệu cũ.`);

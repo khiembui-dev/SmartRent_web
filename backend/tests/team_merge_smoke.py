@@ -86,13 +86,17 @@ assert len(sheet["rows"]) == 1 and sheet["rows"][0]["tenancy"]["id"] == ids["con
 assert sheet["stats"]["tenancyCount"] == 1
 request("/billing-periods", method="POST", body={"propertyId": ids["property"], "monthStart": month}, expected=409)
 booking_id = str(uuid.uuid4())
+appointment_id = str(uuid.uuid4())
+viewing_day = (datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).date() - datetime.timedelta(days=1)).isoformat()
+# Past confirmed fixture tests result recording; future negotiations are covered separately.
 sql(f"""SET search_path=smartrent,public;
- INSERT INTO bookings(id,code,user_id,room_id,kind,status,contact_name,occupants)
- VALUES('{booking_id}','IT-{booking_id}','{ids['stranger']}','{ids['room']}','viewing','new','Integration visitor',1);""")
+ INSERT INTO bookings(id,code,user_id,room_id,kind,status,contact_name,occupants,appointments)
+ VALUES('{booking_id}','IT-{booking_id}','{ids['stranger']}','{ids['room']}','viewing','scheduled','Integration visitor',1,
+ jsonb_build_array(jsonb_build_object('id','{appointment_id}','startsAt','{viewing_day}T09:00:00+07:00','endsAt','{viewing_day}T10:00:00+07:00','hostId',(select id from users where role='admin'),'status','scheduled')));""")
 request("/inquiries/" + booking_id + "/viewings", method="POST", body={
-    "startsAt": "2026-11-10T09:00:00+07:00", "endsAt": "2026-11-10T10:00:00+07:00"})
+    "startsAt": viewing_day + "T09:00:00+07:00", "endsAt": viewing_day + "T10:00:00+07:00"}, expected=409)
 viewing = next(v for v in request("/viewings")["items"] if v["inquiryId"] == booking_id)
-assert viewing["date"] == "2026-11-10" and viewing["inquiry"]["room"]["id"] == ids["room"]
+assert viewing["date"] == viewing_day and viewing["inquiry"]["room"]["id"] == ids["room"]
 request("/viewings/" + viewing["id"] + "/result", method="POST", body={"status": "completed", "resultNotes": "Visited"})
 
 # Register/login use frontend field names, the runtime database role, and real hashes.
@@ -103,7 +107,7 @@ try:
         "fullName": "Integration signup", "email": email, "password": password, "acceptedTerms": True})
     me = request("/me", actor=None, token=auth["accessToken"])
     assert me["user"]["role"] == "user"
-    request("/auth/login", actor=None, method="POST", body={"email": email, "password": password, "audience": "admin"}, expected=403)
+    assert request("/auth/login", actor=None, method="POST", body={"email": email, "password": password, "audience": "admin"})["user"]["role"] == "user"
     login = request("/auth/login", actor=None, method="POST", body={"email": email, "password": password, "audience": "customer"})
     updated = request("/me/profile", actor=None, token=login["accessToken"], method="PUT", body={"fullName": "Integration updated"})
     assert updated["user"]["displayName"] == "Integration updated"

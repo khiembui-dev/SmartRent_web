@@ -54,7 +54,7 @@ async function render() {
   const found = match(location.path);
   const route = found?.route || NOT_FOUND;
   if (route.redirect) {
-    await navigate(route.redirect, { replace: true, force: true });
+    await navigate(`${route.redirect}${toQueryString(location.query)}`, { replace: true, force: true });
     return;
   }
   const redirect = guard(route, location);
@@ -119,7 +119,7 @@ export async function startApp() {
     if (!session.isAuthenticated) return;
     session.clearLocal();
     const loc = currentLocation();
-    await navigate(`${isAdminPath(loc.path) ? '/admin/login' : '/login'}?expired=1&next=${encodeURIComponent(loc.path)}`, { replace: true, force: true });
+    await navigate(`/login?expired=1&next=${encodeURIComponent(loc.path)}`, { replace: true, force: true });
   });
   document.addEventListener('sr:data-changed', () => shell?.invalidateCounts());
   await session.init();

@@ -41,6 +41,9 @@ public sealed class RoomsController(NpgsqlDataSource db) : BusinessController(db
         var code = b.Text("code")?.Trim();
         if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(b.Text("name")))
             throw Invalid("Cần mã và tên phòng.");
+        var capacity = b.Number("capacity", 2);
+        if (capacity != decimal.Truncate(capacity) || capacity < 1 || capacity > 20) throw Invalid("Số người tối đa phải là số nguyên từ 1 đến 20.");
+        if (b.Number("requiredDeposit") < 0) throw Invalid("Tiền cọc không được âm.");
         var active = await Scalar(c, t, "select id::text from contracts where room_id=@id and status in ('active','planned') limit 1", ct, "id", rid);
         var inputRates = b["rates"]?.DeepClone().AsArray() ?? new JsonArray();
         if (b["rent"] is not null)
@@ -69,6 +72,22 @@ public sealed class RoomsController(NpgsqlDataSource db) : BusinessController(db
           "insert into rooms(id,property_id,code,name,area_m2,capacity,floor_label,description,required_deposit,operating_status,status_reason,rates,amenities,images) values(@id,@p,@code,@name,@area,@cap,@floor,@description,@deposit,@op,@reason,@rates::jsonb,@amenities::jsonb,@images::jsonb)" :
           "update rooms set code=@code,name=@name,area_m2=@area,capacity=@cap,floor_label=@floor,description=@description,required_deposit=@deposit,rates=@rates::jsonb,amenities=@amenities::jsonb,images=@images::jsonb where id=@id",
           ct, "id", rid, "p", pid, "code", code, "name", b.Text("name"), "area", b.Number("areaM2"), "cap", (short)b.Number("capacity", 2), "floor", b.Text("floorLabel"), "description", b.Text("description"), "deposit", b.Number("requiredDeposit"), "op", op, "reason", op == "available" ? null : "Thiết lập ban đầu", "rates", rates.ToJsonString(), "amenities", amenities.ToJsonString(), "images", images.ToJsonString());
+        var type = b.Text("roomTypeId") ?? old.Text("room_type_code") ?? "STANDARD";
+        if (!System.Text.RegularExpressions.Regex.IsMatch(type, "^[A-Za-z0-9_-]{1,40}$")) throw Invalid("Loại phòng không hợp lệ.");
+        var typeName = await Scalar(c, t, "select room_type_name from rooms where room_type_code=@type and id<>@id limit 1", ct, "type", type, "id", rid)
+            ?? b.Text("roomTypeName") ?? old.Text("room_type_name") ?? "Phòng tiêu chuẩn";
+        await Execute(c, t, "update rooms set room_type_code=@type,room_type_name=@typeName,rules_text=@rules where id=@id", ct,
+            "type", type, "typeName", typeName, "rules", b.ContainsKey("rulesText") ? b.Text("rulesText") : old.Text("rules_text"), "id", rid);
+        if (b["listing"] is JsonObject listing)
+        {
+            var state = listing.Text("status") ?? old.Text("listing_status") ?? "draft";
+            if (state is not ("hidden" or "draft" or "published")) throw Invalid("Trạng thái tin không hợp lệ.");
+            var title = listing.Text("title")?.Trim();
+            if (string.IsNullOrWhiteSpace(title)) title = b.Text("name") + " – " + p.Text("name");
+            if (state == "published" && !Effective(p["rates"]!.AsArray(), rates, Today).Any(x => x.Text("category") == "rent" && x.Number("unitPrice") > 0)) throw Invalid("Cần giá phòng lớn hơn 0 trước khi đăng tin.");
+            await Execute(c, t, "update rooms set listing_title=@title,listing_description=@description,listing_status=@state,listing_slug=coalesce(listing_slug,'phong-'||lower(code)||'-'||substr(id::text,1,8)),published_at=case when @state='published' then coalesce(published_at,now()) else published_at end where id=@id", ct,
+                "title", title, "description", listing.Text("description"), "state", state, "id", rid);
+        }
         if (b["occupant"] is JsonObject occupant && active is null)
         {
             var user = occupant.Id("tenantId");

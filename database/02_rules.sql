@@ -241,7 +241,8 @@ BEGIN
   PERFORM require_json_fields(person,ARRAY['userId','joinedOn']);
   PERFORM require_customer((person->>'userId')::uuid);
   IF person->>'userId'=NEW.user_id::text OR NOT person ? 'joinedOn' OR (person->>'joinedOn')::date<NEW.starts_on OR
-   (person->>'leftOn')::date<=(person->>'joinedOn')::date THEN RAISE EXCEPTION 'invalid_contract_occupant' USING ERRCODE='23514'; END IF;
+   (person->>'leftOn')::date<(person->>'joinedOn')::date OR
+   ((person->>'leftOn')::date=(person->>'joinedOn')::date AND NEW.status<>'ended') THEN RAISE EXCEPTION 'invalid_contract_occupant' USING ERRCODE='23514'; END IF;
  END LOOP;
  IF EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.occupants) point WHERE
   1+(SELECT count(*) FROM jsonb_array_elements(NEW.occupants) p WHERE daterange((p->>'joinedOn')::date,(p->>'leftOn')::date,'[)') @> (point->>'joinedOn')::date)>r.capacity) THEN RAISE EXCEPTION 'room_capacity_exceeded' USING ERRCODE='23514'; END IF;
@@ -361,7 +362,7 @@ BEGIN
   PERFORM require_admin(NEW.issued_by);
   IF NEW.kind<>'opening_balance' AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(c.versions) v WHERE nullif(v->>'signedAt','') IS NOT NULL) THEN RAISE EXCEPTION 'signed_contract_required' USING ERRCODE='23514'; END IF;
   total=invoice_total(NEW.lines);
-  IF jsonb_array_length(NEW.lines)=0 OR (NEW.kind='credit_adjustment' AND total>=0) OR (NEW.kind<>'credit_adjustment' AND total<0) THEN RAISE EXCEPTION 'invalid_invoice_total' USING ERRCODE='23514'; END IF;
+  IF (jsonb_array_length(NEW.lines)=0 AND NOT(NEW.kind='final' AND NEW.metered_only)) OR (NEW.kind='credit_adjustment' AND total>=0) OR (NEW.kind<>'credit_adjustment' AND total<0) THEN RAISE EXCEPTION 'invalid_invoice_total' USING ERRCODE='23514'; END IF;
   IF NEW.metered_only AND EXISTS(SELECT 1 FROM jsonb_array_elements(NEW.lines) x WHERE x->>'category' NOT IN ('electricity','water')) THEN RAISE EXCEPTION 'metered_final_cannot_charge_rent' USING ERRCODE='23514'; END IF;
   IF NEW.adjusts_invoice_id IS NULL THEN
    IF EXISTS(SELECT x->>'code' FROM jsonb_array_elements(NEW.lines) x WHERE coalesce((x->>'oneTime')::boolean,false) GROUP BY x->>'code' HAVING count(*)>1) THEN RAISE EXCEPTION 'duplicate_one_time_charge' USING ERRCODE='23514'; END IF;

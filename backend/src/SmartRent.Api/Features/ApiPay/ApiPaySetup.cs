@@ -26,6 +26,23 @@ public static class ApiPaySetup
     public static void UseApiPayProxy(WebApplication app)
     {
         if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("APIPAY_TRUSTED_PROXIES"))) app.UseForwardedHeaders();
+        var listener = Environment.GetEnvironmentVariable("APIPAY_WEBHOOK_LISTENER_PORT");
+        if (!string.IsNullOrEmpty(listener))
+        {
+            if (!int.TryParse(listener, out var port) || port is < 1024 or > 65535)
+                throw new InvalidOperationException("APIPAY_WEBHOOK_LISTENER_PORT must be a port between 1024 and 65535.");
+            // Cổng dành riêng cho tunnel chỉ nhận webhook. Không công khai trang admin, API dữ liệu hay health dev.
+            app.Use(async (context, next) =>
+            {
+                if (context.Connection.LocalPort == port &&
+                    (!HttpMethods.IsPost(context.Request.Method) || context.Request.Path != "/api/v1/apipay/webhook" || context.Request.QueryString.HasValue))
+                {
+                    context.Response.StatusCode = StatusCodes.Status404NotFound;
+                    return;
+                }
+                await next(context);
+            });
+        }
     }
 }
 

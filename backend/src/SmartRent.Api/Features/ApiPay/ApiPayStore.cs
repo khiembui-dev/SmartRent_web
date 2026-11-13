@@ -9,6 +9,15 @@ namespace SmartRent.Api.Features.ApiPay;
 // Repository dùng cùng pool PostgreSQL và sổ payments của hệ thống. Không chứa API key.
 public sealed class ApiPayStore(NpgsqlDataSource db, ApiPayOptions options)
 {
+    // Nội dung cố định theo hóa đơn: HD-00000093 -> HD00000093. Không tạo mã ngẫu nhiên theo lượt mở QR.
+    private static string InvoiceContent(JsonObject invoice)
+    {
+        var content = (invoice.Text("code") ?? "").Replace("-", "", StringComparison.Ordinal).ToUpperInvariant();
+        if (content.Length is < 1 or > 140 || content.Any(c => c is not (>= 'A' and <= 'Z') and not (>= '0' and <= '9')))
+            throw Invalid("Mã hóa đơn phải gồm chữ, số và dấu gạch ngang để tạo nội dung chuyển khoản.");
+        return content;
+    }
+
     private static Task<JsonObject> Invoice(NpgsqlConnection c, NpgsqlTransaction? t, Guid invoice, Guid user, CancellationToken ct) => Row(c, t, """
         select jsonb_build_object('id',i.id,'code',i.code,'status',i.status,'kind',i.kind,
           'contractId',i.contract_id,'adjustment',i.adjusts_invoice_id is not null,'amount',b.outstanding_amount,'paymentStatus',b.payment_status)::text
@@ -43,10 +52,10 @@ public sealed class ApiPayStore(NpgsqlDataSource db, ApiPayOptions options)
                   'payUrl',pay_url,'qrUrl',qr_url,'bankCode',bank_code,'accountNumber',account_number,
                   'accountName',account_name,'expiresAt',expires_at)::text
                 from apipay_requests r where invoice_id=@id and user_id=@user and bank_public_id=@bank
-                  and state='ready' and expires_at>now() and amount=@amount
+                  and state='ready' and expires_at>now() and amount=@amount and content=@content
                   and not exists(select 1 from apipay_events e where e.request_id=r.id and e.state='processed')
                 order by created_at desc limit 1
-                """, ct, "id", invoice, "user", user, "bank", options.BankPublicId, "amount", inv.Number("amount"));
+                """, ct, "id", invoice, "user", user, "bank", options.BankPublicId, "amount", inv.Number("amount"), "content", InvoiceContent(inv));
             state["request"] = json is null ? null : JsonNode.Parse(json);
         }
         return state;
@@ -70,8 +79,12 @@ public sealed class ApiPayStore(NpgsqlDataSource db, ApiPayOptions options)
             throw Invalid("ApiPay hỗ trợ tối đa 300.000.000 đồng cho một yêu cầu. Vui lòng liên hệ chủ trọ.");
         if (await NeedsReview(c, t, invoice, ct) || await PendingManual(c, t, invoice, ct))
             throw new LeaseHttpException(409, "payment_review", "Đã có khoản chuyển đang được đối chiếu. Chưa chuyển thêm tiền.");
-        if (await Scalar(c, t, "select 'yes' from apipay_requests r where invoice_id=@id and bank_public_id=@bank and state='ready' and amount=@amount and expires_at>now() and not exists(select 1 from apipay_events e where e.request_id=r.id and e.state='processed') limit 1", ct,
-                "id", invoice, "bank", options.BankPublicId, "amount", inv.Number("amount")) is not null)
+        var content = InvoiceContent(inv);
+        // Giữ lịch sử mã SR cũ; không tái sử dụng QR mang nội dung khác mã hóa đơn hiện tại.
+        if (await Scalar(c, t, "select 'yes' from apipay_requests where content=@content and invoice_id<>@id limit 1", ct, "content", content, "id", invoice) is not null)
+            throw new LeaseHttpException(409, "payment_content_conflict", "Mã chuyển khoản đã thuộc hóa đơn khác. Vui lòng liên hệ chủ trọ.");
+        if (await Scalar(c, t, "select 'yes' from apipay_requests r where invoice_id=@id and bank_public_id=@bank and content=@content and state='ready' and amount=@amount and expires_at>now() and not exists(select 1 from apipay_events e where e.request_id=r.id and e.state='processed') limit 1", ct,
+                "id", invoice, "bank", options.BankPublicId, "amount", inv.Number("amount"), "content", content) is not null)
         {
             await t.CommitAsync(ct);
             return null;
@@ -79,7 +92,6 @@ public sealed class ApiPayStore(NpgsqlDataSource db, ApiPayOptions options)
         if (await Scalar(c, t, "select 'yes' from apipay_requests where invoice_id=@id and state in ('creating','unknown','failed') and created_at>now()-interval '1 minute' limit 1", ct, "id", invoice) is not null)
             throw new LeaseHttpException(409, "payment_creating", "Yêu cầu trước đang được xử lý. Đợi một phút rồi kiểm tra lại.");
         var id = Guid.NewGuid();
-        var content = "SR" + id.ToString("N").ToUpperInvariant();
         await Execute(c, t, """
             insert into apipay_requests(id,invoice_id,user_id,bank_public_id,amount,content,state)
             values(@id,@invoice,@user,@bank,@amount,@content,'creating')
@@ -144,9 +156,18 @@ public sealed class ApiPayStore(NpgsqlDataSource db, ApiPayOptions options)
                 return true;
             }
             var matches = await Rows(c, t, """
-            select to_jsonb(r)::text from apipay_requests r where bank_public_id=@bank
-              and position(lower(content) in lower(@memo))>0 limit 2
-            """, ct, "bank", e.Text("bank_public_id"), "memo", e.Text("content"));
+            with matching as (
+              select r.*,row_number() over(partition by invoice_id order by
+                (amount=@amount) desc,(created_at<=@date+interval '5 minutes') desc,created_at desc,id) as candidate_order
+              from apipay_requests r where bank_public_id=@bank and (
+                (content ~ '^HD[0-9]+$' and content in (select token[1] from regexp_matches(upper(@memo),'HD[0-9]+','g') token))
+                or (content !~ '^HD[0-9]+$' and position(lower(content) in lower(@memo))>0))
+            )
+            select to_jsonb(r)::text from matching r where candidate_order=1 limit 2
+            """, ct, "bank", e.Text("bank_public_id"), "memo", e.Text("content"), "amount", e.Number("amount"),
+                "date", DateTimeOffset.Parse(e.Text("transaction_date")!));
+            // Các lần tạo lại QR của cùng hóa đơn dùng một nội dung: chỉ coi là mơ hồ khi khớp nhiều hóa đơn.
+            // HD000000930 không được nhận nhầm thành HD00000093. Mã SR đã phát hành vẫn đối soát bình thường.
             var r = matches.Count == 1 ? matches[0] : null;
             var adminText = await Scalar(c, t, "select id::text from users where role='admin' and is_active", ct);
             if (adminText is null)

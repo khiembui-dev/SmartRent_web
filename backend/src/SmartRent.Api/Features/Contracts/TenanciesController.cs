@@ -80,7 +80,8 @@ public sealed class TenanciesController(NpgsqlDataSource db) : BusinessControlle
             if (value is JsonObject)
                 result[kind] = value.DeepClone();
             else
-                result[kind] = new JsonObject { ["value"] = value.DeepClone(), ["observedAt"] = at ?? new DateTimeOffset(day.ToDateTime(new TimeOnly(7, 0)), TimeSpan.FromHours(7)).ToUniversalTime().ToString("O") };
+                // Nhận phòng hôm nay dùng giờ thực tế, kể cả trước 07:00, để có thể chốt trả ngay trong ngày.
+                result[kind] = new JsonObject { ["value"] = value.DeepClone(), ["observedAt"] = at ?? (day == Today ? DateTimeOffset.UtcNow : new DateTimeOffset(day.ToDateTime(new TimeOnly(7, 0)), TimeSpan.FromHours(7)).ToUniversalTime()).ToString("O") };
         }
         return result;
     }

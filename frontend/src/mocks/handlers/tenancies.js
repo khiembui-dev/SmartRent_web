@@ -251,7 +251,7 @@ export function registerExistingTenancy(ctx, room, occupant) {
 function checkoutComputation(ctx, c, b, { persist }) {
   const { db } = ctx;
   const moveOut = b.moveOutOn;
-  const observedAt = vnDateTimeToInstant(moveOut, 9);
+  const observedAt = moveOut === ctx.today ? ctx.now : vnDateTimeToInstant(moveOut, 23, 59);
   const from = lastInvoicedEnd(db, c.tenancy.id) || c.tenancy.actualMoveIn;
   const meteredOnly = from >= moveOut;
   // Ghi tạm chỉ số + bàn giao để tính hóa đơn cuối (rollback nếu chỉ xem trước).
@@ -266,7 +266,8 @@ function checkoutComputation(ctx, c, b, { persist }) {
   }));
   const pendingDrafts = db.invoices.filter((i) => i.tenancyId === c.tenancy.id && i.status === 'draft');
   pendingDrafts.forEach((i) => { db.invoices.splice(db.invoices.indexOf(i), 1); });
-  const final = createDraftInvoice(db, ctx, { tenancyId: c.tenancy.id, kind: 'final', from: meteredOnly ? addDays(moveOut, -1) : from, to: moveOut, endReadings: { electricity: readings.electricity?.id, water: readings.water?.id }, meteredOnly, manualLines });
+  const sameDay = moveOut === c.tenancy.actualMoveIn;
+  const final = createDraftInvoice(db, ctx, { tenancyId: c.tenancy.id, kind: 'final', from: meteredOnly ? (sameDay ? moveOut : addDays(moveOut, -1)) : from, to: sameDay ? addDays(moveOut, 1) : moveOut, endReadings: { electricity: readings.electricity?.id, water: readings.water?.id }, meteredOnly, manualLines });
   c.tenancy.actualMoveOut = original;
   const finalTotal = final.lines.reduce((s, l) => s + (l.sign * Math.round(l.quantity * l.unitPrice * l.prorationNumerator / l.prorationDenominator)), 0);
   const outstanding = db.invoices.filter((i) => i.tenancyId === c.tenancy.id && i.status === 'issued' && !['debit_adjustment', 'credit_adjustment'].includes(i.kind))
@@ -583,7 +584,7 @@ export default function register(r) {
     v.date('moveOutOn', b.moveOutOn, 'Ngày trả phòng');
     v.check();
     if (c.tenancy.status !== 'active') conflict('tenancy_not_active', 'Đợt thuê không còn ở trạng thái đang ở.');
-    if (b.moveOutOn <= c.tenancy.actualMoveIn) fail(422, 'validation_failed', 'Ngày trả phải sau ngày nhận phòng.', { moveOutOn: ['Phải sau ngày nhận phòng.'] });
+    if (b.moveOutOn < c.tenancy.actualMoveIn || b.moveOutOn > ctx.today) fail(422, 'validation_failed', 'Ngày trả không được trước ngày nhận phòng hoặc sau hôm nay.', { moveOutOn: ['Chọn ngày từ ngày nhận phòng đến hôm nay.'] });
     // Tính trên bản sao để KHÔNG ghi gì khi chỉ xem trước.
     const sandbox = { ...ctx, db: structuredClone(ctx.db) };
     const sc = tenancyContext(sandbox.db, c.tenancy.id);
@@ -615,7 +616,7 @@ export default function register(r) {
     if (b.extraPayment?.amount) v.money('extraPayment.amount', b.extraPayment.amount, 'Tiền khách trả thêm', { positive: true });
     v.check();
     if (c.tenancy.status !== 'active') conflict('tenancy_not_active', 'Đợt thuê không còn ở trạng thái đang ở.');
-    if (b.moveOutOn <= c.tenancy.actualMoveIn) fail(422, 'validation_failed', 'Ngày trả phải sau ngày nhận phòng.', { moveOutOn: ['Phải sau ngày nhận phòng.'] });
+    if (b.moveOutOn < c.tenancy.actualMoveIn) fail(422, 'validation_failed', 'Ngày trả không được trước ngày nhận phòng.', { moveOutOn: ['Không được trước ngày nhận phòng.'] });
     if (b.moveOutOn > ctx.today) fail(422, 'validation_failed', 'Ngày bàn giao trả thực tế không được ở tương lai.', { moveOutOn: ['Không được sau hôm nay.'] });
     if (b.offsets?.length) ctx.require('deposits.offset');
     if (b.refund?.amount) ctx.require('deposits.refund');

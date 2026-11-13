@@ -270,7 +270,7 @@ export const filesApi = {
     form.append('purpose', purpose);
     return http.post('/api/v1/files', form, options);
   },
-  downloadUrl: (fileId) => http.get(`/api/v1/files/${id(fileId)}/download-url`, undefined, { organization: false }),
+  downloadUrl: (fileId, options) => http.get(`/api/v1/files/${id(fileId)}/download-url`, undefined, { organization: false, ...options }),
 };
 
 export const portalApi = {

@@ -9,6 +9,7 @@ import { formatDate } from '../../utils/date.js';
 import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { bindActions, dataChanged } from './common.js';
+import { roomImagePreview } from '../../services/room-images.js';
 
 export default async function PropertyDetailPage(ctx) {
   const id = ctx.params.id;
@@ -20,6 +21,8 @@ export default async function PropertyDetailPage(ctx) {
     let rooms;
     try {
       [property, rooms] = await Promise.all([propertiesApi.get(id), roomsApi.list({ propertyId: id, pageSize: 200 }).then((r) => r.items)]);
+      await Promise.all(rooms.map(async room => { room.coverImageUrl = await roomImagePreview(room.coverImageUrl, { signal: ctx.signal }); }));
+      if (ctx.signal.aborted) return;
     } catch (error) {
       setHtml(ctx.outlet, errorState(error));
       return;

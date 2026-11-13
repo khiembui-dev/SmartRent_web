@@ -10,6 +10,7 @@ import { formatDate, formatDateTime } from '../../utils/date.js';
 import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { bindActions, dataChanged } from './common.js';
+import { roomImagesPreview } from '../../services/room-images.js';
 
 export default async function RoomDetailPage(ctx) {
   const id = ctx.params.id;
@@ -31,7 +32,10 @@ export default async function RoomDetailPage(ctx) {
     const hold = r.calendar.find((c) => c.reservation?.status === 'holding');
     const current = contracts.find((k) => ['active', 'signed', 'expired'].includes(k.status) && k.tenancyStatus === 'active');
     const occupant = r.currentTenancy;
-    const cover = r.images.find((i) => i.isCover) || r.images[0];
+    r.images = await roomImagesPreview(r.images, { signal: ctx.signal });
+    if (ctx.signal.aborted) return;
+    const visibleImages = r.images.filter(i => i.url);
+    const cover = visibleImages.find((i) => i.isCover) || visibleImages[0];
     const listingLive = r.listing?.status === 'published';
     setHtml(ctx.outlet, html`${pageHeader({
       title: html`${plate(r.code, { size: 'lg' })} ${r.name}`,
@@ -53,8 +57,8 @@ export default async function RoomDetailPage(ctx) {
     <div class="ad-grid">
       <div class="ad-col-main">
         <section class="sr-panel">
-          ${cover ? html`<div class="ad-gallery"><img class="ad-gallery-main" src="${asset(cover.url)}" alt="${cover.caption || `Ảnh phòng ${r.code}`}">
-            ${r.images.length > 1 ? html`<div class="ad-gallery-strip">${r.images.filter((i) => i.id !== cover.id).slice(0, 4).map((i) => html`<img src="${asset(i.url)}" alt="${i.caption || ''}" loading="lazy">`)}</div>` : ''}</div>`
+          ${cover ? html`<div class="ad-gallery"><img class="ad-gallery-main" src="${asset(cover.url)}" alt="${cover.caption || `Ảnh phòng ${r.code}`}" referrerpolicy="no-referrer">
+            ${visibleImages.length > 1 ? html`<div class="ad-gallery-strip">${visibleImages.filter((i) => i.id !== cover.id).slice(0, 4).map((i) => html`<img src="${asset(i.url)}" alt="${i.caption || ''}" loading="lazy" referrerpolicy="no-referrer">`)}</div>` : ''}</div>`
     : emptyState({ iconName: 'image', title: 'Phòng chưa có ảnh', text: 'Có thể đăng tin ngay và bổ sung ảnh phòng sau.', action: canWrite ? html`<a class="btn btn-outline-primary btn-sm" href="${link(`/admin/rooms/${id}/edit`)}">Thêm ảnh</a>` : '' })}
           ${r.description ? html`<div class="sr-panel-body border-top"><p class="mb-0">${r.description}</p></div>` : ''}
         </section>

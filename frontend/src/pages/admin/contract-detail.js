@@ -164,6 +164,7 @@ export default async function ContractDetailPage(ctx) {
     renew: async () => {
       const current = k.versions.filter((v) => v.isSigned && v.effectiveFrom <= todayIso()).pop();
       const today = todayIso();
+      const moveIn = k.tenancy.actualMoveIn;
       const start = k.endsOn > today ? k.endsOn : today;
       let uploader;
       const done = await formModal({
@@ -207,7 +208,9 @@ export default async function ContractDetailPage(ctx) {
       const today = todayIso();
       const meters = Object.fromEntries(k.meters.map((m) => [m.meterKind, m]));
       const fields = [
-        { name: 'moveOutOn', label: 'Ngày trả phòng', type: 'date', required: true, col: 'col-md-6', max: today, default: today },
+        { name: 'moveOutOn', label: 'Ngày trả phòng', type: 'date', required: true, col: 'col-md-6', min: moveIn, max: today, default: today,
+          help: `Từ ngày nhận phòng ${formatDate(moveIn)} đến hôm nay; có thể trả trong ngày nhận.`,
+          validate: (value) => value < moveIn || value > today ? 'Chọn ngày từ ngày nhận phòng đến hôm nay.' : null },
         { name: 'roomStatusAfter', label: 'Phòng sau khi trả', type: 'select', col: 'col-md-6', placeholderOption: false, default: 'available', options: [{ value: 'available', label: 'Sẵn sàng cho thuê' }, { value: 'maintenance', label: 'Cần bảo trì' }] },
         ...k.meters.map((m) => ({ name: `readings.${m.meterKind}`, label: m.meterKind === 'electricity' ? 'Số điện cuối' : 'Số nước cuối', type: 'decimal', decimals: 3, required: true, col: 'col-md-6', min: meters[m.meterKind].lastReading?.value ?? 0, help: m.lastReading ? `Lần chốt gần nhất: ${formatNumber(m.lastReading.value, 3)}` : '' })),
         { name: 'terminationReason', label: 'Lý do kết thúc', type: 'textarea', rows: 2, required: true },
@@ -233,6 +236,8 @@ export default async function ContractDetailPage(ctx) {
       const remaining = preview.outstandingTotal + finalTotal - offsets.reduce((s, o) => s + o.amount, 0);
       const done = await formModal({
         title: 'Xác nhận quyết toán', submitLabel: 'Trả phòng', submitTone: 'danger', size: 'lg',
+        validate: (values) => left > 0 && values.refundMethod === 'bank_transfer' && !values.refundReference?.trim()
+          ? { refundReference: ['Nhập mã giao dịch ngân hàng của khoản hoàn cọc.'] } : null,
         intro: html`<ul class="ad-breakdown">
           <li><span>Hóa đơn cuối<small>Tiền phòng và điện nước đến ngày trả</small></span><strong class="num">${formatVnd(finalTotal)}</strong></li>
           ${preview.outstandingTotal ? html`<li><span>Nợ các hóa đơn trước</span><strong class="num">${formatVnd(preview.outstandingTotal)}</strong></li>` : ''}
@@ -242,11 +247,13 @@ export default async function ContractDetailPage(ctx) {
           ${preview.policyNote ? html`<div class="mt-2">${note(preview.policyNote, { tone: 'warn' })}</div>` : ''}`,
         fields: [
           ...(left > 0 ? [{ name: 'refundMethod', label: 'Cách hoàn cọc', type: 'select', placeholderOption: false, default: 'cash', options: [{ value: 'cash', label: 'Tiền mặt' }, { value: 'bank_transfer', label: 'Chuyển khoản' }] }] : []),
+          ...(left > 0 ? [{ name: 'refundReference', label: 'Mã giao dịch hoàn cọc', help: 'Bắt buộc khi hoàn cọc bằng chuyển khoản.',
+            validate: (value, values) => values.refundMethod === 'bank_transfer' && !value?.trim() ? 'Nhập mã giao dịch ngân hàng của khoản hoàn cọc.' : null }] : []),
           ...(remaining > 0 ? [{ name: 'remainingDebtReason', label: 'Lý do đóng hợp đồng khi còn nợ', type: 'textarea', rows: 2, required: true, minLength: 5 }] : []),
         ],
         onSubmit: (x, meta) => tenanciesApi.checkout(k.tenancyId, {
           moveOutOn: v.moveOutOn, readings: v.readings, terminationReason: v.terminationReason, roomStatusAfter: v.roomStatusAfter, handover: {}, offsets,
-          refund: left > 0 ? { amount: left, methodCode: x.refundMethod } : undefined,
+          refund: left > 0 ? { amount: left, methodCode: x.refundMethod, externalReference: x.refundMethod === 'bank_transfer' ? x.refundReference : undefined } : undefined,
           allowRemainingDebt: remaining > 0, remainingDebtReason: x.remainingDebtReason,
         }, meta.idempotencyKey),
       });

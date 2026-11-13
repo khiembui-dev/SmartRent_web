@@ -51,7 +51,7 @@ internal static class BillingEngine
             """, ct, "id", id, "contract", contractId, "period", periodId, "from", from, "to", to, "es", e?["value"]?.GetValue<decimal>(), "eat", e.Text("observedAt"), "ws", w?["value"]?.GetValue<decimal>(), "wat", w.Text("observedAt"));
         return await Row(c, t, "select to_jsonb(i)::text from invoices i where id=@id", ct, "id", id);
     }
-    public static async Task<JsonArray> Lines(NpgsqlConnection c, NpgsqlTransaction? t, JsonObject contract, JsonObject inv, bool requireReadings, CancellationToken ct)
+    public static async Task<JsonArray> Lines(NpgsqlConnection c, NpgsqlTransaction? t, JsonObject contract, JsonObject inv, bool requireReadings, CancellationToken ct, bool allowEmptyFinal = false)
     {
         var from = DateOnly.Parse(inv.Text("service_from")!);
         var to = DateOnly.Parse(inv.Text("service_to")!);
@@ -173,7 +173,7 @@ internal static class BillingEngine
                 }
             }
         }
-        if (lines.Count == 0 && requireReadings)
+        if (lines.Count == 0 && requireReadings && !allowEmptyFinal)
             throw Invalid("Chưa có khoản thu hợp lệ cho kỳ này.");
         return lines;
     }

@@ -209,7 +209,7 @@ CREATE TABLE contracts (
   updated_at timestamptz NOT NULL DEFAULT now(),
   CHECK(ends_on IS NULL OR ends_on>starts_on),
   CHECK(move_in_on IS NULL OR move_in_on>=starts_on),
-  CHECK(move_out_on IS NULL OR move_out_on>coalesce(move_in_on,starts_on)),
+  CONSTRAINT contracts_move_out_date CHECK(move_out_on IS NULL OR move_out_on>=coalesce(move_in_on,starts_on)),
   CHECK(status<>'active' OR (move_in_on IS NOT NULL AND move_out_on IS NULL)),
   CHECK(status<>'ended' OR (move_out_on IS NOT NULL AND nullif(btrim(ended_reason),'') IS NOT NULL)),
   EXCLUDE USING gist(room_id WITH =,daterange(starts_on,move_out_on,'[)') WITH &&) WHERE(status<>'cancelled')

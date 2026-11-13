@@ -2,6 +2,8 @@
 
 > Thanh toán tự động ApiPay: [cài đặt server, webhook, QR và đối soát](docs/APIPAY.md). Thêm 2 bảng kỹ thuật qua `database/14_apipay.sql`; cần cấu hình khóa riêng để nhận tiền thật.
 
+Trên máy đã cấu hình ApiPay, bật Docker rồi chạy `.\backend\start-apipay-local.ps1`. Khóa được mã hóa ngoài source; launcher mở HTTPS chỉ cho webhook và cập nhật URL vào ApiPay.
+
 Hệ thống quản lý nhà trọ gồm khu admin/chủ trọ và khu khách hàng. Backend ASP.NET
 Core dùng PostgreSQL; frontend Vite gọi API thật. Database có 13 bảng nghiệp vụ, 2 bảng ApiPay và hai role
 `admin`, `user`, tối đa một admin.

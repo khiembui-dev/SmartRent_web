@@ -16,37 +16,51 @@ internal static class CheckoutService
             throw Invalid("Hợp đồng không còn hoạt động.");
         var day = DateOnly.Parse(body.Text("moveOutOn")!);
         var move = DateOnly.Parse(contract.Text("move_in_on")!);
-        if (day <= move || day > Today)
-            throw Invalid("Ngày trả phải sau ngày vào ở và không ở tương lai.");
+        if (day < move || day > Today)
+            throw Invalid("Ngày trả không được trước ngày vào ở hoặc sau hôm nay.");
         var previous = await Scalar(c, t, "select max(service_to)::text from invoices where contract_id=@id and status='issued' and kind in ('periodic','final') and not metered_only", ct, "id", id);
         var from = previous is null ? move : DateOnly.Parse(previous);
         var meteredOnly = from >= day;
-        if (meteredOnly)
-            from = day.AddDays(-1);
-        var inv = new JsonObject { ["contract_id"] = id, ["service_from"] = from.ToString("yyyy-MM-dd"), ["service_to"] = day.ToString("yyyy-MM-dd"), ["metered_only"] = meteredOnly };
-        var version = BillingEngine.Version(contract, from);
+        // Trả trong ngày hoặc kỳ thuê đã có hóa đơn: chỉ chốt phát sinh điện nước, không thu lại tiền phòng.
+        // Hóa đơn vẫn cần khoảng ngày không rỗng; khoảng kỹ thuật này không dùng để tính thêm ngày thuê.
+        var sameDay = day == move;
+        var invoiceTo = sameDay ? day.AddDays(1) : day;
+        if (meteredOnly) from = sameDay ? day : day.AddDays(-1);
+        var inv = new JsonObject { ["contract_id"] = id, ["service_from"] = from.ToString("yyyy-MM-dd"), ["service_to"] = invoiceTo.ToString("yyyy-MM-dd"), ["metered_only"] = meteredOnly };
+        var version = BillingEngine.Version(contract, meteredOnly ? day : from);
         var readings = body["readings"];
         foreach (var kind in new[] { "electricity", "water" })
         {
-            if (!version["rates"]!.AsArray().Any(x => x.Text("category") == kind && x.Text("method") == "metered"))
+            if (contract["initial_readings"]?[kind] is null && !version["rates"]!.AsArray().Any(x => x.Text("category") == kind && x.Text("method") == "metered"))
                 continue;
-            var first = await BillingEngine.Previous(c, t, contract, kind, day, null, ct) ?? throw Invalid("Thiếu chỉ số đầu " + kind);
+            // Bao gồm cả lần chốt hóa đơn bắt đầu trong ngày trả, tránh tính lại điện nước đã thu.
+            var first = await BillingEngine.Previous(c, t, contract, kind, day.AddDays(1), null, ct) ?? throw Invalid("Thiếu chỉ số đầu " + kind);
             if (readings?[kind] is null)
                 throw Invalid("Cần số cuối " + kind);
             var value = readings[kind]!.GetValue<decimal>();
-            var at = new DateTimeOffset(day.ToDateTime(new TimeOnly(18, 0)), TimeSpan.FromHours(7)).ToUniversalTime();
-            if (at > DateTimeOffset.UtcNow)
-                at = DateTimeOffset.UtcNow;
+            if (value < first.Number("value")) throw Invalid("Chỉ số cuối phải lớn hơn hoặc bằng lần chốt gần nhất.");
+            var at = day == Today ? DateTimeOffset.UtcNow : new DateTimeOffset(day.ToDateTime(new TimeOnly(23, 59, 59)), TimeSpan.FromHours(7)).ToUniversalTime();
+            if (at <= DateTimeOffset.Parse(first.Text("observedAt")!))
+                throw Invalid("Ngày trả phải từ ngày chốt điện nước gần nhất. Không thể chốt lùi thời gian.");
             inv[kind + "_start"] = Copy(first["value"]);
             inv[kind + "_from_at"] = first.Text("observedAt");
             inv[kind + "_end"] = value;
             inv[kind + "_to_at"] = at.ToString("O");
         }
-        var lines = await BillingEngine.Lines(c, t, contract, inv, true, ct);
+        var lines = await BillingEngine.Lines(c, t, contract, inv, true, ct, allowEmptyFinal: meteredOnly);
+        // Hồ sơ có chỉ số nhưng hợp đồng không thu loại điện/nước này: vẫn chốt số, không tự đặt đơn giá.
+        foreach (var kind in new[] { "electricity", "water" })
+            if (inv[kind + "_end"] is not null && !lines.Any(x => x.Text("category") == kind))
+                lines.Add(new JsonObject { ["id"] = Guid.NewGuid(), ["code"] = kind.ToUpperInvariant(), ["category"] = kind,
+                    ["description"] = kind == "electricity" ? "Chốt điện (không thu thêm)" : "Chốt nước (không thu thêm)",
+                    ["unit"] = kind == "electricity" ? "kWh" : "m³", ["quantity"] = inv.Number(kind + "_end") - inv.Number(kind + "_start"),
+                    ["unitPrice"] = 0, ["amount"] = 0, ["sign"] = 1 });
         var total = lines.Sum(x => x.Number("amount"));
         var debts = await Rows(c, t, "select jsonb_build_object('id',i.id,'outstandingAmount',b.outstanding_amount)::text from v_invoice_balances b join invoices i on i.id=b.id where i.contract_id=@id and b.outstanding_amount>0 order by i.due_on,i.id", ct, "id", id);
         var held = decimal.Parse(await Scalar(c, t, "select held::text from v_deposit_balances where contract_id=@id", ct, "id", id) ?? "0", System.Globalization.CultureInfo.InvariantCulture);
-        return new JsonObject { ["depositHeld"] = held, ["outstandingInvoices"] = Array(debts), ["outstandingTotal"] = debts.Sum(x => x.Number("outstandingAmount")), ["finalInvoice"] = new JsonObject { ["totalAmount"] = total, ["lines"] = lines }, ["invoiceData"] = inv, ["contractData"] = contract };
+        return new JsonObject { ["depositHeld"] = held, ["outstandingInvoices"] = Array(debts), ["outstandingTotal"] = debts.Sum(x => x.Number("outstandingAmount")), ["finalInvoice"] = new JsonObject { ["totalAmount"] = total, ["lines"] = lines },
+            ["policyNote"] = meteredOnly ? "Chỉ quyết toán điện nước chưa tính; giữ nguyên hóa đơn đã phát hành, không thu lại tiền phòng hoặc phí cố định." : null,
+            ["invoiceData"] = inv, ["contractData"] = contract };
     }
     public static async Task<object> Commit(NpgsqlConnection c, NpgsqlTransaction t, Guid actor, Guid id, JsonObject body, CancellationToken ct)
     {
@@ -62,7 +76,7 @@ internal static class CheckoutService
               issued_on,due_on,issued_by,issued_at,customer_snapshot)
             values(@invoice,next_code('HD'),@contract,'final','issued',@from,@to,@lines::jsonb,@metered,
               @es,@ee,@ef::timestamptz,@et::timestamptz,@ws,@we,@wf::timestamptz,@wt::timestamptz,@today,@today,@actor,now(),'{}')
-            """, ct, "invoice", invoice, "contract", id, "from", DateOnly.Parse(inv.Text("service_from")!), "to", day, "lines", preview["finalInvoice"]!["lines"]!.ToJsonString(), "metered", inv["metered_only"]!.GetValue<bool>(),
+            """, ct, "invoice", invoice, "contract", id, "from", DateOnly.Parse(inv.Text("service_from")!), "to", DateOnly.Parse(inv.Text("service_to")!), "lines", preview["finalInvoice"]!["lines"]!.ToJsonString(), "metered", inv["metered_only"]!.GetValue<bool>(),
             "es", inv["electricity_start"]?.GetValue<decimal>(), "ee", inv["electricity_end"]?.GetValue<decimal>(), "ef", inv.Text("electricity_from_at"), "et", inv.Text("electricity_to_at"),
             "ws", inv["water_start"]?.GetValue<decimal>(), "we", inv["water_end"]?.GetValue<decimal>(), "wf", inv.Text("water_from_at"), "wt", inv.Text("water_to_at"), "today", Today, "actor", actor);
         var debts = preview["outstandingInvoices"]!.DeepClone().AsArray();

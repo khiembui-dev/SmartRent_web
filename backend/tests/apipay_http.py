@@ -29,7 +29,7 @@ def sql(statement):
     return p.stdout.decode("utf-8").strip()
 
 
-def request(path, method="GET", raw=None, token=None, signature=None, https=False):
+def request(path, method="GET", raw=None, token=None, signature=None, https=False, webhook_port=False):
     headers = {"Content-Type": "application/json"}
     if token:
         headers["Authorization"] = "Bearer " + token
@@ -38,7 +38,8 @@ def request(path, method="GET", raw=None, token=None, signature=None, https=Fals
     if https:
         headers["X-Forwarded-Proto"] = "https"
     try:
-        with urllib.request.urlopen(urllib.request.Request(BASE + path, data=raw, method=method, headers=headers), timeout=9) as response:
+        target = BASE.replace(':5083/', ':5084/') if webhook_port else BASE
+        with urllib.request.urlopen(urllib.request.Request(target + path, data=raw, method=method, headers=headers), timeout=9) as response:
             return response.status, response.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
@@ -56,9 +57,10 @@ def signed(raw):
     return hmac.new(WEBHOOK_SECRET.encode(), raw, hashlib.sha256).hexdigest()
 
 
-with socket.socket() as port:
-    if port.connect_ex(("127.0.0.1", 5083)) == 0:
-        raise SystemExit("Port 5083 is already in use; stop the previous ApiPay test API.")
+for number in [5083,5084]:
+    with socket.socket() as port:
+        if port.connect_ex(("127.0.0.1", number)) == 0:
+            raise SystemExit("ApiPay test port is already in use; stop the previous test API.")
 
 ids = json.loads(sql("""select jsonb_build_object('admin',(select id from smartrent.users where role='admin'),
  'user',(select id from smartrent.users where code='KH-001'),
@@ -71,11 +73,12 @@ for role, token in tokens.items():
 env = dict(os.environ, ConnectionStrings__SmartRent=connection, ASPNETCORE_ENVIRONMENT="Development",
            APIPAY_ENABLED="true", APIPAY_ACCESS_KEY="http-fixture-access", APIPAY_SECRET_KEY="http-fixture-secret",
            APIPAY_WEBHOOK_SECRET=WEBHOOK_SECRET, APIPAY_WEBHOOK_URL="https://fixture.invalid/api/v1/apipay/webhook",
+           APIPAY_WEBHOOK_LISTENER_PORT="5084",
            APIPAY_TRUSTED_PROXIES="127.0.0.1,::1")
 with tempfile.TemporaryDirectory(prefix="smartrent_apipay_http_") as directory:
     with open(pathlib.Path(directory) / "api.log", "w", encoding="utf-8") as log:
         api = subprocess.Popen(["dotnet", str(ROOT / "backend/src/SmartRent.Api/bin/Debug/net10.0/SmartRent.Api.dll"),
-                                "--urls", "http://127.0.0.1:5083", "--contentRoot", str(ROOT / "backend/src/SmartRent.Api")],
+                                "--urls", "http://127.0.0.1:5083;http://127.0.0.1:5084", "--contentRoot", str(ROOT / "backend/src/SmartRent.Api")],
                                cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
             for _ in range(80):
@@ -104,6 +107,11 @@ with tempfile.TemporaryDirectory(prefix="smartrent_apipay_http_") as directory:
             expect(401, "/apipay/webhook", method="POST", raw=b"not json", https=True)
             expect(401, "/apipay/webhook", method="POST", raw=b"not json", signature="0"*64, https=True)
             expect(400, "/apipay/webhook", method="POST", raw=b"not json", signature=signed(b"not json"), https=True)
+            expect(404, "/dev/database-check", webhook_port=True)
+            expect(404, "/portal/invoices/"+ids["invoice"], token=tokens["user"], webhook_port=True)
+            expect(404, "/apipay/webhook", webhook_port=True)
+            expect(401, "/apipay/webhook", method="POST", raw=b"not json", https=True, webhook_port=True)
+            expect(404, "/apipay/webhook?unexpected=1", method="POST", raw=b"not json", https=True, webhook_port=True)
             test = b'{"event":"transaction.in","liveTest":true,"data":{}}'
             ignored = json.loads(expect(200, "/apipay/webhook", method="POST", raw=test, signature=signed(test), https=True))
             assert ignored["ignored"]

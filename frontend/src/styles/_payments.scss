@@ -1,3 +1,5 @@
+// Trên trang thanh toán, tránh để nút chat nổi che mã QR hoặc thông tin người nhận.
+body:has(.cu-payment-page) .sr-chat { display: none; }
 // Màu theo giao diện SmartRent; biên lai và thanh toán tách thành hai vùng trên mobile.
 .cu-invoice-auto {
   .cu-payment-overview { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 28px 32px; margin-bottom: 12px; border: 1px solid #c8dadd; border-radius: 18px; background: #edf5f4; color: #153e47;
@@ -17,6 +19,20 @@
   .cu-payment-dot { width: 8px; height: 8px; border-radius: 50%; background: #dca92a; }
   .cu-auto-success { text-align: center; padding: 32px 24px; > span { color: #2f7951; display: inline-block; font-size: 3rem; margin-bottom: 12px; } p { color: #536b73; } }
   .cu-payment-steps { margin: 20px 0 0; padding-left: 24px; font-size: .83rem; color: #5c7179; li { padding: 4px 0 4px 4px; } }
+  .cu-invoice-pay-action { .cu-payment-action-icon { display: inline-block; font-size: 2rem; color: #205763; margin-bottom: 14px; } > p { color: #5c7179; } }
+  .cu-action-amount { display: grid; gap: 4px; padding: 18px 0; margin: 12px 0 16px; border-block: 1px solid #dce6e8; span { font-size: .85rem; color: #5c7179; } strong { font-size: 1.8rem; color: #153e47; } }
+  .cu-checkout-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr); gap: 24px; align-items: start; }
+  .cu-checkout-progress { display: flex; align-items: center; list-style: none; gap: 24px; padding: 0; margin: -4px 0 24px; font-size: .9rem; color: #667c83;
+    li { display: flex; align-items: center; gap: 8px; } span { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; border: 1px solid #c0d0d3; background: #f6f9f9; }
+    .is-current { font-weight: 700; color: #205763; span { background: #205763; color: white; border-color: #205763; } }
+  }
+  .cu-checkout-summary { dl { margin: 0 0 18px; } dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 12px 0; border-bottom: 1px solid #e7eeee; }
+    dt { font-weight: 400; color: #5c7179; flex-shrink: 0; } dd { text-align: right; margin: 0; overflow-wrap: anywhere; min-width: 0; }
+    .is-total { padding-top: 18px; border: 0; color: #153e47; dt { font-weight: 600; color: inherit; } dd { font-weight: 700; font-size: 1.15rem; } }
+  }
+  .cu-payment-how .cu-payment-steps { margin: 0 0 16px; }
+  &.cu-payment-page { max-width: 1100px; }
   @media (max-width: 850px) { .cu-invoice-layout { grid-template-columns: 1fr; } .cu-invoice-side { grid-row: 1; } }
+  @media (max-width: 760px) { .cu-checkout-layout { grid-template-columns: 1fr; gap: 12px; } .cu-checkout-progress { gap: 16px; font-size: .8rem; } }
   @media (max-width: 520px) { .cu-payment-overview { padding: 22px; align-items: start; flex-direction: column; gap: 16px; } .cu-payment-meta { text-align: left; gap: 4px; } .cu-payment-sync { align-items: start; } }
 }

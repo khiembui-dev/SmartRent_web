@@ -16,7 +16,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot connect to PostgreSQL. Configure PGPASS
 if ($existing -eq '1') { throw "Database $DatabaseName already exists. This installer only creates a new database." }
 & $PsqlPath @connection -d postgres -c "CREATE DATABASE $DatabaseName"
 if ($LASTEXITCODE -ne 0) { throw 'Database creation failed.' }
-$scripts = @('01_schema.sql','02_rules.sql','03_seed.sql','14_apipay.sql')
+$scripts = @('01_schema.sql','02_rules.sql','03_seed.sql','14_apipay.sql','15_same_day_checkout.sql','16_apipay_invoice_content.sql')
 if ($WithDemo) { $scripts += '05_demo.sql' }
 foreach ($script in $scripts) {
     & $PsqlPath @connection -d $DatabaseName -q -f (Join-Path $PSScriptRoot $script)

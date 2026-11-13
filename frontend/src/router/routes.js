@@ -12,6 +12,7 @@ export const ROUTES = [
   site('/favorites', () => import('../pages/customer/favorites.js')),
   site('/contact', () => import('../pages/customer/contact.js')),
   member('/invoices', () => import('../pages/customer/invoices/list.js')),
+  member('/invoices/:id/pay', () => import('../pages/customer/invoices/payment.js')),
   member('/invoices/:id', () => import('../pages/customer/invoices/detail.js')),
   member('/tickets', () => import('../pages/customer/tickets/list.js')),
   member('/tickets/new', () => import('../pages/customer/tickets/new.js')),

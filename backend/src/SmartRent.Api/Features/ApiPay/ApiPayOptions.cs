@@ -19,5 +19,6 @@ public sealed class ApiPayOptions
         SecretKey = Environment.GetEnvironmentVariable("APIPAY_SECRET_KEY") ?? "",
         WebhookSecret = Environment.GetEnvironmentVariable("APIPAY_WEBHOOK_SECRET") ?? "",
         WebhookUrl = Environment.GetEnvironmentVariable("APIPAY_WEBHOOK_URL") ?? "",
+        BankPublicId = Environment.GetEnvironmentVariable("APIPAY_BANK_PUBLIC_ID") ?? "cmwf0n7b20xp301tjzi8z6dpc",
     };
 }

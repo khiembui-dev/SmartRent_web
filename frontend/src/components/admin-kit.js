@@ -21,7 +21,7 @@ export function rowActions(items) {
     : html`<button type="button" class="ad-icon-btn ${i.danger ? 'is-danger' : ''}" data-action="${i.action}" data-id="${i.id}" title="${i.label}" aria-label="${i.label}">${icon(i.icon)}</button>`))}</div>`;
 }
 
-export const roomThumb = (url) => html`<span class="ad-thumb">${url ? html`<img src="${asset(url)}" alt="" loading="lazy">` : icon('image')}</span>`;
+export const roomThumb = (url) => html`<span class="ad-thumb">${url ? html`<img src="${asset(url)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon('image')}</span>`;
 
 /** Ô chọn cơ sở dùng ngoài trang danh sách; lựa chọn được nhớ giữa các trang qua session.propertyId. */
 export function propertySelect({ id, value, all = true, label = 'Cơ sở' }) {

@@ -12,7 +12,7 @@ public class ApiPayTests
 {
     public static ApiPayOptions Options => new() { Enabled = true, AccessKey = "unit-access", SecretKey = "unit-secret",
         WebhookSecret = "unit-webhook-secret", WebhookUrl = "https://example.invalid/api/v1/apipay/webhook" };
-    private const string Memo = "SR00112233445566778899AABBCCDDEEFF";
+    private const string Memo = "HD00000093";
     private sealed class Handler(Func<HttpRequestMessage, Task<HttpResponseMessage>> callback) : HttpMessageHandler
     { protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) => callback(request); }
 

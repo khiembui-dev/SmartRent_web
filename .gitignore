@@ -3,6 +3,7 @@
 .env.local
 .env.*.local
 appsettings.Development.json
+*.credentials.clixml
 .claude/settings.local.json
 
 # Sinh ra khi build

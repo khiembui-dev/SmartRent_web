@@ -13,6 +13,7 @@ import { html, setHtml } from '../../utils/html.js';
 import { dataChanged, getCatalog, invalidateCatalog } from './common.js';
 import { tenantFormModal } from './tenant-dialogs.js';
 import { mountAddressEditor } from '../../components/address-editor.js';
+import { roomImagesPreview } from '../../services/room-images.js';
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Sẵn sàng cho thuê' },
@@ -250,9 +251,14 @@ export default async function RoomFormPage(ctx) {
 
   // Ảnh đã có: đặt ảnh bìa, xóa. Áp dụng ngay vì đây là thao tác trên từng ảnh.
   let images = room?.images || [];
-  const renderImages = () => {
-    setHtml(form.querySelector('[data-existing]'), html`${images.map((img) => html`<figure class="${img.isCover ? 'is-cover' : ''}">
-      <img src="${asset(img.url)}" alt="${img.caption || `Ảnh phòng ${room.code}`}" loading="lazy">
+  let imageRender = 0;
+  const renderImages = async () => {
+    const version = ++imageRender;
+    const previews = await roomImagesPreview(images, { signal: ctx.signal });
+    if (ctx.signal.aborted || version !== imageRender) return;
+    setHtml(form.querySelector('[data-existing]'), html`${previews.map((img) => html`<figure class="${img.isCover ? 'is-cover' : ''}">
+      ${img.url ? html`<img src="${asset(img.url)}" alt="${img.caption || `Ảnh phòng ${room.code}`}" loading="lazy" referrerpolicy="no-referrer">`
+        : html`<div class="p-3 text-muted small">Không tải được ảnh. Nếu tệp đã mất, xóa ảnh này và tải lại.</div>`}
       <figcaption>${img.isCover ? html`<span class="sr-badge tone-door no-dot">Ảnh bìa</span>` : html`<button type="button" class="btn btn-link btn-sm p-0" data-cover="${img.id}">Đặt làm bìa</button>`}
         <button type="button" class="ad-icon-btn is-danger" data-remove-image="${img.id}" aria-label="Xóa ảnh" title="Xóa ảnh">${icon('trash3')}</button></figcaption></figure>`)}`);
   };
@@ -286,6 +292,7 @@ export default async function RoomFormPage(ctx) {
     },
     onSubmit: async (v) => {
       if (uploader.busy) throw new FormError('Ảnh đang tải lên. Chờ tải xong rồi lưu lại.');
+      if (uploader.hasErrors) throw new FormError('Có ảnh tải lên thất bại. Hãy thử lại hoặc gỡ ảnh lỗi trước khi lưu.');
       const rates = ROOM_RATE_FIELDS.map((r) => ({ chargeTypeId: charge(r.code).id, unitPrice: v.rate?.[r.code] ?? (roomRate[r.code] != null ? propertyPrices[r.code] : undefined) }))
         .filter((r) => r.unitPrice != null);
       const renting = !occupied && v.operatingStatus === 'occupied';

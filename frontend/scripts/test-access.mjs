@@ -29,6 +29,9 @@ const forged = await login(customer.email, 'admin');
 assert.equal((await call('GET', '/api/v1/me', null, forged.accessToken)).user.role, 'user');
 await rejected(call('GET', '/api/v1/inquiries', null, forged.accessToken), 403, 'admin_only');
 assert.equal(ROUTES.find((r) => r.path === '/admin/login').redirect, '/login');
+assert.equal(ROUTES.find((r) => r.path === '/invoices/:id/pay').auth, 'customer');
+assert.equal(loginRedirect('customer', admin, '/invoices/test-id/pay'), '/admin');
+assert.equal(loginRedirect('customer', null, '/invoices/test-id/pay'), '/login?next=%2Finvoices%2Ftest-id%2Fpay');
 await rejected(call('GET', '/api/v1/portal/invoices', null, adminSession.accessToken), 403, 'customer_only');
 const adminEndpoints = listRoutes().filter((r) => r.auth === 'admin');
 for (const route of adminEndpoints) {

@@ -10,6 +10,7 @@ import { session } from '../../services/session.js';
 import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { bindActions, dataChanged } from './common.js';
+import { roomImagePreview } from '../../services/room-images.js';
 
 const STATUS_OPTIONS = [{ value: 'available', label: 'Còn trống' }, { value: 'occupied', label: 'Đã thuê' }, { value: 'reserved', label: 'Đang cọc giữ phòng' }, { value: 'maintenance', label: 'Bảo trì' }, { value: 'inactive', label: 'Ngừng khai thác' }];
 
@@ -50,7 +51,11 @@ export default function RoomsPage(ctx) {
         ]),
       },
     ],
-    fetch: (q, o) => roomsApi.list(q, o),
+    fetch: async (q, o) => {
+      const result = await roomsApi.list(q, o);
+      await Promise.all(result.items.map(async room => { room.coverImageUrl = await roomImagePreview(room.coverImageUrl, o); }));
+      return result;
+    },
     order: [[0, 'asc']],
     rowHref: (r) => `/admin/rooms/${r.id}`,
     empty: { title: 'Chưa có phòng', text: 'Thêm phòng và gắn vào một cơ sở.' },

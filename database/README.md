@@ -18,6 +18,9 @@ Migration cho database đã cài (chạy bằng owner, chạy lại được, kh
 | `11_room_listing_sync.sql` | Tin phòng tự tạm ẩn khi có hợp đồng, tự công khai khi trả phòng; phòng đã có hợp đồng không đổi cơ sở |
 | `12_favorite_rooms.sql` | Cột `users.favorite_rooms` cho trang Phòng yêu thích (không thêm bảng) |
 | `13_room_address_and_schedule.sql` | Địa chỉ tỉnh/phường mới, địa chỉ riêng của phòng, trạng thái cọc giữ phòng và lịch nhắc 1–31 |
+| `14_apipay.sql` | Hai bảng kỹ thuật lưu yêu cầu QR và webhook ApiPay |
+| `15_same_day_checkout.sql` | Trả trong ngày nhận phòng, đóng người ở cùng và quyết toán không phát sinh phí; không thêm bảng |
+| `16_apipay_invoice_content.sql` | Nội dung chuyển khoản từ mã hóa đơn (`HD-00000093` → `HD00000093`); cho phép nhiều lượt QR cùng hóa đơn, giữ mã cũ để đối soát |
 
 ```powershell
 docker compose exec -T db psql -U postgres -d smartrent -v ON_ERROR_STOP=1 -f /smartrent-database/12_favorite_rooms.sql
@@ -67,7 +70,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\database\install.ps1 -Data
 # Có thể thêm -WithDemo cho database dùng thử.
 ```
 
-Installer tạo database mới và chạy `01_schema.sql`, `02_rules.sql`, `03_seed.sql`, `14_apipay.sql`. Nó từ chối database đã tồn tại. Database đang sử dụng chỉ chạy migration cần bổ sung, không nạp lại baseline. Bộ test SQL cũ kiểm tra 13 bảng nghiệp vụ; `backend/tests/run_apipay.py` kiểm tra thêm hai bảng ApiPay và ghi nhận thanh toán.
+Installer tạo database mới và chạy `01_schema.sql`, `02_rules.sql`, `03_seed.sql`, `14_apipay.sql`, `15_same_day_checkout.sql`, `16_apipay_invoice_content.sql`. Nó từ chối database đã tồn tại. Database đang sử dụng chỉ chạy migration cần bổ sung, không nạp lại baseline. Bộ test SQL cũ kiểm tra 13 bảng nghiệp vụ; `backend/tests/run_apipay.py` kiểm tra thêm hai bảng ApiPay và ghi nhận thanh toán.
 
 `03_seed.sql` chỉ tạo cấu hình. Danh mục tiện ích/loại phí nằm trong JSONB của cơ sở/phòng; loại sự cố là bốn giá trị cố định. `05_demo.sql` tùy chọn cung cấp dữ liệu minh họa nhỏ. Hash tài khoản demo cố ý không dùng đăng nhập; tệp demo chỉ có metadata.
 

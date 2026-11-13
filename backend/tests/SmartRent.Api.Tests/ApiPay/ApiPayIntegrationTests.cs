@@ -26,23 +26,28 @@ public class ApiPayIntegrationTests
         await using var cmd = db.CreateCommand(sql); foreach (var x in args) cmd.Parameters.AddWithValue(x);
         return Convert.ToString(await cmd.ExecuteScalarAsync()) ?? "";
     }
-    private static async Task<(Guid Invoice, Guid User)> Invoice(NpgsqlDataSource db)
+    private static async Task<(Guid Invoice, Guid User)> Invoice(NpgsqlDataSource db, string? code = null)
     {
         var user = Guid.Parse(await Sql(db, "select user_id from contracts where code='HDTH-001'"));
         var id = Guid.NewGuid();
         await Sql(db, """
             insert into invoices(id,code,contract_id,kind,status,service_from,service_to,lines,issued_on,due_on,issued_at,issued_by)
-            select $1,'API-'||$1::text,c.id,'opening_balance','issued',current_date,current_date+1,
+            select $1,$2,c.id,'opening_balance','issued',current_date,current_date+1,
               '[{"id":"apipay","code":"RENT","category":"rent","description":"ApiPay test","unit":"month","quantity":1,"unitPrice":100000}]'::jsonb,
               current_date,current_date+7,now(),(select id from users where role='admin') from contracts c where code='HDTH-001'
-            """, id);
+            """, id, code ?? "API-" + id);
         return (id, user);
     }
     private sealed class FakeClient : IApiPayClient
     {
         public int Calls;
         public Task<ApiPayCheckout> CreateAsync(decimal amount, string content, string title, CancellationToken ct)
-        { Calls++; return Task.FromResult(new ApiPayCheckout("API"+content,"https://pay.apipay.vn/"+content,"https://app.apipay.vn/v1/payment-requests/"+content+"/qr-image",content,"MB","0123","TEST",DateTimeOffset.UtcNow.AddMinutes(30))); }
+        {
+            Calls++;
+            var providerId = "API" + Guid.NewGuid().ToString("N");
+            return Task.FromResult(new ApiPayCheckout(providerId,"https://pay.apipay.vn/"+providerId,
+                "https://app.apipay.vn/v1/payment-requests/"+providerId+"/qr-image",content,"MB","0123","TEST",DateTimeOffset.UtcNow.AddMinutes(30)));
+        }
     }
     private sealed class UncertainClient : IApiPayClient
     {
@@ -133,6 +138,74 @@ public class ApiPayIntegrationTests
         var memo = await Sql(db,"select content from apipay_requests where invoice_id=$1",f.Invoice);
         await store.AcceptAsync(Transfer(memo),default); await Drain(store);
         Assert.Equal("paid",await Sql(db,"select payment_status from v_invoice_balances where id=$1",f.Invoice));
+    }
+
+    [ApiPayDatabaseFact]
+    public async Task InvoiceMemoIsStableAcrossRenewalAndMatchesTheRequestBeforeTransfer()
+    {
+        await using var db = Db(); var f = await Invoice(db, "HD-00000093");
+        var store = new ApiPayStore(db,ApiPayTests.Options); var client = new FakeClient(); var portal = Portal(store,client,f.User);
+        var first = Body(await portal.Create(f.Invoice,default))["request"]!;
+        Assert.Equal("HD00000093",first["content"]!.GetValue<string>());
+        var firstId = Guid.Parse(first["id"]!.ToString());
+        await Sql(db,"update apipay_requests set created_at=now()-interval '2 hours',expires_at=now()-interval '1 minute' where id=$1",firstId);
+        var second = Body(await portal.Create(f.Invoice,default))["request"]!;
+        Assert.Equal(first["content"]!.ToString(),second["content"]!.ToString());
+        Assert.NotEqual(first["id"]!.ToString(),second["id"]!.ToString()); Assert.Equal(2,client.Calls);
+        Assert.Equal("2",await Sql(db,"select count(*)::text from apipay_requests where invoice_id=$1",f.Invoice));
+        // Webhook đến muộn cho lần tạo QR cũ: cùng hóa đơn không bị coi là hai kết quả mơ hồ.
+        var e = Transfer("HD00000093") with { TransactionDate=DateTimeOffset.UtcNow.AddHours(-1) };
+        Assert.True(await store.AcceptAsync(e,default)); await Drain(store);
+        Assert.Equal("paid",await Sql(db,"select payment_status from v_invoice_balances where id=$1",f.Invoice));
+        Assert.Equal(firstId.ToString(),await Sql(db,"select request_id::text from apipay_events where transaction_id=$1",e.TransactionId));
+    }
+
+    [ApiPayDatabaseFact]
+    public async Task LegacyMemoIsNotShownButStillPaysAfterInvoiceMemoIsCreated()
+    {
+        await using var db = Db(); var f = await Invoice(db); var store = new ApiPayStore(db,ApiPayTests.Options);
+        var portal = Portal(store,new FakeClient(),f.User); var first = Body(await portal.Create(f.Invoice,default))["request"]!;
+        var legacy = "SR" + Guid.NewGuid().ToString("N").ToUpperInvariant();
+        await Sql(db,"update apipay_requests set content=$2 where id=$1",Guid.Parse(first["id"]!.ToString()),legacy);
+        Assert.Null((await store.StateAsync(f.Invoice,f.User,default))["request"]);
+        var current = Body(await portal.Create(f.Invoice,default))["request"]!;
+        Assert.StartsWith("API",current["content"]!.ToString()); Assert.DoesNotContain("-",current["content"]!.ToString());
+        Assert.NotEqual(first["id"]!.ToString(),current["id"]!.ToString());
+        var e = Transfer(legacy); await store.AcceptAsync(e,default); await Drain(store);
+        Assert.Equal("paid",await Sql(db,"select payment_status from v_invoice_balances where id=$1",f.Invoice));
+        Assert.Equal(first["id"]!.ToString(),await Sql(db,"select request_id::text from apipay_events where transaction_id=$1",e.TransactionId));
+    }
+
+    [ApiPayDatabaseFact]
+    public async Task LongerInvoiceNumberIsNeverMatchedByItsPrefix()
+    {
+        await using var db = Db(); var f = await Invoice(db,"HD-00000931"); var store = new ApiPayStore(db,ApiPayTests.Options);
+        await Portal(store,new FakeClient(),f.User).Create(f.Invoice,default);
+        var wrong = Transfer("HD000009310"); await store.AcceptAsync(wrong,default); await Drain(store);
+        Assert.Equal("unknown_content",await Sql(db,"select reason from apipay_events where transaction_id=$1",wrong.TransactionId));
+        Assert.Equal("100000",await Sql(db,"select outstanding_amount::text from v_invoice_balances where id=$1",f.Invoice));
+        // Cho phép ngân hàng thêm chữ ở trước/sau và chuẩn hóa nội dung thành chữ thường.
+        var correct = Transfer("HD00000931") with { Content="MBFT123hd00000931CT" };
+        await store.AcceptAsync(correct,default); await Drain(store);
+        Assert.Equal("paid",await Sql(db,"select payment_status from v_invoice_balances where id=$1",f.Invoice));
+    }
+
+    [ApiPayDatabaseFact]
+    public async Task UpdatedBalanceUsesSameInvoiceMemoAndTheRequestWithMatchingAmount()
+    {
+        await using var db = Db(); var f = await Invoice(db); var store = new ApiPayStore(db,ApiPayTests.Options);
+        var portal = Portal(store,new FakeClient(),f.User); var first = Body(await portal.Create(f.Invoice,default))["request"]!;
+        await Sql(db,"""
+            insert into payments(code,user_id,contract_id,intended_invoice_id,amount,method,status,confirmed_at,confirmed_by,allocations)
+            select 'APIPARTIAL-'||$1::text,c.user_id,c.id,i.id,50000,'cash','confirmed',now(),(select id from users where role='admin'),
+              jsonb_build_array(jsonb_build_object('invoiceId',i.id,'amount',50000)) from invoices i join contracts c on c.id=i.contract_id where i.id=$1
+            """,f.Invoice);
+        var remaining = Body(await portal.Create(f.Invoice,default))["request"]!;
+        Assert.Equal(first["content"]!.ToString(),remaining["content"]!.ToString());
+        Assert.Equal(50000,remaining["amount"]!.GetValue<decimal>());
+        var e = Transfer(remaining["content"]!.ToString(),50000); await store.AcceptAsync(e,default); await Drain(store);
+        Assert.Equal("paid",await Sql(db,"select payment_status from v_invoice_balances where id=$1",f.Invoice));
+        Assert.Equal(remaining["id"]!.ToString(),await Sql(db,"select request_id::text from apipay_events where transaction_id=$1",e.TransactionId));
     }
 
     [ApiPayDatabaseFact]

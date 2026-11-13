@@ -35,7 +35,7 @@ created = False
 try:
     docker("createdb", "-U", "postgres", database)
     created = True
-    for content in [schema] + [(ROOT / "database" / name).read_bytes() for name in ["14_apipay.sql", "03_seed.sql", "05_demo.sql"]]:
+    for content in [schema] + [(ROOT / "database" / name).read_bytes() for name in ["14_apipay.sql", "16_apipay_invoice_content.sql", "16_apipay_invoice_content.sql", "03_seed.sql", "05_demo.sql"]]:
         docker("psql", "-U", "postgres", "-d", database, "-v", "ON_ERROR_STOP=1", data=content)
     env = dict(os.environ, SMARTRENT_APIPAY_TEST_CONNECTION=isolated)
     subprocess.run(["dotnet", "test", "backend/tests/SmartRent.Api.Tests", "--no-build", "--filter", "FullyQualifiedName~ApiPay"], cwd=ROOT, env=env, check=True)

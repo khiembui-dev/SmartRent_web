@@ -1,4 +1,6 @@
-# Database SmartRent — 13 bảng
+# Database SmartRent — 13 bảng nghiệp vụ + 2 bảng ApiPay
+
+Tích hợp ApiPay thêm `apipay_requests` và `apipay_events` bằng `14_apipay.sql` (tổng 15 bảng khi cài đầy đủ). Xem [cài đặt, mô hình dữ liệu và đối soát](../docs/APIPAY.md). Hai bảng kỹ thuật giữ yêu cầu thanh toán và inbox chống ghi thu trùng; không thay thế `payments`/`invoices`.
 
 Baseline thu gọn theo yêu cầu ngày 04/11/2026. Một database dùng chung cho khu admin và khu khách, chỉ hai role `admin` và `user`, tối đa một admin.
 
@@ -7,6 +9,20 @@ Chuyển tài khoản đã đăng ký thành admin bằng [script và hướng d
 Tin phòng chỉ hiện trên trang khách khi đã đăng, phòng còn trống và cơ sở hoạt động.
 Ảnh có thể bổ sung sau. Database đã cài trước thay đổi này chạy migration
 `08_room_listings.sql` bằng owner; không reset database. Xem [luồng đăng phòng](../docs/PHONG_TREN_TRANG_KHACH.md).
+
+Migration cho database đã cài (chạy bằng owner, chạy lại được, không reset dữ liệu):
+
+| File | Nội dung |
+|---|---|
+| `10_property_maps.sql` | Liên kết Google Maps của cơ sở |
+| `11_room_listing_sync.sql` | Tin phòng tự tạm ẩn khi có hợp đồng, tự công khai khi trả phòng; phòng đã có hợp đồng không đổi cơ sở |
+| `12_favorite_rooms.sql` | Cột `users.favorite_rooms` cho trang Phòng yêu thích (không thêm bảng) |
+| `13_room_address_and_schedule.sql` | Địa chỉ tỉnh/phường mới, địa chỉ riêng của phòng, trạng thái cọc giữ phòng và lịch nhắc 1–31 |
+
+```powershell
+docker compose exec -T db psql -U postgres -d smartrent -v ON_ERROR_STOP=1 -f /smartrent-database/12_favorite_rooms.sql
+docker compose exec -T db psql -U postgres -d smartrent -v ON_ERROR_STOP=1 -f /smartrent-database/13_room_address_and_schedule.sql
+```
 
 | Bảng | Dữ liệu |
 |---|---|
@@ -51,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\database\install.ps1 -Data
 # Có thể thêm -WithDemo cho database dùng thử.
 ```
 
-Installer tạo database mới và chạy `01_schema.sql`, `02_rules.sql`, `03_seed.sql`. Nó từ chối database đã tồn tại. Đây là baseline mới, không phải migration tự động chuyển dữ liệu từ cấu trúc trước. Không trộn SQL cũ với bộ 13 bảng.
+Installer tạo database mới và chạy `01_schema.sql`, `02_rules.sql`, `03_seed.sql`, `14_apipay.sql`. Nó từ chối database đã tồn tại. Database đang sử dụng chỉ chạy migration cần bổ sung, không nạp lại baseline. Bộ test SQL cũ kiểm tra 13 bảng nghiệp vụ; `backend/tests/run_apipay.py` kiểm tra thêm hai bảng ApiPay và ghi nhận thanh toán.
 
 `03_seed.sql` chỉ tạo cấu hình. Danh mục tiện ích/loại phí nằm trong JSONB của cơ sở/phòng; loại sự cố là bốn giá trị cố định. `05_demo.sql` tùy chọn cung cấp dữ liệu minh họa nhỏ. Hash tài khoản demo cố ý không dùng đăng nhập; tệp demo chỉ có metadata.
 
@@ -81,4 +97,4 @@ python database/tests/run_checks.py --host 127.0.0.1 --port 55440 --user postgre
 
 Chọn port PostgreSQL kiểm thử đang chạy. Runner tạo database ngẫu nhiên, nạp schema và demo, kiểm tra ràng buộc/nghiệp vụ/giao dịch đồng thời rồi xóa database do chính nó tạo. `--keep` giữ lại để kiểm tra.
 
-**Trạng thái ứng dụng:** frontend vẫn chạy mock/localStorage; backend ASP.NET còn khung. Bộ SQL 13 bảng đã được kiểm thử độc lập. Cần triển khai adapter/API trước khi đặt `VITE_DATA_SOURCE=api`.
+**Trạng thái ứng dụng:** frontend ở chế độ `VITE_DATA_SOURCE=api` gọi backend ASP.NET Core và PostgreSQL thật. Xem [cập nhật hợp đồng, phòng, địa chỉ và tìm kiếm](../docs/CAP_NHAT_PHONG_HOP_DONG_20261113.md).

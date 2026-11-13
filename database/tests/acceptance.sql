@@ -18,6 +18,9 @@ SELECT pg_temp.ok('Customer profile without login remains in users',(SELECT NOT 
 SELECT pg_temp.reject('No third role',$q$INSERT INTO users(role,display_name) VALUES('staff','Invalid')$q$,'23514');
 SELECT pg_temp.reject('One admin',$q$INSERT INTO users(role,display_name,email,password_hash,login_enabled) VALUES('admin','Other','other@test','disabled_test_hash_123456',true)$q$,'23505');
 SELECT pg_temp.reject('Role immutable',$q$UPDATE users SET role='admin' WHERE code='KH-001'$q$,'role_is_immutable');
+SELECT pg_temp.ok('Favorite rooms default to empty list',(SELECT bool_and(jsonb_typeof(favorite_rooms)='array') FROM users));
+SELECT pg_temp.reject('Favorite rooms must be a list',$q$UPDATE users SET favorite_rooms='{}' WHERE code='KH-001'$q$,'users_favorite_rooms_check');
+SELECT pg_temp.reject('At most 100 favorite rooms',$q$UPDATE users SET favorite_rooms=(SELECT jsonb_agg(jsonb_build_object('roomId',gen_random_uuid(),'savedAt',now())) FROM generate_series(1,101)) WHERE code='KH-001'$q$,'users_favorite_rooms_check');
 SELECT pg_temp.reject('Admin not deleted',$q$DELETE FROM users WHERE role='admin'$q$,'cannot_delete_admin');
 SELECT pg_temp.reject('Login requires credentials',$q$UPDATE users SET login_enabled=true WHERE code='KH-003'$q$,'23514');
 SELECT pg_temp.reject('Unique normalized email',$q$INSERT INTO users(display_name,email) VALUES('Dup',' USER@example.test ')$q$,'23505');
@@ -29,11 +32,19 @@ SELECT pg_temp.reject('Token expiry valid',$q$INSERT INTO auth_tokens(user_id,ki
 SELECT pg_temp.ok('Public listing and embedded image',(SELECT count(*)=1 AND bool_and(jsonb_array_length(images)=1) FROM v_public_rooms));
 SELECT pg_temp.reject('Case insensitive room code',$q$INSERT INTO rooms(property_id,code,name,area_m2,capacity) SELECT id,'a101','Duplicate',20,2 FROM properties$q$,'23505');
 DO $$ DECLARE original_images jsonb; BEGIN
- SELECT images INTO original_images FROM rooms WHERE code='A101';
- UPDATE rooms SET images='[]' WHERE code='A101';
- PERFORM pg_temp.ok('Published room may have no image',(SELECT listing_status='published' AND images='[]' FROM rooms WHERE code='A101'));
- UPDATE rooms SET images=original_images WHERE code='A101';
+ SELECT images INTO original_images FROM rooms WHERE code='A102';
+ UPDATE rooms SET images='[]' WHERE code='A102';
+ PERFORM pg_temp.ok('Published room may have no image',(SELECT listing_status='published' AND images='[]' FROM rooms WHERE code='A102'));
+ UPDATE rooms SET images=original_images WHERE code='A102';
 END $$;
+SELECT pg_temp.ok('Room with contract has its listing hidden',(SELECT listing_status='hidden' FROM rooms WHERE code='A101'));
+SELECT pg_temp.reject('Occupied room cannot be published',$q$UPDATE rooms SET listing_status='published' WHERE code='A101'$q$,'room_occupied_cannot_publish');
+INSERT INTO properties(code,name,address_line,province) VALUES('CS-MOVE','Cơ sở thử chuyển phòng','Địa chỉ thử','TP.HCM');
+SELECT pg_temp.reject('Room with contract keeps its property',$q$UPDATE rooms SET property_id=(SELECT id FROM properties WHERE code='CS-MOVE') WHERE code='A101'$q$,'room_property_locked_by_contracts');
+UPDATE rooms SET property_id=(SELECT id FROM properties WHERE code='CS-MOVE') WHERE code='A103';
+SELECT pg_temp.ok('Room without contract can change property',(SELECT p.code='CS-MOVE' FROM rooms r JOIN properties p ON p.id=r.property_id WHERE r.code='A103'));
+UPDATE rooms SET property_id=(SELECT id FROM properties WHERE code='CS01') WHERE code='A103';
+DELETE FROM properties WHERE code='CS-MOVE';
 SELECT pg_temp.reject('Embedded image references real file',$q$UPDATE rooms SET images='[{"fileId":"00000000-0000-0000-0000-000000000001"}]' WHERE code='A101'$q$,'invalid_file_reference');
 SELECT pg_temp.reject('Embedded image unique',$q$UPDATE rooms SET images=images||images WHERE code='A101'$q$,'invalid_or_duplicate_json_key');
 SELECT pg_temp.reject('Embedded amenities unique',$q$UPDATE rooms SET amenities=amenities||amenities WHERE code='A101'$q$,'invalid_or_duplicate_json_key');

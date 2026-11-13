@@ -27,6 +27,10 @@ BEGIN
  '{"electricity":{"value":100,"observedAt":"2026-09-01T01:00:00Z"},"water":{"value":20,"observedAt":"2026-09-01T01:00:00Z"}}',
  jsonb_build_array(jsonb_build_object('userId',roommate,'joinedOn','2026-09-01','relationship','Ở cùng')),
  jsonb_build_array(jsonb_build_object('id','v1','versionNo',1,'effectiveFrom','2026-09-01','endsOn','2027-09-01','requiredDeposit',3000000,'invoiceDay',1,'dueAfterDays',5,'termsText','Điều khoản mẫu','signedAt','2026-09-01T01:00:00Z','signedBy',admin_id,'fileIds',jsonb_build_array(signed_file),'rates',prices,'partiesSnapshot',jsonb_build_object('customer','Khách thuê mẫu')))) RETURNING id INTO contract;
+ -- A101 đã có hợp đồng nên tin tự tạm ẩn (sync_room_listing); A102 còn trống là tin đang công khai.
+ UPDATE rooms SET listing_slug='phong-a102',listing_title='Phòng A102',listing_status='published',published_at=now(),
+  images=jsonb_build_array(jsonb_build_object('fileId',photo,'caption','Ảnh minh họa','sortOrder',0,'isCover',true))
+ WHERE property_id=prop AND code='A102';
  INSERT INTO billing_periods(property_id,month_start) VALUES(prop,'2026-09-01') RETURNING id INTO period;
  INSERT INTO invoices(code,contract_id,period_id,service_from,service_to,electricity_start,electricity_end,electricity_from_at,electricity_to_at,water_start,water_end,water_from_at,water_to_at,lines)
  VALUES('HD-001',contract,period,'2026-09-01','2026-10-01',100,150,'2026-09-01T01:00Z','2026-09-30T11:00Z',20,25,'2026-09-01T01:00Z','2026-09-30T11:00Z',

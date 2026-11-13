@@ -12,9 +12,8 @@ public static class ContractTenantRules
         var normalizedPhone = Regex.Replace(phone ?? "", @"[\s.-]", "");
         if (!Regex.IsMatch(normalizedPhone, @"^(\+84|0)[0-9]{9,10}$"))
             throw Invalid("Người đứng tên hợp đồng phải có số điện thoại Việt Nam hợp lệ.");
-        if (dateOfBirth is null)
-            throw Invalid("Cần nhập ngày sinh của người đứng tên hợp đồng.");
-        if (dateOfBirth.Value.AddYears(18) > today)
+        // Hồ sơ có thể bổ sung ngày sinh sau. Chỉ kiểm tra tuổi khi đã có ngày sinh.
+        if (dateOfBirth is not null && dateOfBirth.Value.AddYears(18) > today)
             throw Invalid("Người đứng tên hợp đồng phải đủ 18 tuổi.");
     }
 

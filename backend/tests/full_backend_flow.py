@@ -53,6 +53,8 @@ try:
  viewing=next(x for x in req('/viewings')['items'] if x['inquiryId']==inquiry['id'])
  req('/viewings/'+viewing['id']+'/result','POST',{'status':'completed','resultNotes':'Too early'},expected=422)
  print('PASS register, book by slug and manage viewing')
+ # Người đứng tên hợp đồng cần số điện thoại Việt Nam và ngày sinh đủ 18 tuổi (ContractTenantRules).
+ req('/tenants/'+state['user'],'PUT',{'fullName':'Full customer','email':state['email'],'phone':'0900000000','dateOfBirth':'1998-05-20'})
  check={'roomId':r['id'],'tenantId':state['user'],'moveInOn':'2026-10-28','inquiryId':inquiry['id'],
   'contract':{'endsOn':'2027-10-28','requiredDeposit':3000000,'invoiceDay':1,'dueAfterDays':5,'termsText':'Signed agreement','rates':[{'chargeTypeId':'RENT','unitPrice':3000000},*rates]},
   'signature':{'signedFileId':signed['id'],'signedAt':'2026-10-28T00:00:00Z'},'readings':{'electricity':100,'water':20},'deposit':{'amount':3000000,'methodCode':'cash'}}
@@ -60,6 +62,10 @@ try:
  assert req('/tenancies/check-in','POST',check,key=key)['id']==cid
  req('/tenancies/check-in','POST',{**check,'handover':{'notes':'different'}},key=key,expected=409)
  assert req('/contracts/'+cid)['meters'];assert req('/portal/tenancies',role='full')[0]['financeVisible']
+ # Có hợp đồng thì tin tự tạm ẩn, không đăng lại được và phòng không chuyển cơ sở được.
+ room=req('/rooms/'+r['id']);assert room['listing']['status']=='hidden' and room['listing']['lockedByContract'] and room['canChangeProperty'] is False,room['listing']
+ assert not any(x['slug']==slug for x in req('/public/rooms',role=None)['items'])
+ req('/rooms/'+r['id']+'/listing','PUT',{'status':'published','title':'Full room listing'},expected=422)
  print('PASS signed check-in, deposit and idempotency')
  period=req('/billing-periods','POST',{'propertyId':p['id'],'monthStart':'2026-10-01'});pid=period['id'];state['period']=pid
  sheet=req('/billing-periods/'+pid+'/worksheet');row=sheet['rows'][0];assert row['readings']['electricity']['previous']['value']==100
@@ -95,6 +101,9 @@ try:
  replay=req('/tenancies/'+cid+'/checkout','POST',{'moveOutOn':'2026-11-07','readings':{'electricity':120,'water':25},'terminationReason':'Full checkout','roomStatusAfter':'available','refund':{'methodCode':'cash'}})
  assert replay['finalInvoiceId']==final['finalInvoiceId'] and replay['depositRefund']==final['depositRefund']
  assert req('/rooms/'+r['id'])['occupancyStatus']=='available'
+ # Kết thúc và trả phòng: phòng trống lại thì tin tự công khai lại.
+ room=req('/rooms/'+r['id']);assert room['listing']['status']=='published' and not room['listing']['lockedByContract'],room['listing']
+ assert any(x['slug']==slug for x in req('/public/rooms',role=None)['items'])
  req('/contracts/'+cid+'/archive','POST',{})
  assert req('/contracts/'+cid)['status']=='archived'
  print('PASS checkout preview matches issued final, deposit offset/refund, release room')

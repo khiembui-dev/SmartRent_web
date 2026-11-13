@@ -33,6 +33,7 @@ thiện local trước đó; chúng chưa thay thế việc kiểm tra trên ser
 | P1 | Có khóa tài khoản sau 5 lần sai; chưa có rate limiter cho các endpoint công khai trong API | Giới hạn đăng nhập, đăng ký, quên mật khẩu và upload bằng app hoặc proxy; trả 429 phù hợp. Khóa theo tài khoản không thay thế giới hạn theo nguồn gửi. |
 | P1 | Docker có healthcheck DB, nhưng chưa có health/readiness production cho API hoặc cấu hình cảnh báo | Bổ sung kiểm tra sống/sẵn sàng, request ID và log vận hành, giới hạn dung lượng/luân chuyển log, theo dõi lỗi và dung lượng lưu trữ. Endpoint `dev/database-check` hiện cố ý chỉ dành cho Development. |
 | P1 | SQL baseline và `init.sql` có sẵn, chưa có quy trình cập nhật schema/backup production đi kèm | Viết script cập nhật có phiên bản cho các lần nâng cấp sau, quy trình backup và khôi phục cả SQL lẫn file; thực hiện một lần restore thử. Không chạy lại baseline hoặc xóa volume để nâng cấp dữ liệu đang dùng. |
+| P0 | Trợ lý AI (`Features/Chatbot`, 13/11/2026) gọi dịch vụ AI qua `Chatbot:BaseUrl`; máy phát triển đang dùng endpoint `http` với `AllowInsecureHttp=true` | Production dùng endpoint HTTPS và khóa API riêng của server; không bật `AllowInsecureHttp`. Lịch sử hội thoại đang lưu trong bộ nhớ một tiến trình: chạy nhiều instance thì thay `IChatConversationStore`. Xem [CHATBOT_AI.md](CHATBOT_AI.md). |
 | P1 | `04_create_admin.sql` yêu cầu hash; lệnh CLI đặt mật khẩu trong `Program.cs` chỉ cho Development | Ghi rõ bước khởi tạo một admin production bằng hash hợp lệ và tài khoản sở hữu DB; không nạp `05_demo.sql` trên server thật. Bảo vệ thao tác bootstrap khỏi truy cập web. |
 
 P0: cần chốt cho môi trường đích trước khi mở website. P1: cần hoàn thiện để vận hành
@@ -57,9 +58,10 @@ Việc xử lý scheme/IP sau reverse proxy theo
   gọi các route này. SMTP cho quên mật khẩu/mời khách hiện lấy từ cấu hình server.
   Cần loại các API cũ khỏi tài liệu công khai hoặc triển khai nếu muốn quản trị SMTP
   bằng giao diện; không mô tả chúng là chức năng đã hoạt động.
-- Thanh toán hiện là chuyển khoản thủ công, khách báo và admin xác nhận. Chưa có
-  webhook ngân hàng/cổng thanh toán tự động; đây là phạm vi hiện tại, không phải
-  lỗi thiếu route của trang Hóa đơn.
+- Thanh toán ApiPay đã có QR, webhook HMAC, inbox bền vững và worker ghi sổ thu
+  (13/11/2026). Trước khi nhận tiền thật phải cấu hình khóa server, webhook HTTPS
+  trên dashboard và thử delivery thực tế; xem [ApiPay](APIPAY.md).
+  Phiếu thu thủ công vẫn dùng cho đối soát ngoại lệ; sandbox/liveTest không thu vào hóa đơn thật.
 - Nhắc tính tiền hiện hiển thị trên Tổng quan theo ngày trong Cài đặt. Chưa có
   worker tự gửi email/SMS hoặc tự tạo hóa đơn theo lịch. Giao diện hiện đã ghi rõ
   là nhắc trên Tổng quan.

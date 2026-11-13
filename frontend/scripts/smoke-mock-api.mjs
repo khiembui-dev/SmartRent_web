@@ -117,8 +117,9 @@ check(newMe.tenantProfiles.length === 1 && newMe.tenantProfiles[0].tenancies.len
 check((await newApi.get('/api/v1/portal/tenancies')).length === 0 && (await newApi.get('/api/v1/portal/invoices')).items.length === 0, 'Khách chưa có phòng không có đợt thuê và hóa đơn');
 await expectError(newApi.post('/api/v1/portal/inquiries', { slug: 'bt-a303-phong-don', preferredViewingAt: viewingAt, occupants: 1 }), 409, 'room_not_available', 'Không đặt được phòng không còn trống');
 await expectError(newApi.post('/api/v1/portal/inquiries', { slug: slugA204, preferredViewingAt: '2020-01-01T03:00:00.000Z', occupants: 1 }), 422, 'validation_failed', 'Không đặt lịch xem ở quá khứ');
-const inquiry = await newApi.post('/api/v1/portal/inquiries', { slug: slugA204, preferredViewingAt: viewingAt, occupants: 3, message: 'Xem sau giờ làm' });
-check(/^YC-/.test(inquiry.referenceCode) && inquiry.overCapacity, 'Đặt lịch nhận mã tham chiếu, báo vượt số người', inquiry);
+await expectError(newApi.post('/api/v1/portal/inquiries', { slug: slugA204, preferredViewingAt: viewingAt, occupants: 3 }), 422, 'invalid_occupants', 'Không đặt lịch vượt sức chứa phòng');
+const inquiry = await newApi.post('/api/v1/portal/inquiries', { slug: slugA204, preferredViewingAt: viewingAt, occupants: 2, message: 'Xem sau giờ làm' });
+check(/^YC-/.test(inquiry.referenceCode) && !inquiry.overCapacity, 'Đặt lịch nhận mã tham chiếu', inquiry);
 await expectError(newApi.post('/api/v1/portal/inquiries', { slug: slugA204, preferredViewingAt: viewingAt, occupants: 1 }), 409, 'inquiry_exists', 'Không đặt trùng lịch cho cùng một phòng');
 const myInquiries = await newApi.get('/api/v1/portal/inquiries');
 check(myInquiries.length === 1 && myInquiries[0].status === 'new' && myInquiries[0].slug === slugA204, 'Khách xem lại được lịch đã đặt', myInquiries);
@@ -548,6 +549,16 @@ const conv = await api.post('/api/v1/ai/conversations', { title: 'Cuộc hỏi m
 const answered = await api.post(`/api/v1/ai/conversations/${conv.id}/messages`, { content: 'Những hóa đơn nào quá hạn?' });
 check(answered.messages.some((m) => m.role === 'assistant' && /quá hạn/.test(m.content)), 'Trợ lý mô phỏng trả lời theo phạm vi', answered.messages.length);
 await api.get(`/api/v1/ai/conversations/${conv.id}`);
+await api.del(`/api/v1/ai/conversations/${conv.id}`);
+await expectError(api.get(`/api/v1/ai/conversations/${conv.id}`), 404, 'not_found', 'Hội thoại AI đã xóa không mở lại được');
+// Trợ lý khu khách: mock không gọi AI thật, chỉ báo chưa kết nối; khách khác và admin không mở được hội thoại.
+const pConv = await tApi.post('/api/v1/portal/ai/conversations', {});
+const pAnswered = await tApi.post(`/api/v1/portal/ai/conversations/${pConv.id}/messages`, { content: 'Tôi còn nợ bao nhiêu?' });
+check(pAnswered.messages.some((m) => m.role === 'assistant' && /chưa kết nối/i.test(m.content)), 'Trợ lý khách ở mock báo trung thực chưa kết nối AI', pAnswered.messages);
+check((await tApi.get('/api/v1/portal/ai/conversations')).some((c) => c.id === pConv.id), 'Khách thấy hội thoại AI của mình');
+await expectError(api.get(`/api/v1/portal/ai/conversations/${pConv.id}`), 403, 'customer_required', 'Admin không dùng trợ lý khu khách');
+await tApi.get(`/api/v1/portal/ai/conversations/${pConv.id}`);
+await tApi.del(`/api/v1/portal/ai/conversations/${pConv.id}`);
 
 // Cổng khách: mở lại ticket rồi trao đổi
 await tApi.post(`/api/v1/portal/tickets/${pTicket.id}/reopen`, { reason: 'Ổ cắm lại lỏng sau hai ngày' });

@@ -71,13 +71,15 @@ try:
       BEGIN UPDATE users SET role='admin' WHERE email='runtime@example.test'; RAISE EXCEPTION 'role update allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
       BEGIN PERFORM configure_runtime('{role}'); RAISE EXCEPTION 'grant escalation allowed'; EXCEPTION WHEN insufficient_privilege THEN NULL; END;
       IF NOT EXISTS(SELECT 1 FROM users WHERE email='runtime@example.test' AND role='user') THEN RAISE EXCEPTION 'wrong default role'; END IF;
+      UPDATE users SET favorite_rooms=jsonb_build_array(jsonb_build_object('roomId',gen_random_uuid(),'savedAt',now())) WHERE email='runtime@example.test';
+      IF NOT EXISTS(SELECT 1 FROM users WHERE email='runtime@example.test' AND jsonb_array_length(favorite_rooms)=1) THEN RAISE EXCEPTION 'favorite rooms not writable'; END IF;
     END $body$; ROLLBACK;"""
     sql(privileges)
-    report={'database':name,'postgres':sql('SHOW server_version').stdout.strip(),'tables':13,'acceptance':acceptance,'workflows':workflows,'concurrency':races,'runtimePrivilegeChecks':4}
+    report={'database':name,'postgres':sql('SHOW server_version').stdout.strip(),'tables':13,'acceptance':acceptance,'workflows':workflows,'concurrency':races,'runtimePrivilegeChecks':5}
     (BASE/'tests/latest-run.json').write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
-    (BASE/'tests/latest-run.txt').write_text(f"PostgreSQL {report['postgres']}\n13 tables\n{acceptance['passed']} SQL checks passed\n{workflows['passed']} business workflow scenarios passed\n3 two-connection races passed\n4 runtime privilege checks passed\nFresh schema, rules, default settings and demo loaded successfully.\n"+'\n'.join(x['name'] for x in races)+'\n',encoding='utf-8')
+    (BASE/'tests/latest-run.txt').write_text(f"PostgreSQL {report['postgres']}\n13 tables\n{acceptance['passed']} SQL checks passed\n{workflows['passed']} business workflow scenarios passed\n3 two-connection races passed\n5 runtime privilege checks passed\nFresh schema, rules, default settings and demo loaded successfully.\n"+'\n'.join(x['name'] for x in races)+'\n',encoding='utf-8')
     print(json.dumps({k:v for k,v in report.items() if k!='acceptance'}))
-    print(f"PASS: {acceptance['passed']} SQL checks + 3 concurrency cases + 4 runtime privilege checks")
+    print(f"PASS: {acceptance['passed']} SQL checks + 3 concurrency cases + 5 runtime privilege checks")
 finally:
     (BASE/'tests').mkdir(exist_ok=True)
     if not args.keep:

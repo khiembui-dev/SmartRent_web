@@ -24,13 +24,25 @@ public sealed class TenantsController(NpgsqlDataSource db, SmartRent.Api.Feature
                 var property = Request.Query["propertyId"].ToString();
                 var residence = Request.Query["residenceStatus"].ToString();
                 var portal = Request.Query["portal"].ToString();
-                var rows = await SmartRent.Api.Common.BusinessData.Rows(c, t, $"select {TenantJson("u")} from users u where u.role='user' order by u.created_at desc", ct);
+                // Lọc trên toàn bộ SQL trước khi phân trang; không chỉ lọc 20 khách đầu ở trình duyệt.
+                var eligibleOnly = Request.Query["availableForContract"] == "true";
+                var rows = await SmartRent.Api.Common.BusinessData.Rows(c, t, $"""
+                    select {TenantJson("u")} from users u where u.role='user'
+                    and (not @eligible or (u.is_active and not exists (
+                      select 1 from contracts c where c.status in ('active','planned')
+                      and (c.user_id=u.id or exists(select 1 from jsonb_array_elements(c.occupants) x
+                        where x->>'userId'=u.id::text and x->>'leftOn' is null)))))
+                    order by u.created_at desc,u.id
+                    """, ct, "eligible", eligibleOnly);
                 if (property != "")
                 {
                     var members = await SmartRent.Api.Common.BusinessData.Rows(c, t, "select jsonb_build_object('id',c.user_id,'occupants',c.occupants)::text from contracts c join rooms r on r.id=c.room_id where r.property_id::text=@p and c.status in ('active','planned')", ct, "p", property);
                     rows = rows.Where(r => members.Any(m => m["id"]!.ToString() == r["id"]!.ToString() || m["occupants"]!.AsArray().Any(x => x?["userId"]?.ToString() == r["id"]!.ToString() && x?["leftOn"] is null))).ToList();
                 }
-                rows = rows.Where(r => (string.IsNullOrWhiteSpace(q) || r.ToJsonString().Contains(q, StringComparison.OrdinalIgnoreCase)) && (residence == "" || r["residenceStatus"]!.ToString() == residence) && (portal == "" || r["hasPortalAccount"]!.GetValue<bool>() == (portal == "yes"))
+                // Tìm trên giá trị thật, không trên JSON đã escape Unicode (\uXXXX).
+                // Nhờ vậy tên có dấu hoặc không dấu đều tìm được, kể cả ngoài trang đầu.
+                var query = SearchText.Fold(q?.Trim());
+                rows = rows.Where(r => (query.Length == 0 || new[] { "code", "fullName", "phone", "email" }.Any(key => SearchText.Fold(r[key]?.ToString()).Contains(query))) && (residence == "" || r["residenceStatus"]!.ToString() == residence) && (portal == "" || r["hasPortalAccount"]!.GetValue<bool>() == (portal == "yes"))
                     && (Request.Query["debt"] != "outstanding" || r["outstandingAmount"]!.GetValue<decimal>() > 0) && (Request.Query["profileRequests"] != "pending" || r["hasPendingProfileRequest"]!.GetValue<bool>())).ToList();
                 await t.RollbackAsync(ct);
                 return Ok(SmartRent.Api.Common.BusinessData.Page(rows, page, pageSize));

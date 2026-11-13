@@ -1,7 +1,9 @@
 # SmartRent
 
+> Thanh toán tự động ApiPay: [cài đặt server, webhook, QR và đối soát](docs/APIPAY.md). Thêm 2 bảng kỹ thuật qua `database/14_apipay.sql`; cần cấu hình khóa riêng để nhận tiền thật.
+
 Hệ thống quản lý nhà trọ gồm khu admin/chủ trọ và khu khách hàng. Backend ASP.NET
-Core dùng PostgreSQL; frontend Vite gọi API thật. Database có 13 bảng và hai role
+Core dùng PostgreSQL; frontend Vite gọi API thật. Database có 13 bảng nghiệp vụ, 2 bảng ApiPay và hai role
 `admin`, `user`, tối đa một admin.
 
 ## Cấu hình được chia sẻ
@@ -73,6 +75,8 @@ Xem thêm [chuyển quyền admin](docs/CHUYEN_QUYEN_ADMIN.md).
 - [Backend và cách chạy](backend/README.md).
 - [Frontend](frontend/README.md).
 - [Đăng/ẩn phòng trên trang khách](docs/PHONG_TREN_TRANG_KHACH.md).
+- [Cập nhật hợp đồng, địa chỉ, cọc giữ phòng và bộ lọc](docs/CAP_NHAT_PHONG_HOP_DONG_20261113.md).
+- [Trợ lý AI cho admin và khách: cấu hình, bảo mật, kiểm thử](docs/CHATBOT_AI.md).
 - [Các việc còn cần trước khi deploy production](docs/DEPLOY_READINESS.md).
 
 Email phát triển có thể lưu dưới dạng `.eml` riêng trong `App_Data/mail`; production

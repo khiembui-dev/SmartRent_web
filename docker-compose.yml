@@ -1,6 +1,6 @@
 # Database cho team backend. Mỗi máy chạy một bản riêng, cùng cấu trúc và danh mục ban đầu; không tự nạp demo.
 # Lần đầu: copy .env.example .env   rồi   docker compose up -d
-# Xem hướng dẫn ở database/README.md. Baseline hiện tại gồm 13 bảng.
+# Xem database/README.md: 13 bảng nghiệp vụ + 2 bảng kỹ thuật ApiPay.
 name: smartrent
 
 services:

@@ -4,6 +4,16 @@ Các cột chính dùng snake_case; khóa bên trong JSON dùng camelCase để 
 
 ## Tiện ích, ảnh và giá
 
+`properties.address_details` lưu địa chỉ có mã tỉnh/phường; `{}` dành cho dữ liệu địa chỉ cũ. `rooms.address_override` có cùng cấu trúc; `null` nghĩa là kế thừa địa chỉ cơ sở:
+
+```json
+{"houseNumber":"12/5","street":"Lê Lợi","provinceCode":"79","wardCode":"26743","line":"12/5 Lê Lợi","locality":"Phường Bến Thành","province":"Thành phố Hồ Chí Minh","mapUrl":null,"mapEmbedUrl":null}
+```
+
+Backend kiểm tra phường thuộc tỉnh và tự dựng tên/địa chỉ, không tin tên do client gửi. `mapUrl=null` tạo link Google Maps theo địa chỉ khi trả DTO. Ghim thủ công là URL HTTPS Google Maps; đổi địa chỉ cần kiểm tra ghim lại. Danh mục nằm trong `backend/src/SmartRent.Api/Data/Reference/vietnam-addresses.json`; không tạo thêm bảng địa giới.
+
+`rooms.operating_status='reserved'` là đánh dấu cọc giữ phòng thủ công. Trạng thái này không tự tạo chứng từ thu tiền. `v_room_occupancy` và dashboard tính cả trạng thái này cùng giữ chỗ còn hiệu lực ở `bookings`. Nhận phòng thành công chuyển trạng thái khai thác về `available`, hợp đồng khiến trạng thái hiển thị thành `occupied`; toàn bộ chạy trong một transaction.
+
 properties.amenity_options và rooms.amenities là mảng:
 
 ```json
@@ -119,3 +129,5 @@ isInternal=true chỉ admin được ghi. Tin nhắn cũ bất biến; nối ph�
 Các mảng history/status_history do trigger nối sự kiện tối thiểu gồm thời điểm, trạng thái và actorId khi có context. Chúng phục vụ phần lịch sử của từng trang, không phải nhật ký hệ thống toàn cục. Backend không nhận nguyên mảng history từ client.
 
 users.identity_documents chỉ chứa bản hiển thị đã che và trạng thái xác minh, không lưu số CCCD rõ. Backend lọc dữ liệu riêng tư trước khi tạo DTO.
+
+users.favorite_rooms là danh sách phòng yêu thích của khách: `[{"roomId": uuid, "savedAt": timestamptz}]`, mới lưu đứng đầu, tối đa 100 phần tử (CHECK). Chỉ API `/api/v1/portal/favorites` ghi cột này và luôn ghi cho người đang đăng nhập; chỉ thêm được phòng đang công khai. Phòng đã lưu sau đó có người thuê hoặc bị ẩn vẫn nằm trong mảng để khách tự bỏ lưu.

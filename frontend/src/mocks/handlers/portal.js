@@ -7,7 +7,7 @@ import { conflict, fail, listResponse, rule, validator } from '../respond.js';
 import { contractStatus, createPayment, depositHeld, find, must, nextCode, notify, roomRates, staffWith, tenancyContext } from '../engine.js';
 import { invoiceDetail, invoiceSummary, paymentSummary, propertyRef, roomRef, tenantRef, ticketDetail, ticketSummary, userRef, versionDto } from '../dto.js';
 import { createTenantRecord } from './leasing.js';
-import { availability, findPublishedListing } from './public.js';
+import { availability, card as publicCard, findPublishedListing, publishedListings } from './public.js';
 import { addTicketMessage, createTicket } from './support.js';
 
 function memberships(ctx) {
@@ -247,6 +247,16 @@ export default function register(r) {
     return listResponse(all, ctx.query, { defaultSort: '-receivedAt', sortable: ['receivedAt', 'amount'], filter: (p) => !ctx.query.status || p.status === ctx.query.status });
   }, { auth: 'customer' });
 
+  // Mock không giả lập thu tiền thật. ApiPay chỉ chạy qua backend có secret và webhook đã xác minh.
+  r.get('/api/v1/portal/apipay/invoices/:id/payment-request', (ctx) => {
+    const inv = invoiceDetail(ctx.db, myInvoice(ctx, ctx.params.id), ctx.today);
+    return { available: false, request: null, review: false, creating: false, paymentStatus: inv.paymentStatus, outstandingAmount: inv.outstandingAmount };
+  }, { auth: 'customer' });
+  r.post('/api/v1/portal/apipay/invoices/:id/payment-request', (ctx) => {
+    myInvoice(ctx, ctx.params.id);
+    fail(503, 'payment_unavailable', 'ApiPay chỉ hoạt động với backend thật.');
+  }, { auth: 'customer' });
+
   // Báo chuyển khoản: tạo khoản "chờ xác minh"; KHÔNG cộng vào đã thu cho tới khi quản lý xác nhận.
   r.post('/api/v1/portal/payments', (ctx) => {
     const b = ctx.body;
@@ -363,6 +373,101 @@ export default function register(r) {
       bankAccounts: ctx.db.bankAccounts.filter((x) => orgIds.has(x.organizationId)),
     };
   }, { auth: 'customer' });
+
+  // ---------------------------------------------------------------- phòng yêu thích (giống PortalFavoritesController)
+  const FAVORITES_LIMIT = 100;
+  const savedOf = (ctx) => {
+    if (ctx.user.role !== 'user') fail(403, 'customer_required', 'Chỉ tài khoản khách được vào khu khách.');
+    return ctx.user.favoriteRooms || [];
+  };
+  const listedRoom = (ctx, roomId) => publishedListings(ctx.db).find((l) => l.roomId === roomId && find(ctx.db.rooms, roomId)?.operatingStatus === 'available');
+  const favoriteIds = (ctx) => ({ roomIds: savedOf(ctx).map((x) => x.roomId) });
+
+  r.get('/api/v1/portal/favorites', (ctx) => favoriteIds(ctx), { auth: 'member' });
+
+  r.get('/api/v1/portal/favorites/rooms', (ctx) => {
+    const items = savedOf(ctx).map((fav) => {
+      const listing = listedRoom(ctx, fav.roomId);
+      if (listing) {
+        const room = publicCard(ctx.db, listing, ctx.today);
+        return { roomId: fav.roomId, savedAt: fav.savedAt, status: room.availability.status, room };
+      }
+      const room = find(ctx.db.rooms, fav.roomId);
+      const property = room && find(ctx.db.properties, room.propertyId);
+      const old = ctx.db.roomListings.find((l) => l.roomId === fav.roomId);
+      return { roomId: fav.roomId, savedAt: fav.savedAt, status: room ? 'unlisted' : 'removed', room: null, title: old?.title || room?.name || 'Phòng đã gỡ khỏi trang', roomCode: room?.code || null, propertyName: property?.name || null };
+    });
+    return { items, total: items.length };
+  }, { auth: 'member' });
+
+  r.put('/api/v1/portal/favorites/:roomId', (ctx) => {
+    const saved = savedOf(ctx);
+    if (!saved.some((x) => x.roomId === ctx.params.roomId)) {
+      if (!listedRoom(ctx, ctx.params.roomId)) fail(404, 'room_not_listed', 'Phòng này không còn đăng trên trang khách nên không lưu được.');
+      if (saved.length >= FAVORITES_LIMIT) fail(422, 'favorites_limit', `Đã lưu tối đa ${FAVORITES_LIMIT} phòng. Bỏ bớt phòng cũ rồi lưu lại.`);
+      ctx.user.favoriteRooms = [{ roomId: ctx.params.roomId, savedAt: ctx.now }, ...saved];
+    }
+    return favoriteIds(ctx);
+  }, { auth: 'member' });
+
+  r.delete('/api/v1/portal/favorites/:roomId', (ctx) => {
+    ctx.user.favoriteRooms = savedOf(ctx).filter((x) => x.roomId !== ctx.params.roomId);
+    return favoriteIds(ctx);
+  }, { auth: 'member' });
+
+  r.post('/api/v1/portal/favorites/merge', (ctx) => {
+    const saved = savedOf(ctx);
+    const incoming = [...new Set(Array.isArray(ctx.body?.roomIds) ? ctx.body.roomIds.filter((x) => typeof x === 'string') : [])].slice(0, FAVORITES_LIMIT);
+    const fresh = incoming.filter((roomId) => !saved.some((x) => x.roomId === roomId) && listedRoom(ctx, roomId));
+    ctx.user.favoriteRooms = [...fresh.map((roomId) => ({ roomId, savedAt: ctx.now })), ...saved].slice(0, FAVORITES_LIMIT);
+    return favoriteIds(ctx);
+  }, { auth: 'member' });
+
+  // ---------------------------------------------------------------- trợ lý AI (mock không gọi AI thật)
+  // Backend thật trả lời bằng công cụ đọc dữ liệu của chính khách; mock chỉ báo trung thực là chưa kết nối.
+  const ownAi = (ctx) => {
+    if (ctx.user.role !== 'user') fail(403, 'customer_required', 'Chỉ tài khoản khách dùng được trợ lý khu khách.');
+    const conv = ctx.params.id ? ctx.db.aiConversations.find((c) => c.id === ctx.params.id && c.userId === ctx.user.id && c.scope === 'portal') : null;
+    if (ctx.params.id && !conv) fail(404, 'not_found', 'Không tìm thấy cuộc trò chuyện.');
+    return conv;
+  };
+  const aiView = (ctx, conv) => ({ ...conv, messages: ctx.db.aiMessages.filter((m) => m.conversationId === conv.id).sort((a, b) => compareIso(a.createdAt, b.createdAt)) });
+
+  r.get('/api/v1/portal/ai/conversations', (ctx) => {
+    ownAi(ctx);
+    return ctx.db.aiConversations.filter((c) => c.userId === ctx.user.id && c.scope === 'portal').sort((a, b) => compareIso(b.createdAt, a.createdAt));
+  }, { auth: 'member' });
+
+  r.post('/api/v1/portal/ai/conversations', (ctx) => {
+    ownAi(ctx);
+    const conv = { id: uuid(), organizationId: null, userId: ctx.user.id, scope: 'portal', title: (ctx.body.title || 'Cuộc trò chuyện mới').slice(0, 60), createdAt: ctx.now, dataScope: { properties: 'own' } };
+    ctx.db.aiConversations.push(conv);
+    return { ...conv, messages: [] };
+  }, { auth: 'member' });
+
+  r.get('/api/v1/portal/ai/conversations/:id', (ctx) => aiView(ctx, ownAi(ctx)), { auth: 'member' });
+
+  r.delete('/api/v1/portal/ai/conversations/:id', (ctx) => {
+    const conv = ownAi(ctx);
+    ctx.db.aiConversations = ctx.db.aiConversations.filter((c) => c.id !== conv.id);
+    ctx.db.aiMessages = ctx.db.aiMessages.filter((m) => m.conversationId !== conv.id);
+    return null;
+  }, { auth: 'member' });
+
+  r.post('/api/v1/portal/ai/conversations/:id/messages', (ctx) => {
+    const conv = ownAi(ctx);
+    const v = validator();
+    v.required('content', ctx.body.content, 'Câu hỏi');
+    v.check();
+    ctx.db.aiMessages.push({ id: uuid(), conversationId: conv.id, role: 'user', content: ctx.body.content, createdAt: ctx.now, sources: [] });
+    ctx.db.aiMessages.push({
+      id: uuid(), conversationId: conv.id, role: 'assistant', createdAt: new Date(Date.parse(ctx.now) + 1).toISOString(), sources: [], actions: [],
+      content: 'Chưa kết nối dịch vụ trợ lý AI ở chế độ dữ liệu mô phỏng. Khi chạy với backend thật, trợ lý trả lời từ dữ liệu phòng, hóa đơn và hợp đồng của chính bạn.',
+      model: 'mock (chưa kết nối AI thật)',
+    });
+    if (conv.title === 'Cuộc trò chuyện mới') conv.title = ctx.body.content.slice(0, 60);
+    return aiView(ctx, conv);
+  }, { auth: 'member' });
 
   void isIsoDate;
   void rule;

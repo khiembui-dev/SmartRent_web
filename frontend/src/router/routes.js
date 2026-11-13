@@ -9,6 +9,7 @@ export const ROUTES = [
   site('/', () => import('../pages/customer/home/index.js')),
   site('/rooms', () => import('../pages/customer/rooms/list.js')),
   site('/rooms/:slug', () => import('../pages/customer/rooms/detail.js')),
+  site('/favorites', () => import('../pages/customer/favorites.js')),
   site('/contact', () => import('../pages/customer/contact.js')),
   member('/invoices', () => import('../pages/customer/invoices/list.js')),
   member('/invoices/:id', () => import('../pages/customer/invoices/detail.js')),

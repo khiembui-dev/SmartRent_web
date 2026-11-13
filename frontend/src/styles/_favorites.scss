@@ -1,0 +1,117 @@
+// Phòng yêu thích: nút trái tim trên thẻ phòng, nút "Lưu phòng" ở trang chi tiết, số đếm trên menu, trang Phòng yêu thích.
+:root {
+  --sr-fav: #e0435a;
+  --sr-fav-tint: #fde8ec;
+}
+
+.sr-fav {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .94);
+  color: #26363b;
+  box-shadow: 0 6px 16px -8px rgba(13, 40, 46, .55), 0 0 0 1px rgba(13, 40, 46, .06);
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  transition: transform .15s ease, color .15s ease, background-color .15s ease;
+  .bi { font-size: 1.15rem; line-height: 1; }
+  .sr-fav-on { display: none; }
+  &:hover { color: var(--sr-fav); transform: scale(1.06); }
+  &:focus-visible { outline: 3px solid var(--sr-wash); outline-offset: 2px; }
+  &.is-on { color: var(--sr-fav); }
+  &.is-on .sr-fav-on { display: inline-block; }
+  &.is-on .sr-fav-off { display: none; }
+  &.is-pop .sr-fav-icon { animation: sr-fav-pop .38s cubic-bezier(.3, 1.6, .5, 1); }
+  &[data-busy] { cursor: progress; }
+}
+.sr-fav-icon { display: inline-grid; place-items: center; }
+@keyframes sr-fav-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+
+// Thẻ phòng: trái tim nổi góc phải ảnh, nằm cạnh link chứ không trong link.
+.cu-room > .sr-fav,
+.home-room > .sr-fav {
+  position: absolute;
+  top: .65rem;
+  right: .65rem;
+  z-index: 2;
+}
+
+// Nút có chữ ở trang chi tiết phòng.
+.sr-fav.sr-fav-text {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  width: auto;
+  height: 40px;
+  padding: 0 1rem 0 .85rem;
+  border: 1px solid var(--cu-line, var(--sr-line));
+  background: var(--cu-card, #fff);
+  box-shadow: none;
+  backdrop-filter: none;
+  font-size: .9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  &:hover { transform: none; border-color: var(--sr-fav); }
+  &.is-on { border-color: var(--sr-fav); background: var(--sr-fav-tint); }
+}
+.cu-room-head .cu-room-head-fav { flex: none; margin-left: auto; }
+@include media-breakpoint-down(sm) {
+  .cu-room-head { flex-wrap: wrap; }
+  .cu-room-head .cu-room-head-fav { margin-left: 0; }
+}
+
+// Số phòng đã lưu trên menu.
+.sr-fav-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 .32rem;
+  border-radius: 999px;
+  background: var(--sr-fav);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1;
+  &[hidden] { display: none; }
+}
+.sr-site-link .sr-fav-count { margin-left: .1rem; }
+.sr-site-tab {
+  position: relative;
+  .sr-fav-count { position: absolute; top: .35rem; left: calc(50% + .35rem); }
+}
+
+// Trang Phòng yêu thích
+.cu-room.is-gone {
+  .cu-room-photo { opacity: .7; }
+  .cu-room-title { color: var(--sr-ink-2); }
+  .cu-room-link { cursor: default; }
+}
+.cu-room-saved { color: var(--sr-muted); font-size: .8rem; }
+.cu-fav-empty {
+  padding: 3rem 1rem;
+  p { max-width: 30rem; margin: .25rem auto 1rem; color: var(--sr-muted); }
+}
+.cu-fav-empty-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: .75rem;
+  border-radius: 999px;
+  background: var(--sr-fav-tint);
+  color: var(--sr-fav);
+  font-size: 1.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sr-fav, .sr-fav.is-pop .sr-fav-icon { transition: none; animation: none; }
+}

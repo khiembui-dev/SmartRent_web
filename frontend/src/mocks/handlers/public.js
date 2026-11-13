@@ -31,14 +31,14 @@ function fees(db, room, today) {
     .map(({ rate, type }) => ({ code: type.code, name: type.name, category: type.category, unitPrice: rate.unitPrice, unitLabel: type.unitLabel, calculationMethod: rate.calculationMethod, billingCycle: rate.billingCycle }));
 }
 
-function card(db, listing, today) {
+export function card(db, listing, today) {
   const room = find(db.rooms, listing.roomId);
   const property = find(db.properties, room.propertyId);
   const org = find(db.organizations, property.organizationId);
   const type = find(db.roomTypes, room.roomTypeId);
   const rent = fees(db, room, today).find((f) => f.category === 'rent');
   return {
-    slug: listing.slug, title: listing.title, propertyName: property.name, locality: property.address.locality, province: property.address.province,
+    id: room.id, slug: listing.slug, title: listing.title, propertyName: property.name, locality: property.address.locality, province: property.address.province,
     roomCode: room.code, roomType: { code: type.code, name: type.name }, areaM2: room.areaM2, capacity: room.capacity, rent: rent?.unitPrice ?? null,
     requiredDeposit: room.requiredDeposit, coverImageUrl: room.images.find((i) => i.isCover)?.url || room.images[0]?.url || null,
     amenities: room.amenityIds.map((id) => find(db.amenities, id)).filter(Boolean).map((a) => ({ code: a.code, name: a.name, icon: a.icon })),
@@ -46,7 +46,7 @@ function card(db, listing, today) {
   };
 }
 
-const publishedListings = (db) => db.roomListings.filter((l) => {
+export const publishedListings = (db) => db.roomListings.filter((l) => {
   if (l.status !== 'published') return false;
   const room = find(db.rooms, l.roomId);
   const property = find(db.properties, room.propertyId);
@@ -59,6 +59,10 @@ const vacantListings = (db, today) => publishedListings(db).filter((l) => availa
 export const findPublishedListing = (db, slug) => publishedListings(db).find((l) => l.slug === slug);
 
 export default function register(r) {
+  // Webhook ngân hàng chỉ có trên server, mock không nhận hoặc xác nhận tiền.
+  r.post('/api/v1/apipay/webhook', () => fail(503, 'payment_unavailable', 'Webhook chỉ hoạt động trên backend.'), { auth: 'public' });
+  // Cùng danh mục với API thật; chỉ tải khi dùng endpoint trong chế độ mock.
+  r.get('/api/v1/public/administrative-units', async () => structuredClone((await import('../../../../backend/src/SmartRent.Api/Data/Reference/vietnam-addresses.json', { with: { type: 'json' } })).default), { auth: 'public' });
   r.get('/api/v1/public/filters', (ctx) => {
     const listings = vacantListings(ctx.db, ctx.today);
     const cards = listings.map((l) => card(ctx.db, l, ctx.today));
@@ -96,7 +100,10 @@ export default function register(r) {
 
   r.get('/api/v1/public/rooms', (ctx) => {
     const q = ctx.query;
-    const all = vacantListings(ctx.db, ctx.today).map((l) => card(ctx.db, l, ctx.today));
+    // ids: khách chưa đăng nhập tra cứu phòng đã lưu trên trình duyệt; giữ cả phòng đang có người giữ chỗ.
+    const ids = q.ids ? new Set(String(q.ids).split(',').map((x) => x.trim()).filter(Boolean).slice(0, 100)) : null;
+    const source = ids ? publishedListings(ctx.db).filter((l) => ids.has(l.roomId)) : vacantListings(ctx.db, ctx.today);
+    const all = source.map((l) => card(ctx.db, l, ctx.today));
     const amenityCodes = asArray(q.amenities);
     const priceMin = q.priceMin ? Number(q.priceMin) : null;
     const priceMax = q.priceMax ? Number(q.priceMax) : null;
@@ -108,7 +115,7 @@ export default function register(r) {
         && (priceMax == null || (c.rent ?? 0) <= priceMax)
         && (!q.areaMin || c.areaM2 >= Number(q.areaMin))
         && (!q.roomType || c.roomType.code === q.roomType)
-        && (!q.occupants || c.capacity >= Number(q.occupants))
+        && (!(q.capacity || q.occupants) || c.capacity >= Number(q.capacity || q.occupants))
         && amenityCodes.every((code) => c.amenities.some((a) => a.code === code)),
       search: (c) => [c.title, c.propertyName, c.locality, c.province, c.roomCode],
     });

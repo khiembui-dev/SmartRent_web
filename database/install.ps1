@@ -16,10 +16,10 @@ if ($LASTEXITCODE -ne 0) { throw 'Cannot connect to PostgreSQL. Configure PGPASS
 if ($existing -eq '1') { throw "Database $DatabaseName already exists. This installer only creates a new database." }
 & $PsqlPath @connection -d postgres -c "CREATE DATABASE $DatabaseName"
 if ($LASTEXITCODE -ne 0) { throw 'Database creation failed.' }
-$scripts = @('01_schema.sql','02_rules.sql','03_seed.sql')
+$scripts = @('01_schema.sql','02_rules.sql','03_seed.sql','14_apipay.sql')
 if ($WithDemo) { $scripts += '05_demo.sql' }
 foreach ($script in $scripts) {
     & $PsqlPath @connection -d $DatabaseName -q -f (Join-Path $PSScriptRoot $script)
     if ($LASTEXITCODE -ne 0) { throw "Loading $script failed. The new database remains available for inspection." }
 }
-Write-Host "Created $DatabaseName with 13 tables. See database/README.md for admin provisioning and backend SQL permissions."
+Write-Host "Created $DatabaseName with 13 business tables and 2 ApiPay tables. See database/README.md for admin provisioning and backend SQL permissions."

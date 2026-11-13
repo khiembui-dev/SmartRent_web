@@ -113,7 +113,7 @@ internal static class DashboardOverviewQuery
         room_counts AS (
           SELECT count(*)::int AS total,
                  count(*) FILTER (WHERE occupancy_status = 'occupied')::int AS occupied,
-                 count(*) FILTER (WHERE occupancy_status IN ('available','reserved'))::int AS available,
+                 count(*) FILTER (WHERE occupancy_status = 'available')::int AS available,
                  count(*) FILTER (WHERE occupancy_status = 'reserved')::int AS held,
                  count(*) FILTER (WHERE occupancy_status = 'maintenance')::int AS maintenance,
                  count(*) FILTER (WHERE occupancy_status = 'inactive')::int AS inactive
@@ -188,7 +188,7 @@ internal static class DashboardOverviewQuery
           'rooms', jsonb_build_object(
             'total',rc.total,'occupied',rc.occupied,'available',rc.available,
             'maintenance',rc.maintenance,'inactive',rc.inactive,
-            'availableWithUpcoming',rc.held,
+            'availableWithUpcoming',rc.held,'reserved',rc.held,
             'occupancyRate',CASE WHEN rc.total - rc.inactive > 0
               THEN round(100.0 * rc.occupied / (rc.total - rc.inactive),1) ELSE 0 END,
             'strip',coalesce((SELECT jsonb_agg(jsonb_build_object(
@@ -227,9 +227,9 @@ internal static class DashboardOverviewQuery
             'schedule',jsonb_build_object(
               'meterReadingDay',s.meter_reading_day,'invoiceCreateDay',s.invoice_create_day,
               'reminderEnabled',s.reminder_enabled,
-              'readingDue',s.reminder_enabled AND extract(day FROM k.today) >= s.meter_reading_day
+              'readingDue',s.reminder_enabled AND extract(day FROM k.today) >= least(s.meter_reading_day,extract(day from (k.current_month + interval '1 month - 1 day')))
                 AND bi.missing_readings > 0,
-              'invoiceDue',false)),
+              'invoiceDue',s.reminder_enabled AND extract(day FROM k.today) >= least(s.invoice_create_day,extract(day from (k.current_month + interval '1 month - 1 day'))) AND bi.draft_count > 0)),
           'viewings',jsonb_build_object('pending',bc.pending_count,'upcoming',bc.upcoming_count),
           'tickets',jsonb_build_object('open',tc.open_count,'overdue',tc.overdue_count,'new',tc.new_count),
           'contracts',jsonb_build_object('expiring',cc.expiring_count,'expiredOccupied',cc.expired_count),

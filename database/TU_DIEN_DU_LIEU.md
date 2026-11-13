@@ -429,9 +429,13 @@ Cơ sở, danh mục tiện ích và bảng giá mặc định dạng JSONB.
 | `rates` | `jsonb` | Không | '[]'::jsonb |
 | `created_at` | `timestamp with time zone` | Không | now() |
 | `updated_at` | `timestamp with time zone` | Không | now() |
+| `map_url` | `text` | Có | — |
+| `map_embed_url` | `text` | Có | — |
+| `address_details` | `jsonb` | Không | '{}'::jsonb |
 
 Ràng buộc:
 
+- `CHECK ((jsonb_typeof(address_details) = 'object'::text))`
 - `CHECK ((jsonb_typeof(amenity_options) = 'array'::text))`
 - `CHECK ((is_active OR (NULLIF(btrim(inactive_reason), ''::text) IS NOT NULL)))`
 - `UNIQUE (code)`
@@ -479,9 +483,11 @@ Phòng cùng tin đăng, tiện ích, ảnh, giá riêng và lịch sử trạng
 | `status_history` | `jsonb` | Không | '[]'::jsonb |
 | `created_at` | `timestamp with time zone` | Không | now() |
 | `updated_at` | `timestamp with time zone` | Không | now() |
+| `address_override` | `jsonb` | Có | — |
 
 Ràng buộc:
 
+- `CHECK (((address_override IS NULL) OR (jsonb_typeof(address_override) = 'object'::text)))`
 - `CHECK ((jsonb_typeof(amenities) = 'array'::text))`
 - `CHECK (((area_m2 >= (1)::numeric) AND (area_m2 <= (500)::numeric)))`
 - `CHECK (((capacity >= 1) AND (capacity <= 20)))`
@@ -490,7 +496,7 @@ Ràng buộc:
 - `CHECK ((jsonb_typeof(images) = 'array'::text))`
 - `UNIQUE (listing_slug)`
 - `CHECK ((listing_status = ANY (ARRAY['hidden'::text, 'draft'::text, 'published'::text])))`
-- `CHECK ((operating_status = ANY (ARRAY['available'::text, 'maintenance'::text, 'inactive'::text])))`
+- `CHECK ((operating_status = ANY (ARRAY['available'::text, 'reserved'::text, 'maintenance'::text, 'inactive'::text])))`
 - `PRIMARY KEY (id)`
 - `FOREIGN KEY (property_id) REFERENCES smartrent.properties(id)`
 - `CHECK ((jsonb_typeof(rates) = 'array'::text))`
@@ -527,8 +533,8 @@ Ràng buộc:
 - `CHECK ((invoice_create_day >= meter_reading_day))`
 - `CHECK ((num_nonnulls(bank_name, bank_account_number, bank_account_name) = ANY (ARRAY[0, 3])))`
 - `CHECK ((id = 1))`
-- `CHECK (((invoice_create_day >= 1) AND (invoice_create_day <= 28)))`
-- `CHECK (((meter_reading_day >= 1) AND (meter_reading_day <= 28)))`
+- `CHECK (((invoice_create_day >= 1) AND (invoice_create_day <= 31)))`
+- `CHECK (((meter_reading_day >= 1) AND (meter_reading_day <= 31)))`
 - `PRIMARY KEY (id)`
 - `FOREIGN KEY (updated_by) REFERENCES smartrent.users(id)`
 
@@ -623,6 +629,7 @@ Tài khoản và toàn bộ hồ sơ khách, kể cả khách chưa kích hoạt
 | `last_login_at` | `timestamp with time zone` | Có | — |
 | `created_at` | `timestamp with time zone` | Không | now() |
 | `updated_at` | `timestamp with time zone` | Không | now() |
+| `favorite_rooms` | `jsonb` | Không | '[]'::jsonb |
 
 Ràng buộc:
 
@@ -633,6 +640,7 @@ Ràng buộc:
 - `CHECK ((btrim(display_name) <> ''::text))`
 - `CHECK (((email IS NULL) OR (btrim(email) <> ''::text)))`
 - `CHECK ((failed_login_count >= 0))`
+- `CHECK (((jsonb_typeof(favorite_rooms) = 'array'::text) AND (jsonb_array_length(favorite_rooms) <= 100)))`
 - `CHECK ((jsonb_typeof(identity_documents) = 'array'::text))`
 - `CHECK (((password_hash IS NULL) OR (length(password_hash) >= 20)))`
 - `PRIMARY KEY (id)`

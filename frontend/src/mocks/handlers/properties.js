@@ -52,6 +52,14 @@ function syncRoomRates(ctx, room, rates) {
   }
 }
 
+// Có đợt thuê hiệu lực/sắp vào ở: tin tự tạm ẩn (xem hideListing/republishListing trong tenancies.js).
+function roomHasCurrentTenancy(db, room) {
+  return db.tenancies.some((t) => ['active', 'planned'].includes(t.status) && find(db.roomAllocations, t.allocationId)?.roomId === room.id);
+}
+function roomCanChangeProperty(db, room) {
+  return !db.tenancies.some((t) => t.status !== 'cancelled' && find(db.roomAllocations, t.allocationId)?.roomId === room.id);
+}
+
 function syncListing(ctx, room) {
   const b = ctx.body.listing;
   if (!b) return;
@@ -62,6 +70,9 @@ function syncListing(ctx, room) {
     ctx.db.roomListings.push(listing);
   }
   if (b.status === 'published' && ![...roomRates(ctx.db, room.id, ctx.today).values()].some(({ rate }) => rate.unitPrice > 0 && find(ctx.db.chargeTypes, rate.chargeTypeId)?.category === 'rent')) fail(422, 'validation_failed', 'Cần giá phòng trước khi đăng tin.');
+  if (b.status === 'published' && listing.status !== 'published' && roomHasCurrentTenancy(ctx.db, room)) {
+    fail(422, 'validation_failed', 'Phòng đang có người thuê hoặc có hợp đồng sắp vào ở nên tin tạm ẩn. Tin sẽ tự công khai lại khi trả phòng.');
+  }
   Object.assign(listing, { title: b.title?.trim() || `${room.name} – ${find(ctx.db.properties, room.propertyId).name}`, description: b.description || null, status: b.status, updatedAt: ctx.now });
   if (b.status === 'published') listing.publishedAt ||= ctx.now;
 }
@@ -119,7 +130,11 @@ function roomDetail(ctx, room) {
     amenities: room.amenityIds.map((id) => find(db.amenities, id)).filter(Boolean).map((a) => ({ id: a.id, code: a.code, name: a.name, icon: a.icon })),
     images: [...room.images].sort((a, b) => a.sortOrder - b.sortOrder).map((i) => ({ ...i, file: i.fileId ? fileDto(db, i.fileId) : null })),
     assets: db.roomAssets.filter((a) => a.roomId === room.id),
-    listing: db.roomListings.find((l) => l.roomId === room.id) || null,
+    listing: (() => {
+      const listing = db.roomListings.find((l) => l.roomId === room.id);
+      return listing ? { ...listing, lockedByContract: roomHasCurrentTenancy(db, room) } : null;
+    })(),
+    canChangeProperty: roomCanChangeProperty(db, room),
     rates: {
       effective,
       room: planRates(db, db.ratePlans.find((p) => p.roomId === room.id), 'room'),
@@ -167,7 +182,7 @@ function validateRoom(ctx, b, existing) {
   if (!existing) v.money('rent', b.rent, 'Giá thuê', { positive: true });
   if (b.code && !/^[A-Za-z0-9-]{1,20}$/.test(b.code)) v.add('code', 'Mã phòng chỉ gồm chữ, số, gạch ngang.');
   v.check();
-  const propertyId = existing?.propertyId || b.propertyId;
+  const propertyId = b.propertyId || existing?.propertyId;
   if (ctx.db.rooms.some((r) => r.propertyId === propertyId && r.code.toLowerCase() === b.code.toLowerCase() && r.id !== existing?.id)) {
     conflict('room_code_taken', `Mã phòng ${b.code} đã có trong cơ sở này.`, { code: ['Mã phòng trùng trong cơ sở.'] });
   }
@@ -366,10 +381,15 @@ export default function register(r) {
   r.put('/api/v1/rooms/:id', (ctx) => {
     const room = roomInScope(ctx, ctx.params.id);
     const b = ctx.body;
+    // Giống backend: chuyển cơ sở chỉ khi phòng chưa từng có đợt thuê (hóa đơn, kỳ tính tiền gắn với cơ sở cũ).
     if (b.propertyId && b.propertyId !== room.propertyId) {
-      rule('room_property_fixed', 'Không đổi cơ sở của phòng đã tạo. Nếu cần chuyển, phải có luồng đối soát riêng.');
+      if (!roomCanChangeProperty(ctx.db, room)) {
+        conflict('room_property_locked_by_contracts', 'Phòng đã có hợp đồng nên không chuyển sang cơ sở khác được: hóa đơn và kỳ tính tiền đã gắn với cơ sở cũ.');
+      }
+      must(ctx.db.properties, b.propertyId, 'cơ sở');
     }
     validateRoom(ctx, b, room);
+    if (b.propertyId && b.propertyId !== room.propertyId) room.propertyId = b.propertyId;
     const before = { code: room.code, areaM2: room.areaM2, capacity: room.capacity, requiredDeposit: room.requiredDeposit };
     Object.assign(room, {
       roomTypeId: b.roomTypeId || room.roomTypeId, code: b.code.trim().toUpperCase(), name: b.name.trim(), floorLabel: b.floorLabel || null, areaM2: b.areaM2, capacity: b.capacity,

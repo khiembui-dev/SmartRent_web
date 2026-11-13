@@ -1,9 +1,9 @@
-PostgreSQL 16.13
+PostgreSQL 16.13 (Debian 16.13-1.pgdg13+1)
 13 tables
-96 SQL checks passed
+103 SQL checks passed
 10 business workflow scenarios passed
 3 two-connection races passed
-4 runtime privilege checks passed
+5 runtime privilege checks passed
 Fresh schema, rules, default settings and demo loaded successfully.
 Two checkins cannot occupy same room
 Two confirmations cannot overpay invoice

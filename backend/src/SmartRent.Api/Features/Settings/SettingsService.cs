@@ -39,18 +39,18 @@ public sealed class SettingsService : ISettingsService
     {
         var errors = new Dictionary<string, string[]>();
 
-        if (request.MeterReadingDay < 1 || request.MeterReadingDay > 28)
+        if (request.MeterReadingDay < 1 || request.MeterReadingDay > 31)
         {
-            errors["meterReadingDay"] = new[] { "Ngày nhập số điện nước phải từ 1 đến 28." };
+            errors["meterReadingDay"] = new[] { "Ngày nhập số điện nước phải từ 1 đến 31." };
         }
 
-        if (request.InvoiceCreateDay < 1 || request.InvoiceCreateDay > 28)
+        if (request.InvoiceCreateDay < 1 || request.InvoiceCreateDay > 31)
         {
-            errors["invoiceCreateDay"] = new[] { "Ngày tạo hóa đơn phải từ 1 đến 28." };
+            errors["invoiceCreateDay"] = new[] { "Ngày tạo hóa đơn phải từ 1 đến 31." };
         }
 
-        if (request.MeterReadingDay >= 1 && request.MeterReadingDay <= 28 &&
-            request.InvoiceCreateDay >= 1 && request.InvoiceCreateDay <= 28 &&
+        if (request.MeterReadingDay >= 1 && request.MeterReadingDay <= 31 &&
+            request.InvoiceCreateDay >= 1 && request.InvoiceCreateDay <= 31 &&
             request.InvoiceCreateDay < request.MeterReadingDay)
         {
             errors["invoiceCreateDay"] = new[] { "Ngày tạo hóa đơn phải từ ngày nhập số trở đi." };

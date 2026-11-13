@@ -42,6 +42,16 @@ public sealed class TenanciesController(NpgsqlDataSource db) : BusinessControlle
         var room = b.Id("roomId");
         var tenant = b.Id("tenantId");
         await ContractTenantRules.ValidateAsync(c, t, tenant, ct);
+        // Khoá phòng và chuyển cọc ghi nhận thủ công thành nhận phòng trong cùng transaction.
+        // Nếu các bước ký/thu cọc thất bại, trạng thái cũ được rollback nguyên vẹn.
+        var roomState = await Row(c, t, "select to_jsonb(r)::text from rooms r where id=@id for update", ct, "id", room);
+        if (roomState.Text("operating_status") == "reserved")
+            await Execute(c, t, "update rooms set operating_status='available',status_reason='Chuyển cọc giữ phòng sang hợp đồng' where id=@id", ct, "id", room);
+        if (string.IsNullOrWhiteSpace(b.Text("inquiryId")))
+        {
+            var heldBooking = await Scalar(c, t, "select id::text from bookings where room_id=@room and user_id=@tenant and hold_status='holding' and hold_expires_at>now() limit 1", ct, "room", room, "tenant", tenant);
+            if (heldBooking is not null) b["inquiryId"] = heldBooking;
+        }
         var day = DateOnly.Parse(b.Text("moveInOn")!);
         if (day > Today)
             throw Invalid("Ngày vào ở không được ở tương lai.");

@@ -12,11 +12,12 @@ import { formatNumber, formatVnd, parseVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { dataChanged, getCatalog, invalidateCatalog } from './common.js';
 import { tenantFormModal } from './tenant-dialogs.js';
-import { mapLinks } from '../../utils/maps.js';
+import { mountAddressEditor } from '../../components/address-editor.js';
 
 const STATUS_OPTIONS = [
   { value: 'available', label: 'Sẵn sàng cho thuê' },
   { value: 'occupied', label: 'Đã thuê' },
+  { value: 'reserved', label: 'Đang cọc giữ phòng' },
   { value: 'maintenance', label: 'Đang bảo trì' },
   { value: 'inactive', label: 'Ngừng khai thác' },
 ];
@@ -44,6 +45,7 @@ export default async function RoomFormPage(ctx) {
   if (!catalog.roomTypes.length) catalog.roomTypes.push({ id: 'STANDARD', name: 'Phòng tiêu chuẩn' });
   let propertyPrices = {};
   let loadedProperty = null;
+  let addressEditor = null;
   const charge = (code) => catalog.chargeTypes.find((c) => c.code === code);
   const effective = (code) => room?.rates.effective.find((r) => r.chargeType.code === code);
   const rent = effective('RENT')?.unitPrice;
@@ -52,9 +54,15 @@ export default async function RoomFormPage(ctx) {
   const occupied = room?.occupancyStatus === 'occupied';
   const canAssign = session.can('tenancies.checkin');
   const today = todayIso();
+  // Phòng từng có hợp đồng giữ cơ sở cũ: hóa đơn và kỳ tính tiền đã gắn với cơ sở đó.
+  const propertyLocked = isEdit && room?.canChangeProperty === false;
+  // Tin đăng đi theo hợp đồng: có người thuê thì tự tạm ẩn, trả phòng thì tự công khai lại.
+  const listingLocked = Boolean(room?.listing?.lockedByContract || occupied);
 
   const infoFields = [
-    { name: 'propertyId', label: 'Cơ sở', type: 'select', required: true, placeholderOption: false, disabled: isEdit, options: org.properties.map((p) => ({ value: p.id, label: p.name })), help: isEdit ? 'Không đổi được cơ sở của phòng đã tạo.' : '' },
+    { name: 'propertyId', label: 'Cơ sở', type: 'select', required: true, placeholderOption: false, disabled: propertyLocked, options: org.properties.map((p) => ({ value: p.id, label: p.name })),
+      help: propertyLocked ? 'Phòng đã có hợp đồng nên giữ cơ sở hiện tại (hóa đơn, kỳ tính tiền đã gắn với cơ sở này).'
+        : isEdit ? 'Đổi cơ sở sẽ chuyển phòng sang cơ sở mới; giá chưa đặt riêng cho phòng sẽ theo bảng giá của cơ sở mới.' : '' },
     { name: 'code', label: 'Mã phòng', required: true, col: 'col-md-4', placeholder: 'A101', maxLength: 20 },
     { name: 'name', label: 'Tên phòng', required: true, col: 'col-md-8', placeholder: 'Phòng A101' },
     { name: 'areaM2', label: 'Diện tích', type: 'decimal', decimals: 2, unit: 'm²', required: true, col: 'col-md-4', min: 1, max: 500 },
@@ -67,7 +75,7 @@ export default async function RoomFormPage(ctx) {
   const priceFields = [
     { name: 'rent', label: 'Giá phòng mỗi tháng', type: 'money', required: true, positive: true, col: 'col-md-6' },
     { name: 'requiredDeposit', label: 'Tiền cọc đề xuất', type: 'money', required: true, col: 'col-md-6', help: 'Mức cọc thật ghi trên từng hợp đồng.' },
-    { name: 'operatingStatus', label: 'Trạng thái phòng', type: 'radio', options: STATUS_OPTIONS.filter((o) => o.value !== 'occupied' || occupied || canAssign), default: 'available', disabled: occupied },
+    { name: 'operatingStatus', label: 'Trạng thái phòng', type: 'radio', options: STATUS_OPTIONS.filter((o) => o.value !== 'occupied' || occupied || canAssign), default: 'available', disabled: occupied || Boolean(room?.calendar?.length), help: room?.calendar?.length ? 'Phòng đang giữ chỗ theo lịch xem. Hủy giữ chỗ ở Lịch xem phòng trước khi đổi trạng thái.' : 'Đang cọc giữ phòng là trạng thái ghi nhận thủ công; tiền cọc được ghi riêng khi lập hợp đồng.' },
   ];
   const occupantFields = occupied ? [] : [
     { name: 'occupant.tenantId', label: 'Khách đang thuê', type: 'tomselect', remote: 'tenants', placeholderOption: 'Gõ tên hoặc số điện thoại' },
@@ -79,12 +87,15 @@ export default async function RoomFormPage(ctx) {
   const listingFields = [
     { name: 'listing.title', label: 'Tiêu đề trên trang khách', optional: true, maxLength: 200, help: 'Để trống để dùng tên phòng và cơ sở.' },
     { name: 'listing.description', label: 'Mô tả đăng cho khách', type: 'textarea', optional: true, maxLength: 10000, help: 'Để trống để dùng Thông tin thêm ở trên. Nội dung riêng tại đây được ưu tiên hiển thị.' },
-    { name: 'listing.status', label: 'Trạng thái tin đăng', type: 'select', required: true, placeholderOption: false, default: 'draft', options: [{ value: 'draft', label: 'Bản nháp' }, { value: 'hidden', label: 'Ẩn khỏi trang khách' }, { value: 'published', label: 'Đăng lên trang khách' }], help: 'Tin đã đăng chỉ hiện trong danh sách khi phòng còn trống và cơ sở hoạt động.' },
+    { name: 'listing.status', label: 'Trạng thái tin đăng', type: 'select', required: true, placeholderOption: false, default: 'draft',
+      options: [{ value: 'draft', label: 'Bản nháp' }, { value: 'hidden', label: 'Tạm ẩn' }, { value: 'published', label: 'Đang công khai', disabled: listingLocked }],
+      help: listingLocked ? 'Phòng đang có người thuê nên tin tự tạm ẩn. Khi kết thúc và trả phòng, tin tự công khai lại.'
+        : 'Có người thuê thì tin tự tạm ẩn; trả phòng thì tự công khai lại. Tin chỉ hiện khi phòng còn trống và cơ sở hoạt động.' },
   ];
   const fields = [...infoFields, ...priceFields, ...rateFields, ...occupantFields, ...listingFields];
   const values = {
     propertyId: initialProperty, code: room?.code, name: room?.name, areaM2: room?.areaM2, capacity: room?.capacity, floorLabel: room?.floorLabel,
-    description: room?.description, rent, requiredDeposit: room?.requiredDeposit, operatingStatus: occupied ? 'occupied' : room?.operatingStatus, rate: roomRate,
+    description: room?.description, rent, requiredDeposit: room?.requiredDeposit, operatingStatus: occupied ? 'occupied' : room?.occupancyStatus || room?.operatingStatus, rate: roomRate,
     roomTypeId: room?.roomType?.id, rulesText: room?.rulesText, listing: room?.listing || { status: 'draft' },
   };
   const back = isEdit ? `/admin/rooms/${id}` : '/admin/rooms';
@@ -99,7 +110,8 @@ export default async function RoomFormPage(ctx) {
   <form id="room-form" class="ad-form has-rail" novalidate>
     <div class="ad-form-main">
       ${formAlert()}
-      <section class="sr-panel"><div class="sr-panel-head"><h2>Cơ sở và thông tin phòng</h2></div><div class="sr-panel-body">${renderFields(infoFields, values)}<div data-location class="mt-3" aria-live="polite"></div></div></section>
+      <section class="sr-panel"><div class="sr-panel-head"><h2>Cơ sở và thông tin phòng</h2></div><div class="sr-panel-body">${renderFields(infoFields, values)}</div></section>
+      <section class="sr-panel"><div class="sr-panel-head"><h2>Địa chỉ dùng trên trang khách</h2></div><div class="sr-panel-body" data-location></div></section>
       <section class="sr-panel"><div class="sr-panel-head"><h2>Giá phòng và trạng thái</h2></div><div class="sr-panel-body">
         ${renderFields(priceFields, values)}
         ${occupied ? html`<div class="mt-3">${note(html`Phòng đang có khách <strong>${room.currentTenancy.representative.fullName}</strong>. Muốn trả phòng hoặc đổi khách, thao tác ở trang chi tiết phòng hoặc hợp đồng.`)}</div>` : html`<div class="ad-occupant" data-occupant hidden>
@@ -173,17 +185,18 @@ export default async function RoomFormPage(ctx) {
 
   const loadProperty = async (propertyId) => {
     loadedProperty = null;
-    setHtml(form.querySelector('[data-location]'), html`<p class="small">Đang tải địa chỉ cơ sở…</p>`);
+    if (!addressEditor) setHtml(form.querySelector('[data-location]'), html`<p class="small">Đang tải địa chỉ cơ sở…</p>`);
     try {
       const property = await propertiesApi.get(propertyId);
       if (input('propertyId').value !== propertyId) return;
       loadedProperty = property;
       propertyPrices = property.prices;
-      const address = [property.address.line, property.address.locality, property.address.province].filter(Boolean).join(', ');
-      const maps = mapLinks(property, address);
-      setHtml(form.querySelector('[data-location]'), html`<div class="alert alert-light border mb-0"><strong>Địa chỉ dùng trên trang khách</strong><p class="mb-1">${address}</p>
-        <a href="${maps.url}" target="_blank" rel="noopener noreferrer">Mở Google Maps</a> · <a href="${link(`/admin/properties/${property.id}/edit`)}">Sửa địa chỉ / bản đồ của cơ sở</a>
-        <p class="small text-muted-sr mb-0 mt-1">Mọi phòng của cơ sở kế thừa địa chỉ và vị trí này.</p></div>`);
+      const inherited = { ...property.address, mapUrl: property.mapUrl, mapEmbedUrl: property.mapEmbedUrl };
+      if (addressEditor) addressEditor.setInherited(inherited);
+      else {
+        addressEditor = await mountAddressEditor(form.querySelector('[data-location]'), { value: room?.addressOverride, inherited, allowInherit: true });
+        ctx.onCleanup(() => addressEditor.destroy());
+      }
     } catch (error) {
       await errorDialog(error, 'Không tải được bảng giá cơ sở');
     }
@@ -278,14 +291,15 @@ export default async function RoomFormPage(ctx) {
       const renting = !occupied && v.operatingStatus === 'occupied';
       const { rate: _rate, occupant, ...rest } = v;
       const body = { ...rest, roomTypeName: catalog.roomTypes.find((t) => t.id === v.roomTypeId)?.name, rates, amenityIds: [...form.querySelectorAll('[data-amenity]:checked')].map((el) => el.value), imageFileIds: uploader.fileIds, occupant: renting ? occupant : undefined };
-      if (isEdit) delete body.operatingStatus;
+      if (addressEditor) body.addressOverride = addressEditor.read();
+      if (occupied || room?.calendar?.length) delete body.operatingStatus;
       else if (renting) body.operatingStatus = 'available';
+      if (isEdit && body.operatingStatus && body.operatingStatus !== room.operatingStatus) {
+        body.statusReason = await reasonDialog({ title: 'Lý do đổi trạng thái phòng', text: 'Thông tin và trạng thái được lưu cùng nhau.', confirmText: 'Lưu thay đổi' });
+        if (!body.statusReason) return;
+      }
       const saved = isEdit ? await roomsApi.update(id, body) : await roomsApi.create(body);
       binding.reset();
-      if (isEdit && !occupied && !renting && v.operatingStatus !== room.operatingStatus) {
-        const reason = await reasonDialog({ title: 'Lý do đổi trạng thái phòng', text: 'Lý do được lưu vào lịch sử phòng.', confirmText: 'Đổi trạng thái' });
-        if (reason) await runAction(() => roomsApi.setStatus(id, v.operatingStatus, reason));
-      }
       dataChanged();
       toast(isEdit ? 'Đã lưu thay đổi' : `Đã thêm phòng ${saved.code}`);
       ctx.navigate(`/admin/rooms/${saved.id}`);

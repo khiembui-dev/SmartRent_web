@@ -2,6 +2,7 @@
 \ir /smartrent-database/01_schema.sql
 \ir /smartrent-database/02_rules.sql
 \ir /smartrent-database/03_seed.sql
+\ir /smartrent-database/14_apipay.sql
 -- Không tự nạp tài khoản/dữ liệu demo.
 \getenv app_password SMARTRENT_APP_PASSWORD
 BEGIN;

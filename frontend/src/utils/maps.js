@@ -13,10 +13,12 @@ export function mapUrlError(value, embed = false) {
 export function mapLinks(property, address) {
   const supplied = property.mapUrl && !mapUrlError(property.mapUrl) ? property.mapUrl : null;
   const embed = property.mapEmbedUrl && !mapUrlError(property.mapEmbedUrl, true) ? property.mapEmbedUrl : null;
+  // Link tự tạo theo địa chỉ vẫn xem trước được; short link/ghim thủ công không bị thay bằng bản đồ khác.
+  const searchQuery = supplied && new URL(supplied).pathname.startsWith('/maps/search') ? new URL(supplied).searchParams.get('query') : null;
   return {
     url: supplied || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`,
     // Short share links cannot be embedded reliably; never show an unrelated search beside an exact pin.
-    embed: embed || (!supplied && address ? `https://www.google.com/maps?q=${encodeURIComponent(address)}&output=embed` : null),
-    searched: !supplied && !embed,
+    embed: embed || (searchQuery || (!supplied && address) ? `https://www.google.com/maps?q=${encodeURIComponent(searchQuery || address)}&output=embed` : null),
+    searched: !embed && (!supplied || Boolean(searchQuery)),
   };
 }

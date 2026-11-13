@@ -35,6 +35,9 @@ builder.Services.AddScoped<SmartRent.Api.Features.Auth.AuthSessionService>();
 builder.Services.AddScoped<SmartRent.Api.Features.Tickets.TicketRepository>();
 builder.Services.AddDataProtection();
 builder.Services.AddScoped<SmartRent.Api.Features.Files.TicketFileStore>();
+// Trợ lý AI chỉ đọc cho admin và khách; khóa/endpoint đọc từ User Secrets hoặc biến môi trường Chatbot__*.
+SmartRent.Api.Features.Chatbot.ChatbotSetup.AddChatbot(builder.Services, builder.Configuration);
+SmartRent.Api.Features.ApiPay.ApiPaySetup.AddApiPay(builder.Services);
 // Hoàn tất đăng ký dịch vụ rồi tạo ứng dụng HTTP.
 var app = builder.Build();
 
@@ -85,6 +88,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // Ánh xạ các route từ controller, ví dụ /api/v1/dashboard/room-stats-dev.
+SmartRent.Api.Features.ApiPay.ApiPaySetup.UseApiPayProxy(app);
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

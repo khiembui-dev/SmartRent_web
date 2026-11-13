@@ -39,7 +39,8 @@ export const ADMIN_NAV = [
 
 // Menu trang khách hàng.
 export const CUSTOMER_NAV = [
-  { path: '/rooms', label: 'Thuê phòng', icon: 'door-open' },
+  { path: '/rooms', label: 'Thuê phòng', short: 'Phòng', icon: 'door-open' },
+  { path: '/favorites', label: 'Phòng yêu thích', short: 'Yêu thích', icon: 'heart', count: 'favorites' },
   { path: '/invoices', label: 'Hóa đơn', icon: 'receipt', member: true, finance: true },
   { path: '/tickets', label: 'Hỗ trợ', icon: 'chat-dots', member: true },
   { path: '/contract', label: 'Hợp đồng', icon: 'file-earmark-text', member: true },

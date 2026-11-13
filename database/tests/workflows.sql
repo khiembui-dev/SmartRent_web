@@ -80,6 +80,7 @@ BEGIN
  IF EXISTS(SELECT 1 FROM v_invoice_balances WHERE contract_id=cid AND outstanding_amount<>0) THEN RAISE EXCEPTION 'checkout debt mismatch'; END IF;
  IF NOT EXISTS(SELECT 1 FROM v_deposit_balances WHERE contract_id=cid AND held=0 AND refunded=700000-final_amount) THEN RAISE EXCEPTION 'checkout deposit mismatch'; END IF;
  IF NOT EXISTS(SELECT 1 FROM v_room_occupancy WHERE code='A101' AND occupancy_status='available') THEN RAISE EXCEPTION 'room not released'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM rooms WHERE code='A101' AND listing_status='published' AND listing_slug IS NOT NULL) THEN RAISE EXCEPTION 'listing not republished after checkout'; END IF;
 END $$;
 BEGIN;
 SELECT pg_temp.checkout_after_monthly(10);
@@ -98,6 +99,7 @@ BEGIN
  INSERT INTO contracts(code,user_id,room_id,booking_id,onboarding_mode,starts_on,move_in_on)
  SELECT 'FROM-BOOKING',user_id,room_id,id,'import','2026-11-01','2026-11-01' FROM bookings WHERE id=bid RETURNING id INTO cid;
  IF NOT EXISTS(SELECT 1 FROM bookings WHERE id=bid AND status='converted' AND hold_status='converted' AND jsonb_array_length(history)>=2) THEN RAISE EXCEPTION 'booking conversion failed'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM rooms r JOIN bookings b ON b.room_id=r.id WHERE b.id=bid AND r.listing_status='hidden') THEN RAISE EXCEPTION 'listing not hidden after contract'; END IF;
  UPDATE users SET phone='0900000009' WHERE code='KH-001' AND phone='0900000002';
  UPDATE bookings SET status='approved',reviewed_by=admin_id,reviewed_at=now(),decision_notes='Approved phone change' WHERE code='YC-001';
  IF NOT EXISTS(SELECT 1 FROM users WHERE code='KH-001' AND phone='0900000009') THEN RAISE EXCEPTION 'profile update failed'; END IF;

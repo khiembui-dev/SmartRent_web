@@ -26,18 +26,27 @@ public sealed class PropertiesController(NpgsqlDataSource db) : BusinessControll
     {
         var b = Object(body);
         var address = b["address"];
+        var structured = address?.Text("provinceCode") is not null;
+        if (structured) address = HousingAddress.Normalize(address!);
         if (string.IsNullOrWhiteSpace(b.Text("name")) || string.IsNullOrWhiteSpace(address.Text("line")) || string.IsNullOrWhiteSpace(address.Text("province")))
             throw Invalid("Cần tên, địa chỉ và tỉnh/thành phố.");
         var pid = id ?? Guid.NewGuid();
         var old = id is null ? null : await Row(c, t, "select to_jsonb(p)::text from properties p where id=@id for update", ct, "id", pid);
         var rates = Rates(b["rates"], Today, old?["rates"]?.AsArray());
-        var map = HousingLinks.Map(b.ContainsKey("mapUrl") ? b.Text("mapUrl") : old.Text("map_url"));
-        var embed = HousingLinks.Map(b.ContainsKey("mapEmbedUrl") ? b.Text("mapEmbedUrl") : old.Text("map_embed_url"), true);
+        var addressChanged = old is not null && (address.Text("line") != old.Text("address_line") || address.Text("locality") != old.Text("locality") || address.Text("province") != old.Text("province"));
+        // Không giữ ghim cũ khi địa chỉ thay đổi. Chấp nhận ghim trong address hoặc
+        // trường ngoài cùng để tương thích form/API hiện có.
+        var map = HousingLinks.Map(b.ContainsKey("mapUrl") ? b.Text("mapUrl") : structured ? address.Text("mapUrl") : addressChanged ? null : old.Text("map_url"));
+        var embed = HousingLinks.Map(b.ContainsKey("mapEmbedUrl") ? b.Text("mapEmbedUrl") : structured ? address.Text("mapEmbedUrl") : addressChanged ? null : old.Text("map_embed_url"), true);
         await Execute(c, t, id is null ?
             "insert into properties(id,code,name,address_line,locality,province,description,rates) values(@id,next_code('CS'),@name,@line,@locality,@province,@description,@rates::jsonb)" :
             "update properties set name=@name,address_line=@line,locality=@locality,province=@province,description=@description,rates=@rates::jsonb where id=@id",
             ct, "id", pid, "name", b.Text("name")!.Trim(), "line", address.Text("line"), "locality", address.Text("locality"), "province", address.Text("province"), "description", b.Text("description"), "rates", rates.ToJsonString());
         await Execute(c, t, "update properties set map_url=@map,map_embed_url=@embed where id=@id", ct, "map", map, "embed", embed, "id", pid);
+        if (structured)
+            await Execute(c, t, "update properties set address_details=@address::jsonb where id=@id", ct, "address", address!.ToJsonString(), "id", pid);
+        else if (old is not null && (address.Text("line") != old.Text("address_line") || address.Text("locality") != old.Text("locality") || address.Text("province") != old.Text("province")))
+            await Execute(c, t, "update properties set address_details='{}' where id=@id", ct, "id", pid);
         return await HousingData.Property(c, t, pid, ct);
     }, ct);
     [HttpPost("{id:guid}/activate")] public Task<IActionResult> Activate(Guid id, CancellationToken ct) => State(id, true, null, ct);

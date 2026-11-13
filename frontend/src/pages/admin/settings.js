@@ -9,7 +9,7 @@ import { html, setHtml } from '../../utils/html.js';
 import { dataChanged } from './common.js';
 import { bindFilePicker } from '../../components/file-picker.js';
 
-const DAYS = Array.from({ length: 28 }, (_, i) => ({ value: String(i + 1), label: `Ngày ${i + 1}` }));
+const DAYS = Array.from({ length: 31 }, (_, i) => ({ value: String(i + 1), label: `Ngày ${i + 1}` }));
 
 export default async function SettingsPage(ctx) {
   ctx.setTitle('Cài đặt');
@@ -17,9 +17,8 @@ export default async function SettingsPage(ctx) {
   const canSchedule = session.can('billing.read');
   const canSaveSchedule = session.can('settings.manage');
   let schedule = null;
-  let organization = null;
   try {
-    [schedule, organization] = await Promise.all([canSchedule ? settingsApi.billingSchedule() : null, settingsApi.organization()]);
+    schedule = canSchedule ? await settingsApi.billingSchedule() : null;
   } catch (error) {
     setHtml(ctx.outlet, errorState(error));
     return;
@@ -37,11 +36,6 @@ export default async function SettingsPage(ctx) {
     { name: 'currentPassword', label: 'Mật khẩu hiện tại', type: 'password', required: true, autocomplete: 'current-password' },
     { name: 'newPassword', label: 'Mật khẩu mới', type: 'password', required: true, minLength: 8, col: 'col-md-6', autocomplete: 'new-password', help: 'Ít nhất 8 ký tự.' },
     { name: 'confirm', label: 'Nhập lại mật khẩu mới', type: 'password', required: true, col: 'col-md-6', autocomplete: 'new-password' },
-  ];
-  const bankFields = [
-    { name: 'bankName', label: 'Ngân hàng', optional: true },
-    { name: 'bankAccountNumber', label: 'Số tài khoản', optional: true, col: 'col-md-6' },
-    { name: 'bankAccountName', label: 'Tên chủ tài khoản', optional: true, col: 'col-md-6' },
   ];
   const scheduleFields = [
     { name: 'meterReadingDay', label: 'Ngày nhập số điện nước', type: 'select', required: true, placeholderOption: false, col: 'col-md-6', options: DAYS, disabled: !canSaveSchedule },
@@ -70,15 +64,10 @@ export default async function SettingsPage(ctx) {
       <div class="sr-panel-body">${formAlert()}${renderFields(passwordFields, {})}</div>
       <div class="sr-panel-foot"><button type="submit" class="btn btn-primary">Đổi mật khẩu</button></div>
     </form>
-    <form id="bank-form" class="sr-panel" novalidate>
-      <div class="sr-panel-head"><h2>Tài khoản nhận tiền</h2></div>
-      <div class="sr-panel-body">${formAlert()}<p class="small text-muted-sr">Thông tin này hiển thị trên hóa đơn khách. Nhập đủ ba mục hoặc để trống cả ba.</p>${renderFields(bankFields, organization.settings)}</div>
-      <div class="sr-panel-foot"><button type="submit" class="btn btn-primary">Lưu tài khoản nhận tiền</button></div>
-    </form>
     ${schedule ? html`<form id="schedule-form" class="sr-panel" novalidate>
       <div class="sr-panel-head"><h2>Lịch nhắc tính tiền</h2><span class="sr-panel-note">Nhắc trên Tổng quan</span></div>
       <div class="sr-panel-body">${formAlert()}
-        <p class="ad-section-hint">Tới ngày đã chọn, trang Tổng quan nhắc còn bao nhiêu phòng chưa nhập số hoặc chưa tạo hóa đơn. Chọn tối đa ngày 28 để tháng nào cũng có.</p>
+        <p class="ad-section-hint">Tới ngày đã chọn, trang Tổng quan nhắc còn bao nhiêu phòng chưa nhập số hoặc chưa tạo hóa đơn. Chọn ngày 1–31. Tháng không có ngày đã chọn sẽ nhắc vào ngày cuối tháng.</p>
         ${renderFields(scheduleFields, { ...schedule, meterReadingDay: String(schedule.meterReadingDay), invoiceCreateDay: String(schedule.invoiceCreateDay) })}
         ${canSaveSchedule ? '' : html`<div class="mt-3">${note('Chỉ chủ trọ đổi được lịch này.')}</div>`}
       </div>
@@ -164,17 +153,6 @@ export default async function SettingsPage(ctx) {
       },
     }),
   ];
-  bindings.push(bindForm(ctx.outlet.querySelector('#bank-form'), {
-    fields: bankFields,
-    validate: (v) => {
-      const count = Object.values(v).filter((value) => String(value || '').trim()).length;
-      return count > 0 && count < 3 ? { bankName: ['Cần nhập đủ ngân hàng, số tài khoản và tên chủ tài khoản.'] } : null;
-    },
-    onSubmit: async (v) => {
-      organization = await settingsApi.saveOrganization({ name: organization.name, settings: { ...organization.settings, ...v } });
-      toast('Đã lưu tài khoản nhận tiền');
-    },
-  }));
   const scheduleForm = ctx.outlet.querySelector('#schedule-form');
   if (scheduleForm && canSaveSchedule) {
     bindings.push(bindForm(scheduleForm, {

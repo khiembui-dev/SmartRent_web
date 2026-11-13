@@ -19,10 +19,28 @@ export const authApi = {
 };
 
 export const publicApi = {
+  addressUnits: () => http.get('/api/v1/public/administrative-units'),
   filters: () => http.get('/api/v1/public/filters'),
   rooms: (query, options) => http.get('/api/v1/public/rooms', query, options),
   room: (slug) => http.get(`/api/v1/public/rooms/${id(slug)}`),
   contactInfo: () => http.get('/api/v1/public/contact-info'),
+};
+
+// Trợ lý AI chỉ đọc. Một câu hỏi có thể mất vài chục giây vì máy chủ gọi dịch vụ AI và tra cứu dữ liệu nhiều lần.
+const AI_TIMEOUT_MS = 170000;
+export const aiApi = {
+  conversations: () => http.get('/api/v1/ai/conversations'),
+  create: (body = {}) => http.post('/api/v1/ai/conversations', body),
+  conversation: (conversationId) => http.get(`/api/v1/ai/conversations/${id(conversationId)}`),
+  send: (conversationId, content, options = {}) => http.post(`/api/v1/ai/conversations/${id(conversationId)}/messages`, { content }, { timeoutMs: AI_TIMEOUT_MS, ...options }),
+  remove: (conversationId) => http.delete(`/api/v1/ai/conversations/${id(conversationId)}`),
+};
+export const portalAiApi = {
+  conversations: () => http.get('/api/v1/portal/ai/conversations'),
+  create: (body = {}) => http.post('/api/v1/portal/ai/conversations', body),
+  conversation: (conversationId) => http.get(`/api/v1/portal/ai/conversations/${id(conversationId)}`),
+  send: (conversationId, content, options = {}) => http.post(`/api/v1/portal/ai/conversations/${id(conversationId)}/messages`, { content }, { timeoutMs: AI_TIMEOUT_MS, ...options }),
+  remove: (conversationId) => http.delete(`/api/v1/portal/ai/conversations/${id(conversationId)}`),
 };
 
 export const dashboardApi = {
@@ -169,6 +187,10 @@ export const metersApi = {
 };
 
 export const invoicesApi = {
+  bankEvents: (page = 1) => http.get('/api/v1/admin/apipay/events', { page }),
+  retryBankEvent: (transactionId) => http.post(`/api/v1/admin/apipay/events/${id(transactionId)}/retry`, {}),
+  reconcileBankEvent: (transactionId, paymentId) => http.post(`/api/v1/admin/apipay/events/${id(transactionId)}/reconcile`, { paymentId }),
+  ignoreBankEvent: (transactionId, reason) => http.post(`/api/v1/admin/apipay/events/${id(transactionId)}/ignore`, { reason }),
   list: (query, options) => http.get('/api/v1/invoices', query, options),
   get: (invoiceId) => http.get(`/api/v1/invoices/${id(invoiceId)}`),
   createDraft: (body, key) => http.post('/api/v1/invoices/drafts', body, withKey(key)),
@@ -262,7 +284,9 @@ export const portalApi = {
   tenancies: () => http.get('/api/v1/portal/tenancies'),
   tenancy: (tenancyId) => http.get(`/api/v1/portal/tenancies/${id(tenancyId)}`),
   invoices: (query, options) => http.get('/api/v1/portal/invoices', query, options),
-  invoice: (invoiceId) => http.get(`/api/v1/portal/invoices/${id(invoiceId)}`),
+  invoice: (invoiceId, options) => http.get(`/api/v1/portal/invoices/${id(invoiceId)}`, undefined, options),
+  paymentRequest: (invoiceId, options) => http.get(`/api/v1/portal/apipay/invoices/${id(invoiceId)}/payment-request`, undefined, options),
+  createPaymentRequest: (invoiceId, options) => http.post(`/api/v1/portal/apipay/invoices/${id(invoiceId)}/payment-request`, {}, { timeoutMs: 25000, ...options }),
   payments: (query, options) => http.get('/api/v1/portal/payments', query, options),
   reportPayment: (body, key) => http.post('/api/v1/portal/payments', body, withKey(key)),
   tickets: (query, options) => http.get('/api/v1/portal/tickets', query, options),
@@ -275,4 +299,10 @@ export const portalApi = {
   createRequest: (body, key) => http.post('/api/v1/portal/requests', body, withKey(key)),
   cancelRequest: (requestId) => http.post(`/api/v1/portal/requests/${id(requestId)}/cancel`, {}),
   catalog: () => http.get('/api/v1/portal/catalog'),
+  // Phòng yêu thích theo tài khoản (người đăng nhập là chủ danh sách).
+  favorites: () => http.get('/api/v1/portal/favorites'),
+  favoriteRooms: () => http.get('/api/v1/portal/favorites/rooms'),
+  addFavorite: (roomId) => http.put(`/api/v1/portal/favorites/${id(roomId)}`, {}),
+  removeFavorite: (roomId) => http.delete(`/api/v1/portal/favorites/${id(roomId)}`),
+  mergeFavorites: (body) => http.post('/api/v1/portal/favorites/merge', body),
 };

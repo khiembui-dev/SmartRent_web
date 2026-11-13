@@ -64,6 +64,10 @@ function tenantCanSee(ctx, file) {
 }
 
 export default function register(r) {
+  r.get('/api/v1/admin/apipay/events', () => ({ items: [], page: 1, pageSize: 25, totalItems: 0, totalPages: 0 }), { perm: 'settings.manage' });
+  r.post('/api/v1/admin/apipay/events/:transactionId/retry', () => fail(503, 'payment_unavailable', 'ApiPay chỉ hoạt động với backend thật.'), { perm: 'settings.manage' });
+  r.post('/api/v1/admin/apipay/events/:transactionId/reconcile', () => fail(503, 'payment_unavailable', 'ApiPay chỉ hoạt động với backend thật.'), { perm: 'settings.manage' });
+  r.post('/api/v1/admin/apipay/events/:transactionId/ignore', () => fail(503, 'payment_unavailable', 'ApiPay chỉ hoạt động với backend thật.'), { perm: 'settings.manage' });
   // ---------------------------------------------------------------- cấu hình
   const scheduleOf = (ctx) => {
     const { meterReadingDay, invoiceCreateDay, reminderEnabled } = ctx.db.orgSettings.find((s) => s.organizationId === ctx.organizationId);
@@ -75,8 +79,8 @@ export default function register(r) {
     const b = ctx.body;
     const v = validator();
     // Tối đa ngày 28 để tháng nào cũng có ngày nhắc.
-    v.number('meterReadingDay', b.meterReadingDay, 'Ngày nhập số điện nước', { min: 1, max: 28 });
-    v.number('invoiceCreateDay', b.invoiceCreateDay, 'Ngày tạo hóa đơn', { min: 1, max: 28 });
+    v.number('meterReadingDay', b.meterReadingDay, 'Ngày nhập số điện nước', { min: 1, max: 31 });
+    v.number('invoiceCreateDay', b.invoiceCreateDay, 'Ngày tạo hóa đơn', { min: 1, max: 31 });
     if (Number.isFinite(b.meterReadingDay) && Number.isFinite(b.invoiceCreateDay) && b.invoiceCreateDay < b.meterReadingDay) v.add('invoiceCreateDay', 'Ngày tạo hóa đơn phải từ ngày nhập số trở đi.');
     v.check();
     Object.assign(ctx.db.orgSettings.find((s) => s.organizationId === ctx.organizationId), { meterReadingDay: b.meterReadingDay, invoiceCreateDay: b.invoiceCreateDay, reminderEnabled: Boolean(b.reminderEnabled) });
@@ -361,6 +365,14 @@ export default function register(r) {
     ctx.db.aiMessages.push({ id: uuid(), conversationId: conv.id, role: 'assistant', content: answer.content, createdAt: new Date(Date.parse(ctx.now) + 1).toISOString(), sources: answer.sources, model: 'mock-rules (chưa kết nối AI thật)' });
     if (conv.title === 'Cuộc hỏi mới') conv.title = ctx.body.content.slice(0, 60);
     return { ...conv, messages: ctx.db.aiMessages.filter((m) => m.conversationId === conv.id).sort((a, b) => compareIso(a.createdAt, b.createdAt)) };
+  }, { perm: 'ai.read' });
+
+  r.delete('/api/v1/ai/conversations/:id', (ctx) => {
+    const index = ctx.db.aiConversations.findIndex((c) => c.id === ctx.params.id && c.userId === ctx.user.id);
+    if (index < 0) fail(404, 'not_found', 'Không tìm thấy hội thoại.');
+    ctx.db.aiConversations.splice(index, 1);
+    ctx.db.aiMessages = ctx.db.aiMessages.filter((m) => m.conversationId !== ctx.params.id);
+    return null;
   }, { perm: 'ai.read' });
 
   // ---------------------------------------------------------------- tệp (mọi người dùng đã đăng nhập)

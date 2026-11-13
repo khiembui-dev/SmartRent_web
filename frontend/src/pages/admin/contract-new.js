@@ -35,6 +35,9 @@ export default async function ContractNewPage(ctx) {
       presetTenant ? tenantsApi.get(presetTenant) : null,
       tenancyId ? tenanciesApi.get(tenancyId) : null,
     ]);
+    // Xác định khách trước khi tải phòng: phòng đang giữ cho khách này vẫn có
+    // thể ký hợp đồng từ lịch xem, nhưng không được hiện cho khách khác.
+    if (!tenantPreset && inquiry?.tenantId) tenantPreset = await tenantsApi.get(inquiry.tenantId);
   } catch (error) {
     setHtml(ctx.outlet, errorState(error));
     return;
@@ -52,7 +55,7 @@ export default async function ContractNewPage(ctx) {
 
   const tenantOptions = tenantPreset ? [{ value: tenantPreset.id, label: tenantPreset.fullName, sub: tenantPreset.code }] : [];
   const partyFields = existing ? [] : [
-    { name: 'tenantId', label: 'Khách thuê', type: 'tomselect', remote: 'tenants', required: true, options: tenantOptions, placeholderOption: 'Gõ tên hoặc số điện thoại', col: 'col-12' },
+    { name: 'tenantId', label: 'Khách thuê', type: 'tomselect', remote: 'contractTenants', required: true, options: tenantOptions, placeholderOption: 'Chọn khách hoặc gõ tên, số điện thoại', col: 'col-12', help: 'Khách đang hoạt động, chưa có hợp đồng đang thuê hoặc sắp vào ở. Khách đã trả phòng có thể thuê lại.' },
     { name: 'propertyId', label: 'Cơ sở', type: 'select', required: true, placeholderOption: false, col: 'col-md-6', options: org.properties.map((p) => ({ value: p.id, label: p.name })) },
     { name: 'roomId', label: 'Phòng trống', type: 'select', required: true, col: 'col-md-6', options: [], placeholderOption: 'Chọn phòng' },
   ];
@@ -80,7 +83,7 @@ export default async function ContractNewPage(ctx) {
           <div><dt>Khách thuê</dt><dd><a href="${link(`/admin/tenants/${existing.representative.id}`)}">${existing.representative.fullName}</a></dd></div>
           <div><dt>Phòng</dt><dd>${plate(existing.room)} ${existing.room.propertyName}</dd></div>
           <div><dt>Vào ở từ</dt><dd>${formatDate(existing.actualMoveIn)}</dd></div></dl>` : renderFields(partyFields, { propertyId, tenantId: tenantPreset?.id })}
-          <p class="form-text mb-0">Người đứng tên hợp đồng phải có số điện thoại hợp lệ và ngày sinh xác nhận đủ 18 tuổi.</p></div></section>
+          <p class="form-text mb-0">Cần số điện thoại hợp lệ. Ngày sinh có thể bổ sung sau; nếu đã nhập thì người đứng tên phải đủ 18 tuổi.</p></div></section>
       <section class="sr-panel"><div class="sr-panel-head"><h2>Thời hạn</h2><div class="sr-panel-actions ad-term-quick" role="group" aria-label="Chọn nhanh thời hạn">
         ${[6, 12, 24].map((m) => html`<button type="button" class="btn btn-outline-secondary btn-sm" data-term="${m}">${m} tháng</button>`)}</div></div>
         <div class="sr-panel-body">${renderFields(termFields, { moveInOn: existing?.actualMoveIn || today })}</div></section>
@@ -158,12 +161,18 @@ export default async function ContractNewPage(ctx) {
     renderSummary();
   };
 
+  let roomsRequest = 0;
   const loadRooms = async () => {
+    const request = ++roomsRequest;
     const select = input('roomId');
-    const [list, property] = await Promise.all([roomsApi.list({ propertyId, status: 'available', pageSize: 200 }), propertiesApi.get(propertyId)]);
+    const [list, property] = await Promise.all([roomsApi.list({ propertyId, forContract: true, tenantId: input('tenantId')?.value || undefined, pageSize: 200 }), propertiesApi.get(propertyId)]);
+    if (request !== roomsRequest || ctx.signal.aborted) return;
     billing = property.billingSettings;
-    const free = list.items.filter((r) => !r.upcoming);
-    setHtml(select, html`<option value="">${free.length ? 'Chọn phòng' : 'Cơ sở không còn phòng trống'}</option>${free.map((r) => html`<option value="${r.id}">${r.code} – ${r.name} (${formatVnd(r.currentRent)})</option>`)}`);
+    const free = list.items;
+    const previous = select.value;
+    setHtml(select, html`<option value="">${free.length ? 'Chọn phòng' : 'Không có phòng phù hợp cho khách này'}</option>${free.map((r) => html`<option value="${r.id}">${r.code} – ${r.name} (${formatVnd(r.currentRent)})${r.occupancyStatus === 'reserved' ? ' · Cọc giữ phòng' : ''}</option>`)}`);
+    select.value = free.some((r) => r.id === previous) ? previous : '';
+    if (!select.value && room) { room = null; roomReady = false; renderRoomPart(); }
   };
 
   const selectRoom = async (id) => {
@@ -194,10 +203,14 @@ export default async function ContractNewPage(ctx) {
       alert.hidden = false;
     }
   });
-  input('tenantId')?.addEventListener('change', (event) => {
+  input('tenantId')?.addEventListener('change', async (event) => {
     const ts = event.target.tomselect;
     tenantLabel = ts?.options[event.target.value]?.text || null;
     renderSummary();
+    try { await loadRooms(); } catch (error) {
+      const alert = form.querySelector('[data-form-alert]');
+      setHtml(alert, note(error.detail || error.message, { tone: 'danger' })); alert.hidden = false;
+    }
   });
   form.addEventListener('input', renderSummary);
   form.addEventListener('change', renderSummary);
@@ -253,11 +266,6 @@ export default async function ContractNewPage(ctx) {
     form.querySelector('[data-form-alert]').hidden = false;
   }
   renderSummary();
-  if (inquiry?.tenantId) {
-    const linked = await tenantsApi.get(inquiry.tenantId).catch(() => null);
-    if (linked) pickTenant(linked);
-  }
-
   const binding = bindForm(form, {
     fields,
     validate: (v) => (v.moveInOn && v.lastDay && v.lastDay <= v.moveInOn ? { lastDay: ['Ngày cuối phải sau ngày vào ở.'] } : null),

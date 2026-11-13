@@ -1719,6 +1719,24 @@
           "type": "timestamp with time zone",
           "default": "now()",
           "nullable": false
+        },
+        {
+          "name": "map_url",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "map_embed_url",
+          "type": "text",
+          "default": null,
+          "nullable": true
+        },
+        {
+          "name": "address_details",
+          "type": "jsonb",
+          "default": "'{}'::jsonb",
+          "nullable": false
         }
       ],
       "indexes": [
@@ -1726,6 +1744,11 @@
         "CREATE UNIQUE INDEX properties_code_key ON smartrent.properties USING btree (code)"
       ],
       "constraints": [
+        {
+          "name": "properties_address_details_check",
+          "type": "c",
+          "definition": "CHECK ((jsonb_typeof(address_details) = 'object'::text))"
+        },
         {
           "name": "properties_amenity_options_check",
           "type": "c",
@@ -1932,6 +1955,12 @@
           "type": "timestamp with time zone",
           "default": "now()",
           "nullable": false
+        },
+        {
+          "name": "address_override",
+          "type": "jsonb",
+          "default": null,
+          "nullable": true
         }
       ],
       "indexes": [
@@ -1942,6 +1971,11 @@
         "CREATE INDEX rooms_amenities_idx ON smartrent.rooms USING gin (amenities)"
       ],
       "constraints": [
+        {
+          "name": "rooms_address_override_check",
+          "type": "c",
+          "definition": "CHECK (((address_override IS NULL) OR (jsonb_typeof(address_override) = 'object'::text)))"
+        },
         {
           "name": "rooms_amenities_check",
           "type": "c",
@@ -1985,7 +2019,7 @@
         {
           "name": "rooms_operating_status_check",
           "type": "c",
-          "definition": "CHECK ((operating_status = ANY (ARRAY['available'::text, 'maintenance'::text, 'inactive'::text])))"
+          "definition": "CHECK ((operating_status = ANY (ARRAY['available'::text, 'reserved'::text, 'maintenance'::text, 'inactive'::text])))"
         },
         {
           "name": "rooms_pkey",
@@ -2101,12 +2135,12 @@
         {
           "name": "settings_invoice_create_day_check",
           "type": "c",
-          "definition": "CHECK (((invoice_create_day >= 1) AND (invoice_create_day <= 28)))"
+          "definition": "CHECK (((invoice_create_day >= 1) AND (invoice_create_day <= 31)))"
         },
         {
           "name": "settings_meter_reading_day_check",
           "type": "c",
-          "definition": "CHECK (((meter_reading_day >= 1) AND (meter_reading_day <= 28)))"
+          "definition": "CHECK (((meter_reading_day >= 1) AND (meter_reading_day <= 31)))"
         },
         {
           "name": "settings_pkey",
@@ -2502,6 +2536,12 @@
           "type": "timestamp with time zone",
           "default": "now()",
           "nullable": false
+        },
+        {
+          "name": "favorite_rooms",
+          "type": "jsonb",
+          "default": "'[]'::jsonb",
+          "nullable": false
         }
       ],
       "indexes": [
@@ -2548,6 +2588,11 @@
           "definition": "CHECK ((failed_login_count >= 0))"
         },
         {
+          "name": "users_favorite_rooms_check",
+          "type": "c",
+          "definition": "CHECK (((jsonb_typeof(favorite_rooms) = 'array'::text) AND (jsonb_array_length(favorite_rooms) <= 100)))"
+        },
+        {
           "name": "users_identity_documents_check",
           "type": "c",
           "definition": "CHECK ((jsonb_typeof(identity_documents) = 'array'::text))"
@@ -2571,7 +2616,7 @@
       "description": "Tài khoản và toàn bộ hồ sơ khách, kể cả khách chưa kích hoạt đăng nhập."
     }
   ],
-  "triggers": 14,
+  "triggers": 15,
   "foreignKeys": [
     {
       "child": "settings",

@@ -11,7 +11,7 @@ import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { bindActions, dataChanged } from './common.js';
 
-const STATUS_OPTIONS = [{ value: 'available', label: 'Còn trống' }, { value: 'occupied', label: 'Đã thuê' }, { value: 'maintenance', label: 'Bảo trì' }, { value: 'inactive', label: 'Ngừng khai thác' }];
+const STATUS_OPTIONS = [{ value: 'available', label: 'Còn trống' }, { value: 'occupied', label: 'Đã thuê' }, { value: 'reserved', label: 'Đang cọc giữ phòng' }, { value: 'maintenance', label: 'Bảo trì' }, { value: 'inactive', label: 'Ngừng khai thác' }];
 
 export default function RoomsPage(ctx) {
   ctx.setTitle('Phòng');

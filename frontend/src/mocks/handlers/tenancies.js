@@ -13,6 +13,26 @@ import {
   contractSummary, depositEntryDto, fileDto, invoiceSummary, roomRef, tenancyBrief, tenantRef, tenantSummary, userRef, versionDto,
 } from '../dto.js';
 import { propertyFilter, roomInScope, tenancyInScope, tenantInScope } from '../scope.js';
+import { slugify } from '../../utils/format.js';
+
+// Tin đăng đi theo đợt thuê, như trigger contract_listing_sync của database:
+// có đợt thuê hiệu lực/sắp vào ở thì tạm ẩn; kết thúc hoặc hủy mà phòng trống lại thì công khai lại.
+function hideListing(db, roomId, now) {
+  const listing = db.roomListings.find((l) => l.roomId === roomId);
+  if (listing && listing.status !== 'hidden') Object.assign(listing, { status: 'hidden', updatedAt: now });
+}
+function republishListing(db, roomId, now) {
+  const busy = db.tenancies.some((t) => ['active', 'planned'].includes(t.status) && find(db.roomAllocations, t.allocationId)?.roomId === roomId);
+  const room = find(db.rooms, roomId);
+  const property = room && find(db.properties, room.propertyId);
+  if (busy || !room || room.operatingStatus !== 'available' || property?.isActive === false) return;
+  let listing = db.roomListings.find((l) => l.roomId === roomId);
+  if (!listing) {
+    listing = { id: uuid(), roomId, slug: `${slugify(room.code)}-${room.id.slice(0, 8)}`, title: `${room.name} – ${property.name}`, description: null, createdAt: now };
+    db.roomListings.push(listing);
+  }
+  Object.assign(listing, { status: 'published', publishedAt: now, updatedAt: now });
+}
 
 // ---------------------------------------------------------------- tiện ích
 
@@ -216,6 +236,7 @@ export function registerExistingTenancy(ctx, room, occupant) {
     actualMoveIn: occupant.moveInOn, actualMoveOut: null, onboardingMode: 'import', endReason: null, endedBy: null, createdAt: ctx.now,
   };
   db.tenancies.push(tenancy);
+  hideListing(db, room.id, ctx.now);
   const hasIdentity = db.identityDocuments.some((d) => d.tenantId === tenant.id);
   ['Hợp đồng đã ký', ...(hasIdentity ? [] : ['Giấy tờ tùy thân']), 'Biên bản bàn giao ban đầu'].forEach((missingItem) => {
     db.onboardingGaps.push({ id: uuid(), tenancyId: tenancy.id, missingItem, sourceReference: null, notes: null, resolvedAt: null, resolvedBy: null });
@@ -337,6 +358,7 @@ export default function register(r) {
         actualMoveIn: b.moveInOn, actualMoveOut: null, onboardingMode: 'normal', endReason: null, endedBy: null, createdAt: ctx.now,
       };
       db.tenancies.push(tenancy);
+      hideListing(db, room.id, ctx.now);
       const property = find(db.properties, room.propertyId);
       contractInfo = createSignedContract(ctx, { tenancy, tenant, property, contract: b.contract, signature: b.signature, effectiveFrom: b.moveInOn });
       if (reservation?.inquiryId) {
@@ -350,6 +372,7 @@ export default function register(r) {
     }
     tenancy.status = 'active';
     tenancy.actualMoveIn = b.moveInOn;
+    hideListing(db, room.id, ctx.now);
 
     // Người ở cùng (không mặc định nghĩa vụ thanh toán).
     for (const resident of b.residents || []) {
@@ -477,6 +500,7 @@ export default function register(r) {
     }
     Object.assign(c.tenancy, { status: 'cancelled', endReason: ctx.body.reason, endedBy: ctx.user.id });
     c.allocation.state = 'released';
+    republishListing(db, c.allocation.roomId, ctx.now);
     db.readings.filter((x) => x.tenancyId === id && x.status === 'valid').forEach((x) => { Object.assign(x, { status: 'void', voidReason: ctx.body.reason }); });
     audit(db, ctx, { action: 'tenancy.import_cancel', tableName: 'tenancies', recordId: id, before: { status: 'active' }, after: { status: 'cancelled' }, reason: ctx.body.reason });
     return tenancyDetail(ctx, c.tenancy);
@@ -536,6 +560,8 @@ export default function register(r) {
       actualMoveIn: b.transferOn, actualMoveOut: null, onboardingMode: 'normal', endReason: null, endedBy: null, createdAt: ctx.now,
     };
     db.tenancies.push(tenancy);
+    hideListing(db, target.id, ctx.now);
+    republishListing(db, old.room.id, ctx.now);
     db.residents.filter((x) => x.tenancyId === old.tenancy.id).forEach((x) => db.residents.push({ id: uuid(), tenancyId: tenancy.id, tenantId: x.tenantId, joinedOn: b.transferOn, leftOn: null, relationship: x.relationship }));
     const predecessor = db.contracts.filter((k) => k.tenancyId === old.tenancy.id).sort((a, x) => compareIso(x.createdAt, a.createdAt))[0];
     createSignedContract(ctx, { tenancy, tenant: old.tenant, property: find(db.properties, target.propertyId), contract: b.contract, signature: b.signature, effectiveFrom: b.transferOn, predecessorContractId: predecessor?.id || null });
@@ -636,6 +662,7 @@ export default function register(r) {
     Object.assign(settlement, { status: 'confirmed', confirmedBy: ctx.user.id, confirmedAt: ctx.now });
     Object.assign(c.tenancy, { status: 'ended', endReason: b.terminationReason, endedBy: ctx.user.id });
     Object.assign(c.allocation, { state: 'completed', endsOn: b.moveOutOn });
+    republishListing(db, c.allocation.roomId, ctx.now);
     db.residents.filter((x) => x.tenancyId === c.tenancy.id && !x.leftOn).forEach((x) => { x.leftOn = b.moveOutOn; });
     db.contracts.filter((k) => k.tenancyId === c.tenancy.id).forEach((k) => {
       const cs = contractStatus(db, k, ctx.today);

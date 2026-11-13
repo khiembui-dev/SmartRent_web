@@ -15,8 +15,8 @@ public class ContractTenantRulesTests
         ContractTenantRules.Validate(phone, new DateOnly(2000, 1, 1), Today));
 
     [Fact]
-    public void RequiresBirthDate() => Assert.Throws<LeaseHttpException>(() =>
-        ContractTenantRules.Validate("0901234567", null, Today));
+    public void AllowsMissingBirthDate() =>
+        ContractTenantRules.Validate("0901234567", null, Today);
 
     [Fact]
     public void RejectsDayBeforeEighteenthBirthday() => Assert.Throws<LeaseHttpException>(() =>

@@ -98,7 +98,7 @@ try:
                     time.sleep(0.1)
             else:
                 raise RuntimeError("Audit API startup timed out.")
-            for test in ["full_backend_flow.py", "backend_edge_flow.py", "public_listing_flow.py"]:
+            for test in ["full_backend_flow.py", "backend_edge_flow.py", "public_listing_flow.py", "admin_updates_flow.py"]:
                 subprocess.run([sys.executable, "backend/tests/" + test, "--state", str(state_file)],
                                cwd=ROOT, env=env, check=True)
             ticket = subprocess.run([sys.executable, "backend/tests/ticket_flow.py", "--keep"],

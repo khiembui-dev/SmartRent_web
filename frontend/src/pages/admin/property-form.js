@@ -6,7 +6,7 @@ import { errorState, icon, link, loadingBlock, note, pageHeader } from '../../co
 import { propertiesApi } from '../../services/api.js';
 import { session } from '../../services/session.js';
 import { html, setHtml } from '../../utils/html.js';
-import { mapUrlError } from '../../utils/maps.js';
+import { mountAddressEditor } from '../../components/address-editor.js';
 import { dataChanged, getCatalog } from './common.js';
 
 export default async function PropertyFormPage(ctx) {
@@ -25,11 +25,6 @@ export default async function PropertyFormPage(ctx) {
 
   const infoFields = [
     { name: 'name', label: 'Tên cơ sở', required: true, placeholder: 'Ví dụ: Nhà trọ Bình Thạnh', maxLength: 120 },
-    { name: 'address.line', label: 'Số nhà, tên đường', required: true, placeholder: 'Ví dụ: 12 Nguyễn Gia Trí' },
-    { name: 'address.locality', label: 'Phường/xã, quận/huyện', col: 'col-md-6', optional: true },
-    { name: 'address.province', label: 'Tỉnh/thành phố', col: 'col-md-6', required: true },
-    { name: 'mapUrl', label: 'Liên kết Google Maps', type: 'url', optional: true, maxLength: 4096, validate: (v) => mapUrlError(v), help: 'Dán liên kết chia sẻ vị trí chính xác. Mọi phòng thuộc cơ sở dùng chung vị trí này.' },
-    { name: 'mapEmbedUrl', label: 'URL nhúng Google Maps', type: 'url', optional: true, maxLength: 4096, validate: (v) => mapUrlError(v, true), help: 'Không bắt buộc. Maps → Chia sẻ → Nhúng bản đồ: lấy URL trong src, không dán toàn bộ iframe. Không có URL nhúng thì khách vẫn mở được liên kết vị trí.' },
     { name: 'description', label: 'Giới thiệu cơ sở', type: 'textarea', optional: true, maxLength: 3000 },
   ];
   const rateFields = RATE_FIELDS.map((r) => ({ name: `rate.${r.code}`, label: `${r.label} (${r.unit})`, type: 'money', required: true, col: 'col-md-6', min: 0 }));
@@ -45,6 +40,7 @@ export default async function PropertyFormPage(ctx) {
     <div class="ad-form-main">
       ${formAlert()}
       <section class="sr-panel"><div class="sr-panel-head"><h2>Thông tin cơ sở</h2></div><div class="sr-panel-body">${renderFields(infoFields, values)}</div></section>
+      <section class="sr-panel"><div class="sr-panel-head"><h2>Địa chỉ và vị trí bản đồ</h2></div><div class="sr-panel-body" data-address-editor></div></section>
       <section class="sr-panel"><div class="sr-panel-head"><h2>Giá điện, nước và dịch vụ</h2><span class="sr-panel-note">Nhập 0 nếu không thu khoản đó</span></div>
         <div class="sr-panel-body">${renderFields(rateFields, values)}
           ${isEdit ? html`<div class="mt-3">${note('Giá mới áp dụng từ hôm nay cho các kỳ chưa tạo hóa đơn. Hóa đơn đã phát hành và hợp đồng đã chốt giá không đổi.')}</div>` : ''}</div></section>
@@ -57,11 +53,14 @@ export default async function PropertyFormPage(ctx) {
 
   const form = ctx.outlet.querySelector('form');
   ctx.onCleanup(await enhance(form));
+  const addressEditor = await mountAddressEditor(form.querySelector('[data-address-editor]'), { value: property ? { ...property.address, mapUrl: property.mapUrl, mapEmbedUrl: property.mapEmbedUrl } : null });
+  ctx.onCleanup(() => addressEditor.destroy());
   const binding = bindForm(form, {
     fields,
     onSubmit: async (v) => {
       const charge = (code) => catalog.chargeTypes.find((c) => c.code === code);
-      const body = { ...v, rates: RATE_FIELDS.map((r) => ({ chargeTypeId: charge(r.code).id, unitPrice: v.rate[r.code] })) };
+      const address = addressEditor.read();
+      const body = { ...v, address, mapUrl: address?.mapUrl || null, mapEmbedUrl: address?.mapEmbedUrl || null, rates: RATE_FIELDS.map((r) => ({ chargeTypeId: charge(r.code).id, unitPrice: v.rate[r.code] })) };
       delete body.rate;
       if (isEdit) Object.assign(body, { code: property.code, contactName: property.contactName, phone: property.phone, email: property.email });
       const saved = isEdit ? await propertiesApi.update(id, body) : await propertiesApi.create(body);

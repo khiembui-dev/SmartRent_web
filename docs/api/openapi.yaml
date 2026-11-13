@@ -66,6 +66,165 @@ tags:
   - name: Cổng khách thuê
     description: Chỉ dữ liệu của chính khách; người ở cùng không xem công nợ của người đại diện.
 paths:
+  /api/v1/portal/apipay/invoices/{id}/payment-request:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Thu tiền]
+      summary: Trạng thái QR và thanh toán của hóa đơn thuộc khách đang đăng nhập (đã triển khai).
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Trạng thái server; request null khi chưa tạo, hết hạn hoặc không thể thanh toán.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  available: { type: boolean }
+                  paymentStatus: { type: string }
+                  outstandingAmount: { type: number }
+                  review: { type: boolean }
+                  pendingManual: { type: boolean }
+                  creating: { type: boolean }
+                  request:
+                    type: [object, 'null']
+                    properties:
+                      id: { type: string, format: uuid }
+                      publicId: { type: string }
+                      amount: { type: number }
+                      content: { type: string }
+                      payUrl: { type: string, format: uri }
+                      qrUrl: { type: string, format: uri }
+                      bankCode: { type: string }
+                      accountNumber: { type: string }
+                      accountName: { type: string }
+                      expiresAt: { type: string, format: date-time }
+        '404': { description: Không có hóa đơn thuộc tài khoản này. }
+        '503': { description: Chưa truy cập được dịch vụ. }
+    post:
+      tags: [Thu tiền]
+      summary: Tạo hoặc tái sử dụng yêu cầu ApiPay; số tiền và người nhận chỉ do server quyết định.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Cùng DTO với GET; chưa có nghĩa đã thanh toán. }
+        '409': { description: Đang tạo QR, cần đối soát hoặc hóa đơn không còn phải thu. }
+        '422': { description: Số tiền ngoài giới hạn hỗ trợ. }
+        '502': { description: Lỗi ApiPay đã được loại bỏ thông tin nhạy cảm. }
+        '503': { description: Thiếu cấu hình hoặc chưa kết nối được dịch vụ. }
+  /api/v1/apipay/webhook:
+    post:
+      tags: [Thu tiền]
+      summary: Webhook HTTPS ApiPay; xác minh HMAC raw body trước parse, lưu inbox trước ACK.
+      security: []
+      parameters:
+        - name: ApiPay-Signature
+          in: header
+          required: true
+          schema: { type: string }
+          description: HMAC-SHA256 hex của đúng raw body, ký bằng APIPAY_WEBHOOK_SECRET.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event: { type: string }
+                sandbox: { type: boolean }
+                liveTest: { type: boolean }
+                data:
+                  type: object
+                  properties:
+                    transactionId: { type: string }
+                    bankAccountPublicId: { type: string }
+                    referenceCode: { type: string }
+                    amount: { type: [string, integer] }
+                    type: { type: string, enum: [IN] }
+                    content: { type: string }
+                    transactionDate: { type: string, format: date-time }
+      responses:
+        '200': { description: Event đã lưu bền vững hoặc loại event/test không xử lý; không phải xác nhận hóa đơn đã trả tiền. }
+        '400': { description: Thiếu HTTPS hoặc payload không hợp lệ. }
+        '401': { description: Thiếu hoặc sai chữ ký. }
+        '409': { description: transactionId trùng nhưng dữ liệu khác. }
+        '413': { description: Body lớn hơn 64 KiB. }
+        '503': { description: Chưa tiếp nhận được; ApiPay cần retry. }
+  /api/v1/admin/apipay/events:
+    get:
+      tags: [Thu tiền]
+      summary: Admin xem các khoản ApiPay đang xử lý hoặc cần đối chiếu.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: page
+          in: query
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: items, page, pageSize 25, totalItems, totalPages. }
+        '403': { description: Chỉ admin. }
+  /api/v1/admin/apipay/events/{transactionId}/retry:
+    parameters:
+      - name: transactionId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Thu tiền]
+      summary: Đưa event cần đối soát vào hàng đợi kiểm tra lại, không ép ghi thu.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: accepted true; worker kiểm tra các ràng buộc như ban đầu. }
+        '403': { description: Chỉ admin. }
+  /api/v1/admin/apipay/events/{transactionId}/reconcile:
+    parameters:
+      - name: transactionId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Thu tiền]
+      summary: Liên kết event với phiếu thu đã được admin xác nhận, cùng số tiền và mã ngân hàng.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paymentId]
+              properties:
+                paymentId: { type: string, format: uuid }
+      responses:
+        '200': { description: reconciled true; không tạo phiếu thu mới. }
+        '422': { description: Phiếu thu không khớp giao dịch. }
+        '403': { description: Chỉ admin. }
+  /api/v1/admin/apipay/events/{transactionId}/ignore:
+    parameters:
+      - name: transactionId
+        in: path
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Thu tiền]
+      summary: Admin loại khoản không thuộc hóa đơn sau đối chiếu, lưu lý do và người thực hiện.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 1, maxLength: 500 }
+      responses:
+        '200': { description: ignored true; không thay đổi sổ thu hoặc số dư. }
+        '409': { description: Giao dịch không ở trạng thái review. }
+        '422': { description: Cần lý do hợp lệ. }
+        '403': { description: Chỉ admin. }
   /api/v1/auth/login:
     post:
       tags:
@@ -416,12 +575,27 @@ paths:
                 $ref: "#/components/schemas/PublicContactInfo"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+  /api/v1/public/administrative-units:
+    get:
+      tags: [Công khai]
+      summary: Danh mục tỉnh và phường sau sắp xếp hành chính
+      description: Danh mục đóng gói trong source, có version/source/retrievedAt. Mã là chuỗi để giữ số 0 đầu.
+      operationId: getAdministrativeUnits
+      security: []
+      responses:
+        "200":
+          description: provinces gồm code, name và wards (code, name).
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
   /api/v1/public/rooms:
     get:
       tags:
         - Công khai
       summary: Danh sách phòng
-      description: Chỉ tin đăng đang công khai của phòng đang khai thác. Trạng thái tin đăng độc lập với tình trạng ở; availability cho biết còn trống/đang ở/đang giữ chỗ. Không trả thông tin khách.
+      description: Mặc định chỉ phòng trống đã đăng của cơ sở hoạt động, không có hợp đồng hiện tại. Tìm không dấu, lọc trước phân trang; nhiều tiện ích yêu cầu khớp tất cả. ids cho phép tra cứu cả phòng đang giữ chỗ. Không trả thông tin khách.
       operationId: getPublicRooms
       x-actor: Khách vãng lai (không đăng nhập)
       security: []
@@ -465,11 +639,17 @@ paths:
           required: false
           schema:
             type: string
-        - name: occupants
+        - name: capacity
           in: query
           required: false
           schema:
             type: integer
+        - name: ids
+          in: query
+          required: false
+          description: Danh sách ID phòng cách nhau bởi dấu phẩy (tối đa 100) để tra cứu phòng khách đã lưu trên trình duyệt. Khi có ids thì trả cả phòng đang có người giữ chỗ.
+          schema:
+            type: string
       responses:
         "200":
           description: Trang kết quả (lọc/sắp xếp/phân trang trên toàn bộ tập ở máy chủ).
@@ -2653,6 +2833,11 @@ paths:
         - $ref: "#/components/parameters/PageSize"
         - $ref: "#/components/parameters/Sort"
         - $ref: "#/components/parameters/Q"
+        - name: availableForContract
+          in: query
+          description: Chỉ user đang hoạt động, chưa có hợp đồng active/planned (đại diện hoặc người ở cùng).
+          schema:
+            type: boolean
         - name: propertyId
           in: query
           required: false
@@ -8062,12 +8247,38 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+    delete:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Xóa hội thoại
+      operationId: deleteAiConversationsById
+      x-actor: Admin
+      x-error-codes:
+        - not_found
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Đã xóa.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
   /api/v1/ai/conversations/{id}/messages:
     post:
       tags:
         - Trợ lý AI (tùy chọn)
       summary: Tạo tin nhắn
-      description: "Bản demo trả lời bằng luật cố định. Khi tích hợp thật: lọc dữ liệu theo quyền/cơ sở trước khi gửi mô hình, không gửi giấy tờ tùy thân, ghi nhật ký, chỉ đọc."
+      description: "LLM + function calling, chỉ đọc. Mỗi lần gọi công cụ xác thực lại phiên và gọi chính API admin hiện có; số liệu trong câu trả lời được đối chiếu với kết quả công cụ. Không gửi giấy tờ tùy thân. Lỗi: 429 rate_limited, 503 ai_not_configured/ai_unavailable, 504 ai_timeout, 409 conversation_busy. Xem docs/CHATBOT_AI.md."
       operationId: postAiConversationsByIdMessages
       x-actor: Nhân sự đơn vị (X-Organization-Id)
       x-permission: ai.read
@@ -8095,6 +8306,160 @@ paths:
       responses:
         "200":
           description: Thành công.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AiConversation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+  /api/v1/portal/ai/conversations:
+    get:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Danh sách hội thoại của khách
+      operationId: getPortalAiConversations
+      x-actor: Khách (role user)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Hội thoại của chính khách, mới nhất trước.
+          content:
+            "application/json":
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiConversationListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Tạo hội thoại của khách
+      description: "503 ai_not_configured khi máy chủ chưa cấu hình dịch vụ AI."
+      operationId: postPortalAiConversations
+      x-actor: Khách (role user)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: false
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/AiConversationsRequest"
+      responses:
+        "200":
+          description: Thành công.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AiConversation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/portal/ai/conversations/{id}:
+    get:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Chi tiết hội thoại của khách
+      operationId: getPortalAiConversationsById
+      x-actor: Khách (role user)
+      x-error-codes:
+        - not_found
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Thành công.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/AiConversation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Xóa hội thoại của khách
+      operationId: deletePortalAiConversationsById
+      x-actor: Khách (role user)
+      x-error-codes:
+        - not_found
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: Đã xóa.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /api/v1/portal/ai/conversations/{id}/messages:
+    post:
+      tags:
+        - Trợ lý AI (tùy chọn)
+      summary: Hỏi trợ lý khu khách
+      description: "Chỉ dùng công cụ đọc dữ liệu công khai và dữ liệu của chính khách đang đăng nhập (qua API /api/v1/portal/*). Không nhận userId/tenantId. Lỗi giống trợ lý admin."
+      operationId: postPortalAiConversationsByIdMessages
+      x-actor: Khách (role user)
+      x-error-codes:
+        - not_found
+        - rate_limited
+        - conversation_busy
+        - ai_not_configured
+        - ai_unavailable
+        - ai_timeout
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              $ref: "#/components/schemas/AiConversationsByIdMessagesRequest"
+            example:
+              content: Tôi còn nợ bao nhiêu?
+      responses:
+        "200":
+          description: Hội thoại kèm câu trả lời mới.
           content:
             "application/json":
               schema:
@@ -9266,6 +9631,139 @@ paths:
                 $ref: "#/components/schemas/PortalCatalog"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/v1/portal/favorites:
+    get:
+      tags:
+        - Cổng khách thuê
+      summary: ID các phòng yêu thích
+      description: Danh sách lưu trên users.favorite_rooms của người đang đăng nhập, mới lưu đứng đầu. Chỉ tài khoản khách.
+      operationId: getPortalFavorites
+      x-actor: Khách (người đăng nhập là chủ danh sách)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Thành công.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/FavoriteIds"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/portal/favorites/rooms:
+    get:
+      tags:
+        - Cổng khách thuê
+      summary: Thẻ các phòng yêu thích
+      description: Phòng còn công khai trả kèm thẻ tin đăng; phòng đã có người thuê, tạm ẩn hoặc đã gỡ trả status unlisted/removed để khách tự bỏ lưu.
+      operationId: getPortalFavoriteRooms
+      x-actor: Khách (người đăng nhập là chủ danh sách)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Thành công.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/FavoriteRooms"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+  /api/v1/portal/favorites/{roomId}:
+    put:
+      tags:
+        - Cổng khách thuê
+      summary: Lưu phòng yêu thích
+      description: Chỉ lưu được phòng đang công khai. Lưu lại phòng đã có trong danh sách không đổi gì. Tối đa 100 phòng.
+      operationId: putPortalFavorite
+      x-actor: Khách (người đăng nhập là chủ danh sách)
+      x-error-codes:
+        - room_not_listed
+        - favorites_limit
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Danh sách sau khi lưu.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/FavoriteIds"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    delete:
+      tags:
+        - Cổng khách thuê
+      summary: Bỏ phòng yêu thích
+      operationId: deletePortalFavorite
+      x-actor: Khách (người đăng nhập là chủ danh sách)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: roomId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Danh sách sau khi bỏ.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/FavoriteIds"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/v1/portal/favorites/merge:
+    post:
+      tags:
+        - Cổng khách thuê
+      summary: Gộp phòng yêu thích từ trình duyệt
+      description: Gọi khi khách đăng nhập. Thêm các phòng lưu trên trình duyệt (còn công khai, chưa có trong danh sách) lên đầu; bỏ qua ID sai.
+      operationId: postPortalFavoritesMerge
+      x-actor: Khách (người đăng nhập là chủ danh sách)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          "application/json":
+            schema:
+              type: object
+              required:
+                - roomIds
+              properties:
+                roomIds:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        "200":
+          description: Danh sách sau khi gộp.
+          content:
+            "application/json":
+              schema:
+                $ref: "#/components/schemas/FavoriteIds"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 components:
   securitySchemes:
     bearerAuth:
@@ -9448,6 +9946,20 @@ components:
                   type: string
               model:
                 type: string
+              actions:
+                type: array
+                description: Nút mở trang nội bộ do máy chủ tạo từ kết quả công cụ (không phải link do mô hình viết).
+                items:
+                  type: object
+                  required:
+                    - label
+                    - path
+                  properties:
+                    label:
+                      type: string
+                    path:
+                      type: string
+                      description: Đường dẫn nội bộ bắt đầu bằng /, ví dụ /invoices/{id}.
     AiConversationListItem:
       type: object
       required:
@@ -11010,6 +11522,7 @@ components:
         room:
           $ref: "#/components/schemas/RoomRef"
     BillingSchedule:
+      description: Ngày 1–31; tháng ngắn tự nhắc vào ngày cuối tháng. Ngày tạo hóa đơn không trước ngày nhập số.
       type: object
       required:
         - meterReadingDay
@@ -11019,11 +11532,11 @@ components:
         meterReadingDay:
           type: integer
           minimum: 1
-          maximum: 28
+          maximum: 31
         invoiceCreateDay:
           type: integer
           minimum: 1
-          maximum: 28
+          maximum: 31
         reminderEnabled:
           type: boolean
     RateInput:
@@ -14853,6 +15366,57 @@ components:
           type: integer
         count:
           type: integer
+    FavoriteIds:
+      type: object
+      required:
+        - roomIds
+      properties:
+        roomIds:
+          type: array
+          description: ID phòng, mới lưu đứng đầu.
+          items:
+            type: string
+            format: uuid
+    FavoriteRooms:
+      type: object
+      required:
+        - items
+        - total
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required:
+              - roomId
+              - savedAt
+              - status
+            properties:
+              roomId:
+                type: string
+                format: uuid
+              savedAt:
+                type: string
+                format: date-time
+              status:
+                type: string
+                enum: [available, on_hold, reserved, occupied, unavailable, unlisted, removed]
+                description: unlisted = phòng không còn công khai (đã có người thuê hoặc tạm ẩn); removed = phòng đã xóa.
+              room:
+                nullable: true
+                allOf:
+                  - $ref: "#/components/schemas/PublicRoomListItem"
+              title:
+                type: string
+                description: Tên hiển thị khi room là null.
+              roomCode:
+                type: string
+                nullable: true
+              propertyName:
+                type: string
+                nullable: true
     PortalCatalog:
       type: object
       required:
@@ -16836,6 +17400,10 @@ components:
         - publishedAt
         - hasVideo
       properties:
+        id:
+          type: string
+          format: uuid
+          description: ID phòng (dùng cho phòng yêu thích).
         hasVideo:
           type: boolean
           description: Tin đăng có video tham quan.
@@ -17528,6 +18096,7 @@ components:
           type: string
           enum:
             - available
+            - reserved
             - maintenance
             - inactive
         occupancyStatus:
@@ -17535,6 +18104,7 @@ components:
           enum:
             - occupied
             - available
+            - reserved
             - maintenance
             - inactive
         upcoming:
@@ -17620,9 +18190,13 @@ components:
           items:
             $ref: "#/components/schemas/RoomsByIdAssetsResponse"
         listing:
+          description: listing.lockedByContract = true khi phòng có hợp đồng hiệu lực/sắp vào ở; tin tự tạm ẩn và không đăng lại được cho tới khi trả phòng.
           oneOf:
             - $ref: "#/components/schemas/RoomsByIdListingPutResponse"
             - type: "null"
+        canChangeProperty:
+          type: boolean
+          description: false khi phòng đã từng có hợp đồng (hóa đơn, kỳ tính tiền gắn với cơ sở cũ); khi đó PUT đổi propertyId trả 409 room_property_locked_by_contracts.
         rates:
           type: object
           required:
@@ -17824,6 +18398,7 @@ components:
           type: string
           enum:
             - available
+            - reserved
             - maintenance
             - inactive
         occupancyStatus:
@@ -17831,6 +18406,7 @@ components:
           enum:
             - occupied
             - available
+            - reserved
             - maintenance
             - inactive
         available:
@@ -17900,6 +18476,7 @@ components:
           type: string
           enum:
             - available
+            - reserved
             - maintenance
             - inactive
         occupancyStatus:
@@ -17907,6 +18484,7 @@ components:
           enum:
             - occupied
             - available
+            - reserved
             - maintenance
             - inactive
         upcoming:
@@ -18344,6 +18922,13 @@ components:
     RoomsRequest:
       type: object
       properties:
+        addressOverride:
+          description: null để kế thừa cơ sở; object dùng houseNumber, street, provinceCode, wardCode, mapUrl tùy chọn. Backend tự dựng tên địa chỉ.
+          type: [object, 'null']
+          additionalProperties: true
+        statusReason:
+          type: string
+          description: Bắt buộc khi đổi operatingStatus của phòng đã có.
         listing:
           $ref: '#/components/schemas/RoomFormListing'
         roomTypeName:
@@ -18364,6 +18949,7 @@ components:
           type: string
           enum:
             - available
+            - reserved
             - maintenance
             - inactive
           description: Mặc định available.

@@ -3,9 +3,9 @@ import { html } from '../utils/html.js';
 
 export const LABELS = {
   occupancy: {
-    occupied: ['Đã thuê', 'door'], available: ['Còn trống', 'wash'], maintenance: ['Bảo trì', 'warn'], inactive: ['Ngừng khai thác', 'muted'],
+    occupied: ['Đã thuê', 'door'], available: ['Còn trống', 'wash'], reserved: ['Đang cọc giữ phòng', 'warn'], maintenance: ['Bảo trì', 'warn'], inactive: ['Ngừng khai thác', 'muted'],
   },
-  operating: { available: ['Đang khai thác', 'ok'], maintenance: ['Bảo trì', 'warn'], inactive: ['Ngừng khai thác', 'muted'] },
+  operating: { reserved: ['Đang cọc giữ phòng', 'warn'], available: ['Đang khai thác', 'ok'], maintenance: ['Bảo trì', 'warn'], inactive: ['Ngừng khai thác', 'muted'] },
   listing: { draft: ['Tin nháp', 'muted'], published: ['Đang công khai', 'ok'], hidden: ['Tạm ẩn', 'warn'] },
   publicAvailability: {
     available: ['Còn trống', 'ok'], occupied: ['Đang có người ở', 'door'], on_hold: ['Đang giữ chỗ', 'wash'], reserved: ['Đã có người đặt', 'wash'], unavailable: ['Tạm ngừng', 'muted'],

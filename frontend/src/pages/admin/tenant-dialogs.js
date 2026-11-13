@@ -31,8 +31,8 @@ export function tenantFormModal(tenant, { forContract = false } = {}) {
       return tenantsApi.create({ ...v, confirmDuplicate: true });
     }
   };
-  const fields = FIELDS.map((field) => forContract && ['phone', 'dateOfBirth'].includes(field.name)
-    ? { ...field, required: true, optional: false, help: field.name === 'dateOfBirth' ? 'Người đứng tên hợp đồng phải đủ 18 tuổi.' : '' } : field);
+  const fields = FIELDS.map((field) => forContract && field.name === 'phone'
+    ? { ...field, required: true, optional: false } : field);
   return formModal({ title: tenant ? `Sửa thông tin ${tenant.fullName}` : 'Thêm khách thuê', size: 'lg', submitLabel: tenant ? 'Lưu thay đổi' : 'Thêm khách', fields, values, onSubmit: save,
     validate: forContract ? contractTenantErrors : undefined });
 }

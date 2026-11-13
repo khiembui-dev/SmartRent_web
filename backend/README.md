@@ -3,6 +3,8 @@
 
 # SmartRent backend
 
+Thanh toán hóa đơn ApiPay: xem [hướng dẫn cấu hình và luồng xử lý](../docs/APIPAY.md). Khóa chỉ đọc từ env backend; không thêm vào `.env` gốc. Bộ cài hiện gồm 13 bảng nghiệp vụ + 2 bảng ApiPay.
+
 ASP.NET Core kết nối PostgreSQL qua Npgsql. Đăng nhập, `/api/v1/me`, Dashboard và Ticket admin/khách đã gọi SQL thật. Ticket gồm ảnh private, trao đổi, ghi chú nội bộ, xử lý, xác nhận/mở lại và thông báo. Các trang Cơ sở, Phòng, tin đăng/tìm phòng, lịch xem, khách thuê, hợp đồng, tính tiền, hóa đơn, thanh toán và Cài đặt đã nối SQL. Frontend local chọn `mock` hoặc `api` qua `VITE_DATA_SOURCE`.
 
 Database mới có **13 bảng**, chỉ admin/user. Bắt đầu từ [bộ cài](../database/README.md), [bàn giao API](../docs/BACKEND_HANDOFF.md), [JSONB](../database/JSON_DATA.md), [đối chiếu trang](../database/DOI_CHIEU_TUNG_TRANG.md).

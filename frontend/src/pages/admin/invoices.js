@@ -7,6 +7,7 @@ import { formatDate, monthLabel } from '../../utils/date.js';
 import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 import { tenantCell } from './common.js';
+import { mountBankReview } from './apipay-review.js';
 
 const cycleOf = (i) => (i.period ? monthLabel(i.period.monthStart) : formatDate(i.serviceFrom));
 
@@ -14,9 +15,10 @@ export default function InvoicesPage(ctx) {
   ctx.setTitle('Hóa đơn');
   setHtml(ctx.outlet, html`${pageHeader({
     title: 'Hóa đơn',
-    subtitle: 'Hóa đơn được tạo ở trang Tính tiền phòng. Xác nhận thanh toán thủ công ở chi tiết từng hóa đơn.',
+    subtitle: 'ApiPay tự ghi nhận chuyển khoản hợp lệ. Các khoản cần kiểm tra được đối soát bên dưới hoặc tại chi tiết hóa đơn.',
     actions: html`<a class="btn btn-outline-primary btn-sm" href="${link('/admin/billing')}">Mở trang tính tiền</a>`,
-  })}<div data-summary></div><div data-list></div>`);
+  })}<div data-bank-review></div><div data-summary></div><div data-list></div>`);
+  mountBankReview(ctx, ctx.outlet.querySelector('[data-bank-review]'));
   const summaryEl = ctx.outlet.querySelector('[data-summary]');
 
   mountList(ctx, ctx.outlet.querySelector('[data-list]'), {

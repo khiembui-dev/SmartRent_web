@@ -24,13 +24,14 @@ internal static class HousingData
             ["description"] = p.Text("description"),
             ["isActive"] = Copy(p["is_active"]),
             ["mapUrl"] = p.Text("map_url"), ["mapEmbedUrl"] = p.Text("map_embed_url"),
-            ["address"] = new JsonObject { ["line"] = p.Text("address_line"), ["locality"] = p.Text("locality"), ["province"] = p.Text("province") },
+            ["address"] = HousingAddress.Property(p),
             ["billingSettings"] = new JsonObject { ["invoiceDay"] = Copy(p["invoice_day"]), ["dueAfterDays"] = Copy(p["due_after_days"]), ["prorationPolicy"] = p.Text("proration_policy") },
             ["rates"] = rates,
             ["prices"] = prices,
             ["roomCount"] = rooms.Count,
             ["occupiedCount"] = Count("occupied"),
             ["availableCount"] = Count("available"),
+            ["reservedCount"] = Count("reserved"),
             ["maintenanceCount"] = Count("maintenance"),
             ["inactiveCount"] = Count("inactive")
         };
@@ -60,6 +61,12 @@ internal static class HousingData
             """, ct, "id", id);
         var tickets = await Rows(c, t, "select jsonb_build_object('id',id,'code',code,'title',title,'status',status,'createdAt',created_at)::text from tickets where room_id=@id order by created_at desc limit 10", ct, "id", id);
         var status = await Scalar(c, t, "select occupancy_status from v_room_occupancy where id=@id", ct, "id", id);
+        var address = r["address_override"]?.DeepClone().AsObject() ?? HousingAddress.Property(p);
+        // current: có hợp đồng hiệu lực/sắp vào ở (tin tự tạm ẩn); history: từng có hợp đồng (không chuyển cơ sở được).
+        var contractState = await Scalar(c, t, """
+            select case when exists(select 1 from contracts where room_id=@id and status in ('active','planned')) then 'current'
+                        when exists(select 1 from contracts where room_id=@id and status<>'cancelled') then 'history' else 'none' end
+            """, ct, "id", id);
         return new JsonObject
         {
             ["id"] = id,
@@ -82,9 +89,11 @@ internal static class HousingData
             ["tickets"] = Array(tickets),
             ["calendar"] = Array(holds),
             ["currentTenancy"] = tenants.FirstOrDefault(),
-            ["listing"] = new JsonObject { ["slug"] = r.Text("listing_slug"), ["title"] = r.Text("listing_title"), ["description"] = r.Text("listing_description"), ["status"] = r.Text("listing_status") },
-            ["mapUrl"] = p.Text("map_url"), ["mapEmbedUrl"] = p.Text("map_embed_url"),
-            ["address"] = new JsonObject { ["line"] = p.Text("address_line"), ["locality"] = p.Text("locality"), ["province"] = p.Text("province") },
+            ["listing"] = new JsonObject { ["slug"] = r.Text("listing_slug"), ["title"] = r.Text("listing_title"), ["description"] = r.Text("listing_description"), ["status"] = r.Text("listing_status"), ["lockedByContract"] = contractState == "current" },
+            ["canChangeProperty"] = contractState == "none",
+            ["addressOverride"] = Copy(r["address_override"]),
+            ["mapUrl"] = HousingAddress.Map(address), ["mapEmbedUrl"] = address.Text("mapEmbedUrl"),
+            ["address"] = address,
             ["roomType"] = new JsonObject { ["id"] = r.Text("room_type_code"), ["name"] = r.Text("room_type_name") }
         };
     }

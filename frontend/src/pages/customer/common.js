@@ -1,6 +1,7 @@
 // Phần dùng chung của khu khách hàng: tiêu đề trang, chặn khi chưa có phòng, thẻ phòng, định dạng giá.
 import { asset, emptyState, icon, link } from '../../components/ui.js';
 import { portalApi } from '../../services/api.js';
+import { favoriteButton } from '../../services/favorites.js';
 import { formatDate } from '../../utils/date.js';
 import { formatArea } from '../../utils/format.js';
 import { formatVnd } from '../../utils/money.js';
@@ -8,8 +9,8 @@ import { html } from '../../utils/html.js';
 
 export const BUDGETS = [
   { value: '0-3000000', label: 'Dưới 3 triệu' },
-  { value: '3000000-4500000', label: '3 đến 4,5 triệu' },
-  { value: '4500000-', label: 'Trên 4,5 triệu' },
+  { value: '3000000-4500000', label: '3 đến dưới 4,5 triệu' },
+  { value: '4500000-', label: 'Từ 4,5 triệu' },
 ];
 
 const AVAILABILITY = {
@@ -40,7 +41,7 @@ export function availabilityText(a) {
 export function budgetQuery(value) {
   if (!value) return {};
   const [min, max] = value.split('-');
-  return { priceMin: min || undefined, priceMax: max || undefined };
+  return { priceMin: min || undefined, priceMax: max ? String(Number(max) - 1) : undefined };
 }
 
 /** Một giá thì hiện một số, nhiều khu nhà khác giá thì hiện khoảng. */
@@ -83,23 +84,27 @@ export async function loadStay() {
   return { tenancies, current };
 }
 
-export function roomCard(room) {
-  return html`<a class="cu-room" href="${link(`/rooms/${room.slug}`)}">
-    <span class="cu-room-photo">
-      ${room.coverImageUrl ? html`<img src="${asset(room.coverImageUrl)}" alt="" loading="lazy">` : html`<span class="cu-room-nophoto">${icon('image')}</span>`}
-      <span class="sr-plate">${room.roomCode}</span>
-      ${room.hasVideo ? html`<span class="cu-room-video">${icon('play-fill')} Có video</span>` : ''}
-    </span>
-    <span class="cu-room-body">
-      <span class="cu-room-title">${room.title}</span>
-      <span class="cu-room-meta">${icon('geo-alt')} ${room.propertyName}, ${room.locality}</span>
-      <span class="cu-room-meta">${formatArea(room.areaM2)}, tối đa ${room.capacity} người, ${room.roomType.name.toLowerCase()}</span>
-      <span class="cu-room-foot">
-        <span class="cu-room-price">${room.rent == null ? 'Liên hệ' : formatVnd(room.rent)} <small>/ tháng</small></span>
-        <span class="cu-room-go">Xem phòng ${icon('arrow-right')}</span>
+/** Thẻ phòng: link mở trang phòng, nút trái tim nằm cạnh link (không lồng nút trong link). note: dòng nhắc trên ảnh. */
+export function roomCard(room, { note } = {}) {
+  return html`<article class="cu-room">
+    <a class="cu-room-link" href="${link(`/rooms/${room.slug}`)}">
+      <span class="cu-room-photo">
+        ${room.coverImageUrl ? html`<img src="${asset(room.coverImageUrl)}" alt="" loading="lazy">` : html`<span class="cu-room-nophoto">${icon('image')}</span>`}
+        <span class="sr-plate">${room.roomCode}</span>
+        ${note ? html`<span class="cu-room-video cu-room-note">${icon('hourglass-split')} ${note}</span>` : room.hasVideo ? html`<span class="cu-room-video">${icon('play-fill')} Có video</span>` : ''}
       </span>
-    </span>
-  </a>`;
+      <span class="cu-room-body">
+        <span class="cu-room-title">${room.title}</span>
+        <span class="cu-room-meta">${icon('geo-alt')} ${[room.propertyName, room.locality].filter(Boolean).join(', ')}</span>
+        <span class="cu-room-meta">${formatArea(room.areaM2)}, tối đa ${room.capacity} người, ${room.roomType.name.toLowerCase()}</span>
+        <span class="cu-room-foot">
+          <span class="cu-room-price">${room.rent == null ? 'Liên hệ' : formatVnd(room.rent)} <small>/ tháng</small></span>
+          <span class="cu-room-go">Xem phòng ${icon('arrow-right')}</span>
+        </span>
+      </span>
+    </a>
+    ${favoriteButton({ id: room.id, title: room.title, slug: room.slug })}
+  </article>`;
 }
 
 /** Phân trang ở máy chủ trên toàn bộ tập. */

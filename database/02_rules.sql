@@ -97,7 +97,13 @@ BEGIN
    RAISE EXCEPTION 'property_has_occupants' USING ERRCODE='23514'; END IF;
  ELSE
   PERFORM 1 FROM properties WHERE id=NEW.property_id FOR UPDATE;
-  IF TG_OP='UPDATE' AND NEW.property_id<>OLD.property_id THEN RAISE EXCEPTION 'room_property_is_immutable' USING ERRCODE='23514'; END IF;
+  -- Chuyển phòng sang cơ sở khác chỉ khi phòng chưa từng có hợp đồng: hóa đơn và kỳ tính tiền đã gắn với cơ sở cũ.
+  IF TG_OP='UPDATE' AND NEW.property_id<>OLD.property_id AND EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.id AND status<>'cancelled') THEN
+   RAISE EXCEPTION 'room_property_locked_by_contracts' USING ERRCODE='23514'; END IF;
+  -- Phòng đang có hợp đồng hiệu lực hoặc sắp vào ở thì tin tạm ẩn; sync_room_listing công khai lại khi trả phòng.
+  IF NEW.listing_status='published' AND (TG_OP='INSERT' OR OLD.listing_status IS DISTINCT FROM 'published')
+   AND EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.id AND status IN ('active','planned')) THEN
+   RAISE EXCEPTION 'room_occupied_cannot_publish' USING ERRCODE='23514'; END IF;
   PERFORM unique_json_keys(NEW.amenities,'code');
   PERFORM unique_json_keys(NEW.images,'fileId');
   IF (SELECT count(*) FROM jsonb_array_elements(NEW.images) x WHERE coalesce((x->>'isCover')::boolean,false))>1 THEN
@@ -253,6 +259,29 @@ BEGIN
  RETURN NULL;
 END $$;
 CREATE TRIGGER contract_booking AFTER INSERT ON contracts FOR EACH ROW EXECUTE FUNCTION link_booking();
+-- Tin đăng đi theo hợp đồng: có hợp đồng hiệu lực/sắp vào ở thì tạm ẩn; trả phòng hoặc hủy mà phòng trống lại thì công khai.
+-- Chỉ công khai khi phòng còn khai thác, cơ sở hoạt động và có giá thuê > 0; tiêu đề/slug trống thì dùng mặc định như API.
+CREATE FUNCTION sync_room_listing() RETURNS trigger LANGUAGE plpgsql AS $$
+#variable_conflict use_column
+DECLARE r rooms; p properties;
+BEGIN
+ IF NEW.status IN ('active','planned') AND (TG_OP='INSERT' OR OLD.status NOT IN ('active','planned')) THEN
+  UPDATE rooms SET listing_status='hidden' WHERE id=NEW.room_id AND listing_status<>'hidden';
+ ELSIF TG_OP='UPDATE' AND NEW.status IN ('ended','cancelled') AND OLD.status IN ('active','planned')
+  AND NOT EXISTS(SELECT 1 FROM contracts WHERE room_id=NEW.room_id AND id<>NEW.id AND status IN ('active','planned')) THEN
+  SELECT * INTO r FROM rooms WHERE id=NEW.room_id;
+  SELECT * INTO p FROM properties WHERE id=r.property_id;
+  IF r.operating_status='available' AND p.is_active AND EXISTS(SELECT 1 FROM jsonb_array_elements(r.rates||p.rates) x
+   WHERE x->>'category'='rent' AND (x->>'unitPrice')::numeric>0 AND (nullif(x->>'effectiveTo','') IS NULL OR (x->>'effectiveTo')::date>current_date)) THEN
+   UPDATE rooms SET listing_status='published',published_at=now(),
+    listing_slug=coalesce(listing_slug,'phong-'||lower(code)||'-'||substr(id::text,1,8)),
+    listing_title=coalesce(nullif(btrim(listing_title),''),name||' – '||p.name)
+   WHERE id=r.id;
+  END IF;
+ END IF;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER contract_listing_sync AFTER INSERT OR UPDATE OF status ON contracts FOR EACH ROW EXECUTE FUNCTION sync_room_listing();
 
 CREATE FUNCTION guard_period() RETURNS trigger LANGUAGE plpgsql AS $$
 #variable_conflict use_column
@@ -525,7 +554,7 @@ BEGIN
  EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA smartrent TO %I',role_name);
  EXECUTE format('REVOKE INSERT, UPDATE, DELETE ON smartrent.users FROM %I',role_name);
  EXECUTE format('GRANT INSERT (id,code,display_name,email,phone,password_hash,login_enabled,is_active,avatar_file_id,date_of_birth,address_line,locality,province,emergency_contact_name,emergency_contact_phone,notes,identity_documents,email_verified_at,accepted_terms_at) ON smartrent.users TO %I',role_name);
- EXECUTE format('GRANT UPDATE (code,display_name,email,phone,password_hash,login_enabled,is_active,avatar_file_id,date_of_birth,address_line,locality,province,emergency_contact_name,emergency_contact_phone,notes,identity_documents,failed_login_count,locked_until,last_login_at,email_verified_at,accepted_terms_at) ON smartrent.users TO %I',role_name);
+ EXECUTE format('GRANT UPDATE (code,display_name,email,phone,password_hash,login_enabled,is_active,avatar_file_id,date_of_birth,address_line,locality,province,emergency_contact_name,emergency_contact_phone,notes,identity_documents,favorite_rooms,failed_login_count,locked_until,last_login_at,email_verified_at,accepted_terms_at) ON smartrent.users TO %I',role_name);
  EXECUTE format('REVOKE EXECUTE ON FUNCTION smartrent.configure_runtime(name) FROM %I',role_name);
 END $$;
 REVOKE ALL ON ALL FUNCTIONS IN SCHEMA smartrent FROM PUBLIC;

@@ -29,7 +29,7 @@ import concurrent.futures,email.parser,email.policy,re
 f=json.loads((root/'full_state.json').read_text());tokens['full']=f['tokens']['full'];newpassword=secrets.token_urlsafe(20)
 assert req('/dev/database-check',role=None)['database']==s['database']
 # Create and activate an imported tenant through the same invitation/reset flow shown in admin.
-invitee=req('/tenants','POST',{'fullName':'Imported fixture','email':uuid.uuid4().hex+'@full.invalid','phone':'09'+str(uuid.uuid4().int)[:8]},expected=201)
+invitee=req('/tenants','POST',{'fullName':'Imported fixture','email':uuid.uuid4().hex+'@full.invalid','phone':'09'+str(uuid.uuid4().int)[:8],'dateOfBirth':'1996-03-15'},expected=201)
 req('/tenants/'+invitee['id']+'/portal-invitation','POST',{})
 maildir=pathlib.Path('backend/src/SmartRent.Api/App_Data/mail')
 mail=email.parser.BytesParser(policy=email.policy.default).parsebytes(max(maildir.glob('*.eml'),key=lambda p:p.stat().st_mtime).read_bytes())

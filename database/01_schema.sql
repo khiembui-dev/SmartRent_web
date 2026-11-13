@@ -26,6 +26,7 @@ CREATE TABLE users (
   emergency_contact_phone text,
   notes text,
   identity_documents jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(identity_documents)='array'),
+  favorite_rooms jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(favorite_rooms)='array' AND jsonb_array_length(favorite_rooms)<=100),
   avatar_file_id uuid,
   is_active boolean NOT NULL DEFAULT true,
   email_verified_at timestamptz,
@@ -71,8 +72,8 @@ CREATE TABLE files (
 CREATE TABLE settings (
   id smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   business_name text NOT NULL DEFAULT 'SmartRent',
-  meter_reading_day smallint NOT NULL DEFAULT 25 CHECK (meter_reading_day BETWEEN 1 AND 28),
-  invoice_create_day smallint NOT NULL DEFAULT 28 CHECK (invoice_create_day BETWEEN 1 AND 28),
+  meter_reading_day smallint NOT NULL DEFAULT 25 CHECK (meter_reading_day BETWEEN 1 AND 31),
+  invoice_create_day smallint NOT NULL DEFAULT 28 CHECK (invoice_create_day BETWEEN 1 AND 31),
   reminder_enabled boolean NOT NULL DEFAULT true,
   -- Trang khách chỉ hiển thị một tài khoản nhận tiền mặc định; chưa có giao diện quản lý ngân hàng.
   bank_name text,
@@ -95,6 +96,7 @@ CREATE TABLE properties (
   is_active boolean NOT NULL DEFAULT true,
   map_url text,
   map_embed_url text,
+  address_details jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(address_details)='object'),
   inactive_reason text,
   invoice_day smallint NOT NULL DEFAULT 1 CHECK (invoice_day BETWEEN 1 AND 31),
   due_after_days smallint NOT NULL DEFAULT 5 CHECK (due_after_days BETWEEN 0 AND 365),
@@ -119,8 +121,9 @@ CREATE TABLE rooms (
   room_type_name text NOT NULL DEFAULT 'Phòng tiêu chuẩn',
   description text,
   rules_text text,
+  address_override jsonb CHECK (address_override IS NULL OR jsonb_typeof(address_override)='object'),
   required_deposit numeric(16,0) NOT NULL DEFAULT 0 CHECK (required_deposit >= 0),
-  operating_status text NOT NULL DEFAULT 'available' CHECK (operating_status IN ('available','maintenance','inactive')),
+  operating_status text NOT NULL DEFAULT 'available' CHECK (operating_status IN ('available','reserved','maintenance','inactive')),
   status_reason text,
   -- Tin đăng là quan hệ 1:1 với phòng, lưu ngay trên phòng.
   listing_slug text UNIQUE,

@@ -1,4 +1,14 @@
-# Sơ đồ database — 13 bảng
+# Sơ đồ database — 13 bảng nghiệp vụ + 2 bảng ApiPay
+
+```mermaid
+erDiagram
+  users ||--o{ apipay_requests : requests
+  invoices ||--o{ apipay_requests : payment_requests
+  apipay_requests |o--o{ apipay_events : matches
+  payments |o--o| apipay_events : records
+```
+
+`apipay_requests` lưu mã nội dung/QR cho hóa đơn; `apipay_events` lưu webhook đã xác minh, khóa duy nhất `transaction_id`. Chỉ worker đối soát thành công mới ghi `payments`. Chi tiết schema và trạng thái: [`14_apipay.sql`](14_apipay.sql), [hướng dẫn ApiPay](../docs/APIPAY.md). Các sơ đồ bên dưới mô tả 13 bảng nghiệp vụ giữ nguyên.
 
 Một admin và các user. Dữ liệu lặp đã gộp thành JSONB trong bảng chính; xem JSON_DATA.md để biết cấu trúc. Đường nối dưới đây là khóa ngoại cột; các ID bên trong JSONB được trigger kiểm tra, không phải khóa ngoại tự động của PostgreSQL.
 

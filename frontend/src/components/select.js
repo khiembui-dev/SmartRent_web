@@ -9,6 +9,7 @@ TomSelect.define('remove_button', TomSelectRemove);
 
 // Nguồn tìm kiếm từ xa: tìm trên toàn bộ tập ở máy chủ, không chỉ các dòng đã tải.
 const REMOTES = {
+  contractTenants: async (q) => (await tenantsApi.list({ q, availableForContract: true, pageSize: 50 })).items.map((t) => ({ value: t.id, text: t.fullName, sub: [t.code, t.phone].filter(Boolean).join(' · ') })),
   tenants: async (q) => (await tenantsApi.list({ q, pageSize: 20 })).items.map((t) => ({ value: t.id, text: t.fullName, sub: [t.code, t.phone, t.currentTenancy?.room?.code].filter(Boolean).join(', ') })),
   rooms: async (q) => (await roomsApi.list({ q, pageSize: 20 })).items.map((r) => ({ value: r.id, text: `${r.code} – ${r.property.name}`, sub: r.occupancyStatus })),
 };
@@ -17,6 +18,8 @@ export function initTomSelects(root) {
   const instances = [];
   root.querySelectorAll('select[data-tomselect]').forEach((el) => {
     if (el.tomselect) return;
+    // Tom Select chuyển thuộc tính for sang ô tìm kiếm, nên lấy nhãn trước khi khởi tạo.
+    const label = el.labels?.[0]?.textContent?.trim() || 'Chọn';
     const remote = el.dataset.remote ? REMOTES[el.dataset.remote] : null;
     const options = {
       create: el.dataset.create === 'true',
@@ -34,17 +37,20 @@ export function initTomSelects(root) {
           if (o.dataset.sub && this.options[o.value]) this.options[o.value].sub = o.dataset.sub;
         });
       },
-      onChange: () => el.dispatchEvent(new Event('change', { bubbles: true })),
+      // Tom Select tự phát input/change trên select gốc. Không phát lần hai vì
+      // dropdown phụ thuộc sẽ bị reset và API có thể bị gọi trùng.
     };
     if (remote) {
       Object.assign(options, {
         valueField: 'value', labelField: 'text', searchField: ['text', 'sub'], loadThrottle: 300,
         load: (query, callback) => remote(query).then(callback).catch(() => callback()),
-        shouldLoad: (query) => query.length >= 1,
+        // Mở ô chọn là tải được khách, không bắt buộc phải biết tên để gõ trước.
+        preload: 'focus',
+        shouldLoad: () => true,
       });
     }
     const ts = new TomSelect(el, options);
-    ts.control_input.setAttribute('aria-label', root.querySelector(`label[for="${el.id}"]`)?.textContent?.trim() || 'Chọn');
+    ts.control_input.setAttribute('aria-label', label);
     instances.push(ts);
   });
   return () => instances.forEach((ts) => ts.destroy());

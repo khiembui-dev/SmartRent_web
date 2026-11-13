@@ -10,55 +10,34 @@ namespace SmartRent.Api.Features.PublicSite;
 [ApiController, Route("api/v1/public")]
 public sealed class PublicController(NpgsqlDataSource db) : ControllerBase
 {
-    private async Task<List<JsonObject>> Listings(CancellationToken ct)
+    [HttpGet("administrative-units"), ResponseCache(Duration = 86400)]
+    public IActionResult AddressUnits() => Ok(HousingAddress.Catalog());
+    private async Task<List<JsonObject>> Listings(CancellationToken ct, IReadOnlyCollection<Guid>? only = null)
     {
         await using var c = await db.OpenConnectionAsync(ct);
-        var ids = await Rows(c, null, "select jsonb_build_object('id',r.id)::text from rooms r join properties p on p.id=r.property_id where p.is_active and r.listing_status='published' and r.operating_status='available' order by r.published_at desc", ct);
-        var rows = new List<JsonObject>();
-        foreach (var id in ids)
-        {
-            var r = await HousingData.Room(c, null, id.Id("id"), ct);
-            var listing = r["listing"]!;
-            var address = r["address"]!;
-            var fees = new JsonArray();
-            foreach (var x in r["rates"]!["effective"]!.AsArray())
-                fees.Add(new JsonObject { ["code"] = x.Text("code"), ["name"] = x.Text("name"), ["category"] = x.Text("category"), ["unitLabel"] = x.Text("unit"), ["billingCycle"] = x.Text("cycle"), ["unitPrice"] = x.Number("unitPrice") });
-            rows.Add(new JsonObject
-            {
-                ["id"] = r.Id("id"),
-                ["slug"] = listing.Text("slug"),
-                ["title"] = listing.Text("title"),
-                ["roomCode"] = r.Text("code"),
-                ["propertyName"] = r["property"].Text("name"),
-                ["property"] = new JsonObject { ["id"] = r["property"]!.Id("id"), ["name"] = r["property"].Text("name"), ["addressLine"] = address.Text("line"), ["locality"] = address.Text("locality"), ["description"] = r["property"].Text("description") },
-                ["locality"] = address.Text("locality"),
-                ["province"] = address.Text("province"),
-                ["mapUrl"] = Copy(r["mapUrl"]), ["mapEmbedUrl"] = Copy(r["mapEmbedUrl"]),
-                ["rent"] = Copy(r["currentRent"]),
-                ["areaM2"] = Copy(r["areaM2"]),
-                ["capacity"] = Copy(r["capacity"]),
-                ["requiredDeposit"] = Copy(r["requiredDeposit"]),
-                ["description"] = listing.Text("description") ?? r.Text("description"),
-                ["rulesText"] = r.Text("rulesText"),
-                ["floorLabel"] = r.Text("floorLabel"),
-                ["roomType"] = Copy(r["roomType"]),
-                ["coverImageUrl"] = r.Text("coverImageUrl"),
-                ["images"] = Copy(r["images"]),
-                ["amenities"] = Copy(r["amenities"]),
-                ["fees"] = fees,
-                ["hasVideo"] = false,
-                ["availability"] = new JsonObject { ["status"] = r.Text("occupancyStatus") == "reserved" ? "on_hold" : r.Text("occupancyStatus") }
-            });
-        }
-        return rows;
+        return await PublicListings.Load(c, null, ct, only);
     }
+    // ids: tra cứu danh sách phòng đã lưu của khách chưa đăng nhập (lưu ở trình duyệt). Khi có ids thì giữ cả phòng đang có người giữ chỗ.
     [HttpGet("rooms")]
-    public async Task<IActionResult> List(string? locality, string? roomType, decimal? priceMin, decimal? priceMax, string? sort = "price", int page = 1, int pageSize = 12, CancellationToken ct = default)
+    public async Task<IActionResult> List(string? locality, string? roomType, decimal? priceMin, decimal? priceMax,
+        string? sort = "price", int page = 1, int pageSize = 12, string? ids = null, CancellationToken ct = default,
+        string? q = null, string? province = null, decimal? areaMin = null, int? capacity = null, string? amenities = null)
     {
-        var rows = (await Listings(ct)).Where(r => r["availability"].Text("status") == "available" && (string.IsNullOrEmpty(locality) || r.Text("locality") == locality)
-            && (string.IsNullOrEmpty(roomType) || r["roomType"].Text("id") == roomType) && (!priceMin.HasValue || r.Number("rent") >= priceMin) && (!priceMax.HasValue || r.Number("rent") <= priceMax)).ToList();
-        rows = sort == "-price" ? rows.OrderByDescending(r => r.Number("rent")).ToList() : rows.OrderBy(r => r.Number("rent")).ToList();
+        var only = ParseIds(ids);
+        var rows = PublicRoomSearch.Filter(await Listings(ct, only), q, province, locality, roomType,
+            priceMin, priceMax, areaMin, capacity, amenities, sort, only is not null);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        // Xóa/sửa tin trong khi đang xem trang cuối: trả về trang hợp lệ thay vì danh sách rỗng giả.
+        page = Math.Clamp(page, 1, Math.Max(1, (int)Math.Ceiling(rows.Count / (double)pageSize)));
         return Ok(Page(rows, page, pageSize));
+    }
+    private static Guid[]? ParseIds(string? ids)
+    {
+        if (string.IsNullOrWhiteSpace(ids))
+            return null;
+        var list = ids.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => Guid.TryParse(x, out var g) ? g : Guid.Empty).Where(g => g != Guid.Empty).Distinct();
+        return list.Take(Favorites.PortalFavoritesController.Limit).ToArray();
     }
     [HttpGet("rooms/{slug}")]
     public async Task<IActionResult> Get(string slug, CancellationToken ct)
@@ -75,7 +54,8 @@ public sealed class PublicController(NpgsqlDataSource db) : ControllerBase
         {
             totalListings = rows.Count,
             propertyCount = rows.Select(r => r["property"]!.Id("id")).Distinct().Count(),
-            provinces = rows.GroupBy(r => r.Text("province")).Select(g => new { name = g.Key, localities = g.Select(r => r.Text("locality")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct() }),
+            amenities = rows.SelectMany(r => r["amenities"]!.AsArray()).DistinctBy(a => a.Text("code")).Select(a => new { code = a.Text("code"), name = a.Text("name") }),
+            provinces = rows.GroupBy(r => r.Text("province")).Select(g => new { name = g.Key, code = g.First().Text("provinceCode"), localities = g.Select(r => r.Text("locality")).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().OrderBy(x => x) }),
             roomTypes = rows.Select(r => r["roomType"]).DistinctBy(r => r.Text("id")).Select(r => new { code = r.Text("id"), name = r.Text("name") }),
             feeSummary = fees.GroupBy(f => f.Text("code")).Select(g => new { code = g.Key, min = g.Min(x => x.Number("unitPrice")), max = g.Max(x => x.Number("unitPrice")), unitLabel = g.First().Text("unitLabel") }),
             depositRange = new

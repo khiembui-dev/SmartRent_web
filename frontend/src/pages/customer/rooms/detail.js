@@ -5,6 +5,7 @@ import { bindForm, enhance, formAlert, renderFields } from '../../../components/
 import { asset, errorState, icon, link, note } from '../../../components/ui.js';
 import { portalApi, publicApi } from '../../../services/api.js';
 import { session } from '../../../services/session.js';
+import { favoriteButton } from '../../../services/favorites.js';
 import { formatDateTime } from '../../../utils/date.js';
 import { viewingBounds, viewingTimeError } from '../../../utils/viewing.js';
 import { formatArea, formatPhone } from '../../../utils/format.js';
@@ -80,6 +81,7 @@ export default async function RoomDetailPage(ctx) {
     <header class="cu-room-head">
       <span class="sr-plate sr-plate-lg">${room.roomCode}</span>
       <div class="min-w-0"><h1>${room.title}</h1><p>${icon('geo-alt')} ${address}</p></div>
+      ${favoriteButton({ id: room.id, title: room.title, slug: room.slug }, { withText: true, className: 'cu-room-head-fav' })}
     </header>
     <div class="cu-room-layout">
       <div class="cu-room-main">

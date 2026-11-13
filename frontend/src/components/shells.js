@@ -3,9 +3,12 @@ import { Dropdown, Offcanvas } from 'bootstrap';
 import { href, navigate } from '../router/router.js';
 import { dashboardApi, notificationsApi, publicApi } from '../services/api.js';
 import { session } from '../services/session.js';
+import { installFavoriteButtons, loadFavorites } from '../services/favorites.js';
 import { formatRelative } from '../utils/date.js';
 import { formatPhone, initials } from '../utils/format.js';
 import { html, setHtml } from '../utils/html.js';
+import { mountChatWidget } from './chat-widget.js';
+import { toast } from './dialogs.js';
 import { ADMIN_NAV, CUSTOMER_NAV } from './nav-config.js';
 import { icon } from './ui.js';
 
@@ -175,6 +178,7 @@ export function mountAdminShell(root) {
     </div>
   </div>`);
   wireCommon(root);
+  mountChatWidget(root, { audience: 'admin' });
   const refreshNotifications = wireNotifications(root, prefix);
   const sidebar = root.querySelector('#sr-sidebar');
   sidebar.addEventListener('click', (event) => {
@@ -277,7 +281,7 @@ async function fillFooter(root) {
 
 export function mountCustomerShell(root) {
   const items = CUSTOMER_NAV.filter((i) => (!i.member || session.isCustomer));
-  const navLink = (i, className) => html`<a class="${className}" href="${href(i.path)}" data-nav-path="${i.path}">${icon(i.icon)}<span>${i.label}</span></a>`;
+  const navLink = (i, className, short = false) => html`<a class="${className}" href="${href(i.path)}" data-nav-path="${i.path}">${icon(i.icon)}<span>${short && i.short ? i.short : i.label}</span>${i.count === 'favorites' ? html`<span class="sr-fav-count" data-fav-count hidden></span>` : ''}</a>`;
   setHtml(root, html`<div class="sr-site">
     <header class="sr-site-head sr-no-print">
       <a class="sr-site-brand" href="${href('/')}"><span class="sr-plate">SR</span><span>SmartRent</span></a>
@@ -286,7 +290,7 @@ export function mountCustomerShell(root) {
     </header>
     <main id="main" class="sr-site-main" tabindex="-1"></main>
     ${customerFooter(items)}
-    <nav class="sr-site-tabbar sr-no-print" aria-label="Điều hướng nhanh">${items.map((i) => navLink(i, 'sr-site-tab'))}</nav>
+    <nav class="sr-site-tabbar sr-no-print" aria-label="Điều hướng nhanh">${items.map((i) => navLink(i, 'sr-site-tab', true))}</nav>
   </div>`);
   wireCommon(root);
   root.querySelector('[data-site-logout]')?.addEventListener('click', async () => {
@@ -294,6 +298,11 @@ export function mountCustomerShell(root) {
     navigate('/', { force: true });
   });
   fillFooter(root);
+  // Phòng yêu thích: nạp theo người đang đăng nhập (khung gắn lại mỗi lần đổi tài khoản), gộp danh sách trên trình duyệt vào tài khoản.
+  installFavoriteButtons({ notify: toast });
+  loadFavorites();
+  // Admin xem trang khách không dùng trợ lý khách (máy chủ cũng từ chối); admin có trợ lý riêng trong /admin.
+  if (!session.isAdmin) mountChatWidget(root, { audience: 'customer' });
   const refreshNotifications = session.isCustomer ? wireNotifications(root, '') : () => {};
   return { outlet: root.querySelector('#main'), setActive: (path) => setActiveLinks(root, path), refresh: refreshNotifications, invalidateCounts() {} };
 }

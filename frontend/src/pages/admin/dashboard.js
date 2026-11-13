@@ -11,40 +11,25 @@ import { formatDate, formatDateTime, formatWeekday, monthOptions, todayIso } fro
 import { formatVnd } from '../../utils/money.js';
 import { html, setHtml } from '../../utils/html.js';
 
-const doorClass = (r) => (r.status === 'available' && r.upcoming ? (r.upcoming === 'held' ? 'is-held' : 'is-reserved') : `is-${r.status}`);
-const STATUS_TEXT = { occupied: 'Đã thuê', available: 'Còn trống', maintenance: 'Bảo trì', inactive: 'Ngừng khai thác' };
-
-function roomMap(d) {
-  const groups = new Map();
-  d.rooms.strip.forEach((r) => {
-    if (!groups.has(r.propertyCode)) groups.set(r.propertyCode, { name: r.propertyName, rooms: [] });
-    groups.get(r.propertyCode).rooms.push(r);
-  });
-  const door = (r) => {
-    const flags = [r.needsReading ? 'chưa nhập số tháng này' : '', r.overdue ? 'có hóa đơn quá hạn' : ''].filter(Boolean);
-    const title = [`${r.code}: ${STATUS_TEXT[r.status]}`, r.tenantName, ...flags].filter(Boolean).join(', ');
-    return html`<a class="sr-door ${doorClass(r)}" href="${link(`/admin/rooms/${r.id}`)}" title="${title}" aria-label="${title}">${r.code}
-      ${r.overdue ? html`<span class="ad-door-flag is-danger"></span>` : r.needsReading ? html`<span class="ad-door-flag"></span>` : ''}</a>`;
-  };
-  return html`<section class="sr-panel ad-map">
-    <div class="sr-panel-head"><h2>Sơ đồ phòng</h2>
-      <span class="sr-panel-note">${d.rooms.total} phòng, lấp đầy ${String(d.rooms.occupancyRate).replace('.', ',')}%</span>
-      <div class="sr-panel-actions"><a class="ad-link" href="${link('/admin/rooms')}">Xem tất cả</a></div></div>
-    <div class="ad-map-body">
-      ${[...groups.values()].map((g) => html`<div class="ad-map-row"><div class="ad-map-name">${g.name}</div><div class="sr-doors">${g.rooms.map(door)}</div></div>`)}
-    </div>
-    <div class="ad-map-legend">
-      <div class="sr-door-legend">
-        <span class="l-occupied">Đã thuê (${d.rooms.occupied})</span>
-        <span class="l-available">Còn trống (${d.rooms.available - d.rooms.availableWithUpcoming})</span>
-        ${d.rooms.availableWithUpcoming ? html`<span class="l-held">Giữ chỗ (${d.rooms.availableWithUpcoming})</span>` : ''}
-        <span class="l-maintenance">Bảo trì (${d.rooms.maintenance})</span>
-        ${d.rooms.inactive ? html`<span class="l-inactive">Ngừng khai thác (${d.rooms.inactive})</span>` : ''}
-      </div>
-      <div class="sr-door-legend">
-        <span class="ad-legend-dot">Chưa nhập số</span>
-        <span class="ad-legend-dot is-danger">Quá hạn</span>
-      </div>
+// Số lượng lấy từ cùng một snapshot SQL; mỗi phòng chỉ thuộc một trạng thái.
+function roomStatistics(d) {
+  const r = d.rooms;
+  const reserved = r.reserved ?? r.availableWithUpcoming ?? 0;
+  const available = r.reserved == null ? Math.max(0, r.available - reserved) : r.available;
+  const property = d.scope.allProperties ? '' : `&propertyId=${encodeURIComponent(d.scope.properties[0]?.id || '')}`;
+  const stats = [
+    { key: 'available', label: 'Phòng trống', value: available, icon: 'door-open', note: 'Sẵn sàng cho khách thuê' },
+    { key: 'occupied', label: 'Phòng đang ở', value: r.occupied, icon: 'people', note: 'Có hợp đồng đang thuê' },
+    { key: 'reserved', label: 'Đang cọc giữ phòng', value: reserved, icon: 'bookmark-check', note: 'Đang giữ cho khách' },
+  ];
+  return html`<section class="sr-panel ad-room-stats">
+    <div class="sr-panel-head"><h2>Thống kê phòng</h2><span class="sr-panel-note">Hiện tại · ${r.total} phòng</span></div>
+    <div class="sr-panel-body">
+      <div class="ad-room-stat-grid">${stats.map((s) => html`<a class="ad-room-stat is-${s.key}" href="${link(`/admin/rooms?status=${s.key}${property}`)}">
+        <span class="ad-room-stat-icon">${icon(s.icon)}</span><span>${s.label}</span><strong class="num">${s.value}</strong><small>${s.note}</small>
+      </a>`)}</div>
+      <div class="ad-room-stat-footer"><span>Tỷ lệ lấp đầy <strong>${String(r.occupancyRate).replace('.', ',')}%</strong></span><span>Bảo trì: ${r.maintenance} · Ngừng khai thác: ${r.inactive}</span></div>
+      ${progressBar([{ label: 'Đang ở', value: r.occupied, tone: 'done' }, { label: 'Cọc giữ phòng', value: reserved, tone: 'todo' }, { label: 'Trống', value: available, tone: 'ready' }], r.total)}
     </div>
   </section>`;
 }
@@ -101,7 +86,7 @@ function render(body, d) {
       ${icon('bell')}
       <p>${b.schedule.readingDue
     ? html`Đã qua ngày nhập số điện nước (ngày ${b.schedule.meterReadingDay} hằng tháng). Còn <strong>${b.missingReadings} phòng</strong> chưa có số tháng này.`
-    : html`Đã tới ngày tạo hóa đơn (ngày ${b.schedule.invoiceCreateDay} hằng tháng). <strong>${b.readyToInvoice} phòng</strong> đã đủ số.`}</p>
+    : html`Đã tới ngày tạo hóa đơn (ngày ${b.schedule.invoiceCreateDay} hằng tháng). <strong>${b.readyToInvoice + b.draftCount} phòng</strong> đã đủ số.`}</p>
       <a class="btn btn-sm btn-primary" href="${link(`/admin/billing?group=${b.schedule.readingDue ? 'missing_readings' : 'ready'}`)}">${b.schedule.readingDue ? 'Nhập số ngay' : 'Tạo hóa đơn'}</a>
     </div>` : ''}
     ${statBand([
@@ -112,7 +97,7 @@ function render(body, d) {
     can('contracts.read') && { label: 'Hợp đồng sắp hết hạn', value: d.contracts.expiring, note: d.contracts.expiredOccupied ? `${d.contracts.expiredOccupied} đã hết hạn, khách vẫn ở` : 'Trong 30 ngày tới', tone: d.contracts.expiredOccupied ? 'danger' : d.contracts.expiring ? 'wash' : null, href: '/admin/contracts?expiring=true' },
   ])}
     <div class="ad-dash">
-      <div class="is-wide">${roomMap(d)}</div>
+      <div class="is-wide">${roomStatistics(d)}</div>
       <div class="is-lead">${billingCard(b)}</div>
       <div class="is-full">${taskList(d.tasks)}</div>
       <div class="is-wide"><section class="sr-panel"><div class="sr-panel-head"><h2>Thu tiền 6 tháng gần đây</h2><span class="sr-panel-note">Theo kỳ hóa đơn. Khoản chờ xác minh chưa được tính.</span></div>
@@ -158,12 +143,15 @@ export default async function DashboardPage(ctx) {
   })}<div data-body>${loadingBlock(10)}</div>`);
   const body = ctx.outlet.querySelector('[data-body]');
 
+  let requestId = 0;
   const load = async () => {
+    const request = ++requestId;
     replaceQuery({ month: month === today.slice(0, 7) ? undefined : month, propertyId: propertyId || undefined });
     body.style.opacity = body.children.length > 1 ? '.6' : '';
     try {
 
       const data = await dashboardApi.get({ month, propertyId: propertyId || undefined }, { signal: ctx.signal });
+      if (request !== requestId || ctx.signal.aborted) return;
       disposeChart();
       render(body, data);
       const chartEl = body.querySelector('[data-chart]');
@@ -176,7 +164,7 @@ export default async function DashboardPage(ctx) {
         });
       }
     } catch (error) {
-      if (ctx.signal.aborted) return;
+      if (ctx.signal.aborted || request !== requestId) return;
       setHtml(body, errorState(error));
       body.querySelector('#sr-retry')?.addEventListener('click', load);
     }
